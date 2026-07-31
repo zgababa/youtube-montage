@@ -127,3 +127,40 @@
     @apply font-sans;
     }
 }
+
+/*
+ * Scene preview backdrops.
+ *
+ * Generated scenes are transparent overlays, so the review surface has to stand
+ * in for footage rather than for app chrome. These three values are deliberately
+ * outside the semantic palette — they represent what the scene will sit on top
+ * of in the edit, and they must not shift with the app theme.
+ */
+:root {
+    --scene-backdrop-dark: oklch(0.16 0.008 285);
+    --scene-backdrop-light: oklch(0.94 0.003 285);
+    --scene-checker: oklch(0.5 0 0 / 14%);
+}
+
+@utility scene-backdrop-dark {
+    background-color: var(--scene-backdrop-dark);
+}
+
+@utility scene-backdrop-light {
+    background-color: var(--scene-backdrop-light);
+}
+
+@utility scene-backdrop-checker {
+    background-color: var(--scene-backdrop-dark);
+    background-image:
+        linear-gradient(45deg, var(--scene-checker) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--scene-checker) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--scene-checker) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--scene-checker) 75%);
+    background-size: 24px 24px;
+    background-position:
+        0 0,
+        0 12px,
+        12px -12px,
+        -12px 0;
+}
