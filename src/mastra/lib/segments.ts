@@ -94,8 +94,27 @@ function clock(seconds: number) {
 /* Windowing                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** Segments per model call. Roughly 40 minutes of speech. */
-export const WINDOW_SIZE = 400
+/**
+ * Segments per model call — around 90 minutes of speech.
+ *
+ * Sized so that a normal long-form recording is one call. Splitting isn't free:
+ * each seam needs overlap to keep cross-references working, produces duplicate
+ * cuts to merge, and gives the model a second chance to drift on indices. One
+ * pass avoids all of it.
+ *
+ * The limit this respects is attention, not context. A rendered segment is
+ * ~20 tokens, so 1200 of them is roughly 25k — a small fraction of the model's
+ * window. Windowing exists because precise index-referencing over a very long
+ * list degrades well before the context runs out, not because the transcript
+ * wouldn't fit.
+ *
+ * The thing to watch when raising this further is *output* length, not input:
+ * one pass emits every cut in a single response, so the cut list grows with
+ * the window. A truncated response fails schema validation and burns the
+ * repair attempt rather than degrading quietly, which is the right failure but
+ * an expensive one.
+ */
+export const WINDOW_SIZE = 1200
 
 /**
  * Overlap between windows.

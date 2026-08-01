@@ -96,10 +96,15 @@ export const cleanupStep = createStep({
       const cuts: CutDecision[] = []
 
       for (const [index, window] of windows.entries()) {
+        // Only worth naming when there's more than one — a lone "Pass 1 of 1"
+        // implies a sequence the user should be tracking, and there isn't one.
         const pass =
-          windows.length > 1 ? `Pass ${index + 1} of ${windows.length}` : "Pass"
+          windows.length > 1 ? `Pass ${index + 1} of ${windows.length}` : null
 
-        await report.progress(index / windows.length, pass)
+        await report.progress(
+          index / windows.length,
+          pass ?? "Reading the transcript"
+        )
 
         let announced = 0
 
@@ -121,9 +126,10 @@ export const cleanupStep = createStep({
             // Creeps within the pass rather than jumping between passes. The
             // divisor is a guess at a typical cut count — capped, so a long
             // window can't run the bar past the pass it's in.
+            const found = `${announced} cut${announced === 1 ? "" : "s"} so far`
             void report.progress(
               (index + Math.min(0.95, announced / 40)) / windows.length,
-              `${pass} · ${announced} cuts so far`
+              pass ? `${pass} · ${found}` : found
             )
           },
           prompt: [
@@ -142,7 +148,9 @@ export const cleanupStep = createStep({
         }
 
         cuts.push(...result.cuts)
-        await report.log(`${pass}: ${result.cuts.length} cuts`)
+        await report.log(
+          `${pass ?? "Total"}: ${result.cuts.length} cuts proposed`
+        )
       }
 
       // Indices back to seconds, gaps filled with keeps. This is where §3's

@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  WINDOW_OVERLAP,
+  WINDOW_SIZE,
   assertTiles,
   buildSegments,
   cutsToSpans,
   describeCut,
   keptSegments,
+  windowSegments,
   type CutDecision,
 } from "../src/mastra/lib/segments"
 import type { Word } from "../src/mastra/schemas"
@@ -270,5 +273,74 @@ describe("describeCut", () => {
 
     expect(line).toContain("…")
     expect(line.length).toBeLessThan(120)
+  })
+})
+
+describe("windowSegments", () => {
+  const build = (count: number) =>
+    buildSegments(
+      Array.from({ length: count }, (_, i) => ({
+        w: `w${i}`,
+        // A gap past PAUSE_SEC between every word, so each becomes its own
+        // segment and the count is exactly what the test asked for.
+        start: i * 2,
+        end: i * 2 + 0.5,
+        file: "a.mp4",
+      }))
+    )
+
+  /**
+   * The point of the current WINDOW_SIZE. Splitting costs an overlap, a
+   * dedup pass at the seam, and a second chance for the model to drift on
+   * indices — so a normal long-form recording should never pay it.
+   */
+  test("a long recording is a single pass", () => {
+    // Comfortably inside one window at the current limit.
+    expect(windowSegments(build(1000))).toHaveLength(1)
+  })
+
+  test("exactly at the limit is still one window", () => {
+    expect(windowSegments(build(WINDOW_SIZE))).toHaveLength(1)
+  })
+
+  test("one segment over splits", () => {
+    expect(windowSegments(build(WINDOW_SIZE + 1)).length).toBeGreaterThan(1)
+  })
+
+  test("every segment appears in some window", () => {
+    const segments = build(WINDOW_SIZE + 500)
+    const seen = new Set(
+      windowSegments(segments).flatMap((w) => w.map((s) => s.index))
+    )
+
+    // A segment in no window is a stretch of transcript the agent never sees,
+    // so it can never be cut — silent, and only visible as a suspiciously
+    // clean second half.
+    expect(seen.size).toBe(segments.length)
+  })
+
+  test("consecutive windows overlap, so cross-references survive the seam", () => {
+    const [first, second] = windowSegments(build(WINDOW_SIZE + 500))
+    const firstIndices = new Set(first.map((s) => s.index))
+    const shared = second.filter((s) => firstIndices.has(s.index))
+
+    expect(shared).toHaveLength(WINDOW_OVERLAP)
+  })
+
+  test("no window exceeds the limit", () => {
+    for (const window of windowSegments(build(WINDOW_SIZE * 3))) {
+      expect(window.length).toBeLessThanOrEqual(WINDOW_SIZE)
+    }
+  })
+
+  test("windows stay in order", () => {
+    const windows = windowSegments(build(WINDOW_SIZE + 500))
+    const starts = windows.map((w) => w[0].index)
+
+    expect([...starts].sort((a, b) => a - b)).toEqual(starts)
+  })
+
+  test("an empty transcript is one empty window, not a crash", () => {
+    expect(windowSegments([])).toEqual([[]])
   })
 })
