@@ -6,7 +6,14 @@ import { useRouter } from "next/navigation"
 import { applyPatch } from "@/lib/run-reducer"
 import { reveal, saveProject } from "@/lib/client-api"
 import { sceneCounts } from "@/lib/project"
-import type { MediaFile, Project, Scene, Span, StyleGuide } from "@/lib/types"
+import type {
+  MediaFile,
+  Project,
+  Scene,
+  Span,
+  StyleGuide,
+  TranscriptionHints,
+} from "@/lib/types"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import { usePipeline } from "@/hooks/use-pipeline"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +27,7 @@ import { ProjectHeader } from "@/components/project/project-header"
 import { SceneList } from "@/components/project/scene-list"
 import { ShotlistCard } from "@/components/project/shotlist-card"
 import { StyleGuideEditor } from "@/components/project/style-guide-editor"
+import { TranscriptionHintsEditor } from "@/components/project/transcription-hints"
 
 /**
  * Holds the project while it's being reviewed.
@@ -206,6 +214,16 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
     )
   }
 
+  function saveHints(transcriptionHints: TranscriptionHints) {
+    persist(
+      { transcriptionHints },
+      "Transcription hints saved",
+      transcriptionHints.keyterms.length > 0
+        ? `${transcriptionHints.keyterms.length} terms will be preferred.`
+        : "Applied the next time transcription runs."
+    )
+  }
+
   function saveMedia(media: MediaFile[]) {
     const sources = media.filter((file) => file.hasAudio && file.transcribe)
     persist(
@@ -294,7 +312,14 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
         </TabsList>
 
         <TabsContent value="media" className="pt-4">
-          <MediaSettings media={project.media} onSave={saveMedia} />
+          <div className="flex flex-col gap-6">
+            <TranscriptionHintsEditor
+              hints={project.transcriptionHints}
+              locked={project.transcript.words.length > 0}
+              onSave={saveHints}
+            />
+            <MediaSettings media={project.media} onSave={saveMedia} />
+          </div>
         </TabsContent>
 
         <TabsContent value="cleanup" className="pt-4">

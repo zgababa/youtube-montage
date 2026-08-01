@@ -127,6 +127,7 @@ function blankProject(projectPath: string, media: MediaFile[]): StoredProject {
     // 30 is the default; the UI can change it before export.
     fps: 30,
     media,
+    transcriptionHints: { prompt: "", keyterms: [] },
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,

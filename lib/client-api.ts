@@ -39,7 +39,9 @@ export async function addProject(path: string): Promise<ProjectSummary> {
  */
 export async function saveProject(
   id: string,
-  patch: Partial<Pick<Project, "media" | "fps" | "styleGuide">>
+  patch: Partial<
+    Pick<Project, "media" | "transcriptionHints" | "fps" | "styleGuide">
+  >
 ): Promise<Project> {
   return request<Project>(`/api/projects/${encodeURIComponent(id)}`, {
     method: "PATCH",

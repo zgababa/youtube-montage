@@ -19,7 +19,7 @@
 
 import { AssemblyAI } from "assemblyai"
 
-import type { Word } from "../schemas"
+import type { TranscriptionHints, Word } from "../schemas"
 import { TRANSCRIBE_MODELS } from "../models"
 
 /** How often to ask whether the job is done. */
@@ -35,6 +35,8 @@ const PHASE_PROGRESS: Record<string, number> = {
 export interface TranscribeOptions {
   /** Recorded on every word, so spans can point back at real footage. */
   sourceFile: string
+  /** What the recording is about, and the spellings to prefer. */
+  hints?: TranscriptionHints
   /** Phase changes for this file, 0–1. There is no finer signal to report. */
   onProgress?: (fraction: number, phase: string) => void
 }
@@ -64,7 +66,7 @@ export async function transcribeFile(
   audioPath: string,
   options: TranscribeOptions
 ): Promise<Word[]> {
-  const { sourceFile, onProgress } = options
+  const { sourceFile, hints, onProgress } = options
   const ai = assembly()
 
   const report = (phase: string) =>
@@ -81,6 +83,10 @@ export async function transcribeFile(
     speech_models: TRANSCRIBE_MODELS,
     // See the file header — this one is load-bearing for step 4.
     disfluencies: true,
+    // Omitted rather than sent empty: an empty prompt is not the same request
+    // as no prompt, and there's no reason to find out how it's treated.
+    ...(hints?.prompt.trim() ? { prompt: hints.prompt.trim() } : {}),
+    ...(hints?.keyterms.length ? { keyterms_prompt: hints.keyterms } : {}),
   })
 
   const transcript = await poll(submitted.id, report)

@@ -49,6 +49,7 @@ export const transcribeStep = createStep({
           audioPathFor(project.id, file.path),
           {
             sourceFile: file.path,
+            hints: project.transcriptionHints,
             onProgress: (fraction, phase) => {
               void report.progress(
                 (doneSec + fraction * file.durationSec) / totalSec,

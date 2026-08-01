@@ -46,6 +46,24 @@ folder moves the work. `~/.videotool/mastra.db` owns run state and is
 disposable — losing it costs a re-run. Every step writes to `project.json`
 before returning, which is why a lost stream costs nothing but the progress bar.
 
+### Telling the transcriber what it's listening to
+
+Every asset the pipeline produces is a rewrite of the transcript, so a
+transcription error doesn't stay one — a library name heard wrong comes back as
+a confident misspelling in the b-roll briefs, the YouTube description and the
+thread alike. `universal-3-5-pro` takes two hints that fix it at the source,
+both on the project's **Media** tab:
+
+- **What this is about** (`prompt`) — a sentence or two of context. Describes
+  the recording, not how to transcribe it; formatting and behavioural
+  instructions are ignored, and the model stays grounded in the audio, so
+  context can't invent words.
+- **Names and terms** (`keyterms_prompt`) — exact spellings to prefer. Up to
+  ~1000 words total, 6 per phrase; the app refuses a longer list rather than
+  letting terms past the limit silently stop working.
+
+Both are omitted from the request when empty rather than sent blank.
+
 ### Two recorders, one transcript
 
 The ordinary shooting setup records the same speech twice — a camera capturing
@@ -126,12 +144,12 @@ app/
   page.tsx                    projects list
   p/[id]/page.tsx             project view
   api/pipeline/route.ts       start and resume, both streaming
-  api/projects/[id]/route.ts  PATCH media roles, fps, style guide
+  api/projects/[id]/route.ts  PATCH media roles, hints, fps, style guide
   api/projects  api/browse  api/reveal
 components/
-  project/                    header, pipeline progress, media settings,
-                              cleanup diff, scene list, copy, style guide,
-                              shot list
+  project/                    header, pipeline progress, transcription hints,
+                              media settings, cleanup diff, scene list, copy,
+                              style guide, shot list
   projects/                   browser (list/card views), row, card,
                               thumbnail, add-project dialog
   scene/scene-frame.tsx       the sandboxed preview iframe

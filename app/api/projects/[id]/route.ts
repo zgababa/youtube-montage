@@ -13,7 +13,11 @@ import { z } from "zod"
 
 import { updateProject } from "@/src/mastra/lib/project"
 import { findById } from "@/src/mastra/lib/projects-index"
-import { MediaFileSchema, StyleGuideSchema } from "@/src/mastra/schemas"
+import {
+  MediaFileSchema,
+  StyleGuideSchema,
+  TranscriptionHintsSchema,
+} from "@/src/mastra/schemas"
 import { getProject } from "@/lib/api"
 
 export const runtime = "nodejs"
@@ -29,10 +33,15 @@ export const dynamic = "force-dynamic"
 const PatchSchema = z
   .object({
     media: z.array(MediaFileSchema),
+    transcriptionHints: TranscriptionHintsSchema,
     fps: z.number().int().positive(),
     styleGuide: StyleGuideSchema,
   })
   .partial()
+
+/** AssemblyAI's documented ceiling, counted the way they count it. */
+const MAX_KEYTERM_WORDS = 1000
+const MAX_WORDS_PER_PHRASE = 6
 
 export async function PATCH(
   request: Request,
@@ -52,10 +61,13 @@ export async function PATCH(
     )
   }
 
-  if (parsed.data.media) {
-    const problem = checkMedia(parsed.data.media)
-    if (problem) return Response.json({ error: problem }, { status: 400 })
-  }
+  const problem = parsed.data.media
+    ? checkMedia(parsed.data.media)
+    : parsed.data.transcriptionHints
+      ? checkHints(parsed.data.transcriptionHints)
+      : null
+
+  if (problem) return Response.json({ error: problem }, { status: 400 })
 
   await updateProject(entry.path, (project) => ({ ...project, ...parsed.data }))
 
@@ -69,6 +81,34 @@ export async function PATCH(
  * silently retags words onto a file the editor doesn't have, and a chain of
  * them has no well-defined anchor at all.
  */
+/**
+ * Refused here rather than at the provider.
+ *
+ * An over-long keyterm list doesn't fail loudly at AssemblyAI — capacity is
+ * documented as approximate and terms past the limit simply stop having an
+ * effect. Saying so at save time is the only place the user finds out.
+ */
+function checkHints(
+  hints: z.infer<typeof TranscriptionHintsSchema>
+): string | null {
+  const tooLong = hints.keyterms.find(
+    (term) => term.trim().split(/\s+/).length > MAX_WORDS_PER_PHRASE
+  )
+  if (tooLong) {
+    return `"${tooLong}" is longer than ${MAX_WORDS_PER_PHRASE} words. Keyterms are names and phrases, not sentences — put the context in the description instead.`
+  }
+
+  const words = hints.keyterms.reduce(
+    (total, term) => total + term.trim().split(/\s+/).length,
+    0
+  )
+  if (words > MAX_KEYTERM_WORDS) {
+    return `${words} words across the keyterms, over the ${MAX_KEYTERM_WORDS} limit. Terms past it stop having any effect.`
+  }
+
+  return null
+}
+
 function checkMedia(media: z.infer<typeof MediaFileSchema>[]): string | null {
   const paths = new Set(media.map((file) => file.path))
 

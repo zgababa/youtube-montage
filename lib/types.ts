@@ -28,6 +28,7 @@ export type {
   StoredProject,
   StoredScene,
   StyleGuide,
+  TranscriptionHints,
   TwitterCopy,
   Word,
   YouTubeCopy,

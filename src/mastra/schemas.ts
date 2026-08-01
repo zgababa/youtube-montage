@@ -169,6 +169,33 @@ export const ProjectCopySchema = z.object({
 })
 
 /* -------------------------------------------------------------------------- */
+/* Transcription hints                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the transcriber is told about the recording before it starts.
+ *
+ * Everything downstream is a rewrite of the transcript — the cleanup diff, the
+ * b-roll briefs, the YouTube description, the thread. A product name heard
+ * wrong doesn't stay a transcription error; it propagates into every asset as
+ * a confident misspelling. These two hints are the only chance to fix it at
+ * the source, and they cost nothing per run.
+ */
+export const TranscriptionHintsSchema = z.object({
+  /**
+   * A sentence or two on what the recording is about — domain, product,
+   * scenario. Describes the audio, not how to transcribe it: formatting and
+   * behavioural instructions are ignored by the model.
+   */
+  prompt: z.string().default(""),
+  /**
+   * Exact spellings the model should prefer: libraries, product names, people.
+   * Up to ~1000 words in total, 6 words per phrase.
+   */
+  keyterms: z.array(z.string()).default([]),
+})
+
+/* -------------------------------------------------------------------------- */
 /* The file itself                                                             */
 /* -------------------------------------------------------------------------- */
 
@@ -180,6 +207,10 @@ export const StoredProjectSchema = z.object({
   createdAt: z.string(),
   fps: z.number(),
   media: z.array(MediaFileSchema),
+  transcriptionHints: TranscriptionHintsSchema.default({
+    prompt: "",
+    keyterms: [],
+  }),
   transcript: z.object({ words: z.array(WordSchema) }),
   spans: z.array(SpanSchema),
   cleanupApprovedAt: z.string().nullable(),
@@ -226,6 +257,7 @@ export type SpanCategory = z.infer<typeof SpanCategorySchema>
 export type Span = z.infer<typeof SpanSchema>
 export type Word = z.infer<typeof WordSchema>
 export type MediaFile = z.infer<typeof MediaFileSchema>
+export type TranscriptionHints = z.infer<typeof TranscriptionHintsSchema>
 export type SceneStatus = z.infer<typeof SceneStatusSchema>
 export type SceneType = z.infer<typeof SceneTypeSchema>
 export type StyleGuide = z.infer<typeof StyleGuideSchema>
