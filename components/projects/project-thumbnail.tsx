@@ -31,7 +31,9 @@ export function ProjectThumbnail({ html }: { html: string | null }) {
   }
 
   return (
-    <div ref={ref}>
+    // `w-full` matters: as a flex child (the list row's ItemMedia) an unsized
+    // wrapper collapses to nothing and takes the frame's `w-full` with it.
+    <div ref={ref} className="w-full">
       {inView ? (
         <SceneFrame
           html={html}

@@ -21,8 +21,15 @@ export const SCENE_MESSAGE_TARGET = "scene-preview"
  * embedded document's canvas white by default, which would hide the fact that
  * the scene is an overlay. Playwright solves this at screenshot time with
  * `omitBackground`; the preview solves it here. Scene markup is untouched.
+ *
+ * The `color-scheme` meta is load-bearing, not decoration. A document that
+ * declares no colour scheme gets the UA's opaque light canvas, and that used
+ * value wins over an author `background-color: transparent` — the frame renders
+ * solid white no matter how `!important` the rule is. Declaring a scheme hands
+ * the canvas back to the author. Both halves are required.
  */
 const TRANSPARENT_CANVAS = `
+<meta name="color-scheme" content="dark light">
 <style>html, body { background-color: transparent !important; }</style>
 `
 
@@ -112,10 +119,16 @@ const CONTROLLER = `
 
 /** Appends the controller to a generated scene without touching its markup. */
 export function withSceneController(html: string) {
-  const injected = TRANSPARENT_CANVAS + CONTROLLER
-  return html.includes("</body>")
-    ? html.replace("</body>", `${injected}</body>`)
-    : html + injected
+  // The canvas bits go in the head — a `color-scheme` meta is only honoured
+  // there — and the controller at the end of the body, after the markup it
+  // animates.
+  const withCanvas = html.includes("<head>")
+    ? html.replace("<head>", `<head>${TRANSPARENT_CANVAS}`)
+    : TRANSPARENT_CANVAS + html
+
+  return withCanvas.includes("</body>")
+    ? withCanvas.replace("</body>", `${CONTROLLER}</body>`)
+    : withCanvas + CONTROLLER
 }
 
 export type SceneMessage =

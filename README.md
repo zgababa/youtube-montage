@@ -43,7 +43,8 @@ app/
 components/
   project/                    header, pipeline progress, cleanup diff,
                               scene list, copy, style guide, shot list
-  projects/                   grid, card, thumbnail, add-project dialog
+  projects/                   browser (list/card views), row, card,
+                              thumbnail, add-project dialog
   scene/scene-frame.tsx       the sandboxed preview iframe
   search-input.tsx            shared search field
   highlight.tsx               wraps matches without altering the text
@@ -56,6 +57,14 @@ lib/
   scene-html.ts               sample generated scenes
   mock-data.ts                fixtures
 ```
+
+## Projects list
+
+Two views, toggled top-right and remembered in localStorage:
+
+- **List** (default) — one row per project: small thumbnail, name, folder path,
+  counts and last-opened on the right. Scans quickly down a column.
+- **Cards** — the same data as a thumbnail-led grid, 4 across at `xl`.
 
 ## Search
 

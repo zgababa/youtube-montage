@@ -1,6 +1,6 @@
 import { listProjects } from "@/lib/api"
 import { AddProjectDialog } from "@/components/projects/add-project-dialog"
-import { ProjectsGrid } from "@/components/projects/projects-grid"
+import { ProjectsBrowser } from "@/components/projects/projects-browser"
 
 export default async function ProjectsPage() {
   const projects = await listProjects()
@@ -19,7 +19,7 @@ export default async function ProjectsPage() {
         <AddProjectDialog />
       </header>
 
-      <ProjectsGrid projects={projects} />
+      <ProjectsBrowser projects={projects} />
     </main>
   )
 }
