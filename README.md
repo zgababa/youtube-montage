@@ -9,7 +9,7 @@ The full spec is in [idea.md](idea.md).
 ## Running it
 
 ```bash
-cp .env.example .env.local   # OPENROUTER_API_KEY and OPENAI_API_KEY
+cp .env.example .env.local   # OPENROUTER_API_KEY and ASSEMBLYAI_API_KEY
 npm run dev                  # the app, port 3000
 npm run studio               # Mastra Studio, port 4111 — optional
 ```
@@ -22,7 +22,7 @@ Both processes share `~/.videotool/mastra.db`, so a run started in the app is
 inspectable in Studio and vice versa.
 
 ```bash
-npm test        # segment tiling, chunk offsets, scene validation
+npm test        # segment tiling, transcript units, scene validation
 npm run lint
 npm run typecheck
 ```
@@ -86,7 +86,7 @@ src/mastra/
   lib/
     project.ts                project.json read/modify/write, atomic + queued
     segments.ts               words ↔ segments ↔ spans
-    whisper.ts                word timestamps, chunking, offsets
+    stt.ts                    AssemblyAI word timestamps, ms → seconds
     render.ts                 Playwright frame-stepping and measurement
     validate-scene.ts         the §5 constraints, enforced
     ffmpeg.ts  preflight.ts  paths.ts  audio.ts  structured.ts
@@ -112,7 +112,7 @@ lib/
   run-reducer.ts              stream parts → Project and Run
   project.ts                  derivations — clean script, shot list, counts
   scene-controller.ts         postMessage scrubber injected into previews
-tests/                        segments, whisper offsets, scene validation
+tests/                        segments, transcript units, scene validation
 ```
 
 ## Projects list
@@ -167,10 +167,17 @@ Three deliberate deviations from [idea.md](idea.md), all found while building:
   `100vw` covers half the frame. The two sections can't both hold; authoring
   space wins. The density concern §6 raises was about upscaling a 960-wide
   design, which is no longer what happens.
-- **Audio is extracted as mp3, not WAV** (§4.2). Whisper caps uploads at 25 MB
-  and an hour of 16 kHz mono WAV is ~115 MB, so every long recording would need
-  splitting; the same audio as mp3 is a tenth of that. Files still over the cap
-  are split into ten-minute pieces with their word timestamps offset back.
+- **Audio is extracted as mp3, not WAV** (§4.2). §4.2 asks for WAV, but the only
+  thing the file is used for is a single upload, and mp3 is a tenth the size at
+  no cost to transcription accuracy. On an hour of footage that is ~115 MB
+  against ~11 MB, entirely in upload time.
+- **Transcription is AssemblyAI, not Whisper** (§4.1). §4.1 names Whisper first
+  of three candidates and asks for the provider to be verified before building;
+  `universal-3-5-pro` is more accurate, returns word timings without a flag, and
+  takes 5 GB per job rather than 25 MB — which removed the chunk-and-offset step
+  the Whisper path needed entirely. It does mean
+  `disfluencies: true` is mandatory: AssemblyAI strips "um" and "uh" by default,
+  and cutting exactly those is half of what step 4 does.
 - **A `style-guide` step was added.** §5 requires one guide shared by every
   scene agent but the §4 step table omits it. Giving it its own step means it
   can be re-run from Studio to try a different look without regenerating scenes.

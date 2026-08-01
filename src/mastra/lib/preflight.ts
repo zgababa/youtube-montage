@@ -41,11 +41,11 @@ export async function preflight(): Promise<PreflightIssue[]> {
     })
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.ASSEMBLYAI_API_KEY) {
     issues.push({
-      what: "OPENAI_API_KEY",
+      what: "ASSEMBLYAI_API_KEY",
       message:
-        "OPENAI_API_KEY is unset. Transcription calls OpenAI directly for word-level timestamps. See .env.example.",
+        "ASSEMBLYAI_API_KEY is unset. Transcription calls AssemblyAI directly for word-level timestamps. See .env.example.",
     })
   }
 

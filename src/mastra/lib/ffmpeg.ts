@@ -76,10 +76,9 @@ export interface ExtractOptions {
  * Pulls mono 16 kHz audio out of a source file.
  *
  * idea.md §4.2 specifies `-vn -ac 1 -ar 16000`; the one change is mp3 rather
- * than WAV, and it isn't cosmetic. Whisper's upload cap is 25 MB, and an hour
- * of 16 kHz mono WAV is roughly 115 MB — every long recording would need
- * splitting. The same audio as mp3 is about a tenth of that, at a bitrate
- * Whisper is entirely happy with, so most files go up in one piece.
+ * than WAV. The file exists to be uploaded once and then deleted, and an hour
+ * of 16 kHz mono WAV is roughly 115 MB against about a tenth of that as mp3 —
+ * at a bitrate no transcriber notices. That difference is entirely upload time.
  */
 export async function extractAudio(
   input: string,
@@ -113,51 +112,6 @@ export async function extractAudio(
       onStdout: progressReader(options.durationSec, options.onProgress),
     }
   )
-}
-
-/** Fixed-length pieces, for audio too long to upload in one request. */
-export const SEGMENT_SECONDS = 600
-
-/**
- * Splits audio into `SEGMENT_SECONDS` pieces, returning them in order.
- *
- * Order is the whole point: the transcriber offsets each piece's word
- * timestamps by its index, so a piece out of position shifts an entire stretch
- * of transcript by ten minutes without any visible error.
- */
-export async function segmentAudio(
-  input: string,
-  outputDir: string
-): Promise<string[]> {
-  await fs.mkdir(outputDir, { recursive: true })
-  const pattern = path.join(outputDir, "chunk_%03d.mp3")
-
-  await run("ffmpeg", [
-    "-nostdin",
-    "-y",
-    "-i",
-    input,
-    "-f",
-    "segment",
-    "-segment_time",
-    String(SEGMENT_SECONDS),
-    // Re-encoding each piece rather than copying: with `-c copy` the segmenter
-    // can only cut on frame boundaries, so piece durations drift from the
-    // requested 600s and the index-times-600 offset stops being exact.
-    "-c:a",
-    "libmp3lame",
-    "-q:a",
-    "4",
-    "-loglevel",
-    "error",
-    pattern,
-  ])
-
-  const entries = await fs.readdir(outputDir)
-  return entries
-    .filter((name) => name.startsWith("chunk_") && name.endsWith(".mp3"))
-    .sort()
-    .map((name) => path.join(outputDir, name))
 }
 
 /* -------------------------------------------------------------------------- */

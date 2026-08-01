@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
     "@libsql/client",
     "playwright",
     "playwright-core",
-    "openai",
+    "assemblyai",
   ],
 }
 

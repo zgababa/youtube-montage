@@ -8,9 +8,9 @@
 
 import { createStep } from "@mastra/core/workflows"
 
-import { audioPathFor, chunkDirFor } from "../lib/audio"
+import { audioPathFor } from "../lib/audio"
 import { readStoredProject, updateProject } from "../lib/project"
-import { transcribeFile } from "../lib/whisper"
+import { transcribeFile } from "../lib/stt"
 import type { Word } from "../schemas"
 import { PipelineIO, reporter, runStep } from "./shared"
 
@@ -40,11 +40,10 @@ export const transcribeStep = createStep({
           audioPathFor(project.id, file.path),
           {
             sourceFile: file.path,
-            workDir: chunkDirFor(project.id),
-            onProgress: (fraction) => {
+            onProgress: (fraction, phase) => {
               void report.progress(
                 (doneSec + fraction * file.durationSec) / totalSec,
-                file.path
+                `${file.path} — ${phase}`
               )
             },
           }
@@ -56,7 +55,7 @@ export const transcribeStep = createStep({
 
       if (words.length === 0) {
         throw new Error(
-          "Transcription returned no words. Check the audio actually contains speech, and that OPENAI_API_KEY is valid."
+          "Transcription returned no words. Check the audio actually contains speech, and that ASSEMBLYAI_API_KEY is valid."
         )
       }
 

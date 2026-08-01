@@ -7,9 +7,9 @@
  * upstream provider stays in the id — `openrouter/anthropic/claude-opus-5`, not
  * `openrouter/claude-opus-5`.
  *
- * Transcription is the exception and doesn't appear here: it calls OpenAI
- * directly, because word-level timestamps aren't reachable through a
- * chat-completions gateway. See `lib/whisper.ts`.
+ * Transcription is the exception: it calls AssemblyAI directly, because
+ * word-level timestamps aren't reachable through a chat-completions gateway.
+ * See `lib/stt.ts`.
  */
 
 /** Writes 1920×1080 HTML under hard constraints — the hardest job here. */
@@ -32,12 +32,16 @@ export const STYLE_MODEL = "openrouter/anthropic/claude-sonnet-5"
 export const COPY_MODEL = "openrouter/anthropic/claude-sonnet-5"
 
 /**
- * Transcription. Deliberately not a router id — `openai` here means the OpenAI
- * SDK, called directly.
+ * Transcription. Deliberately not a router id — these are AssemblyAI model
+ * names, passed to the AssemblyAI SDK.
  *
- * `whisper-1` is not a legacy holdover: it is the only OpenAI model that still
- * supports `timestamp_granularities: ["word"]`. The gpt-4o-transcribe family
- * dropped granular timestamps, and word timing is what every span decision and
- * scene placement downstream is anchored to (idea.md §3).
+ * `speech_models` is an ordered *fallback* list, not parallel execution: the
+ * first entry is tried and the next is used only if it can't serve the request.
+ * `universal-3-5-pro` is the current flagship and covers 18 languages;
+ * `universal-2` behind it covers 99, so a recording in something outside the
+ * first model's range still transcribes rather than failing.
+ *
+ * Word-level timings come back on `words[]` by default — no flag to set, which
+ * is why this isn't the constrained choice it was under OpenAI.
  */
-export const TRANSCRIBE_MODEL = "whisper-1"
+export const TRANSCRIBE_MODELS = ["universal-3-5-pro", "universal-2"]

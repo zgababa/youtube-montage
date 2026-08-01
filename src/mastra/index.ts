@@ -51,9 +51,14 @@ export const mastra = new Mastra({
     /**
      * `mastra dev` bundles this directory. These three can't be bundled:
      * Playwright resolves browser binaries relative to its own install,
-     * `@libsql/client` loads a native addon, and the OpenAI SDK reaches for
-     * Node builtins.
+     * `@libsql/client` loads a native addon, and the AssemblyAI SDK reaches
+     * for Node builtins to stream file uploads.
      */
-    externals: ["playwright", "playwright-core", "@libsql/client", "openai"],
+    externals: [
+      "playwright",
+      "playwright-core",
+      "@libsql/client",
+      "assemblyai",
+    ],
   },
 })

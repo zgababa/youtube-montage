@@ -20,8 +20,3 @@ export function audioPathFor(projectId: string, mediaPath: string) {
   const digest = createHash("sha1").update(mediaPath).digest("hex").slice(0, 12)
   return tmpDir("audio", projectId, `${digest}.mp3`)
 }
-
-/** Scratch space for splitting oversized audio into uploadable chunks. */
-export function chunkDirFor(projectId: string) {
-  return tmpDir("chunks", projectId)
-}
