@@ -10,7 +10,7 @@ import { createStep } from "@mastra/core/workflows"
 import path from "node:path"
 
 import { extractAudio } from "../lib/ffmpeg"
-import { audioPathFor } from "../lib/audio"
+import { audioIsFresh, audioPathFor } from "../lib/audio"
 import { readStoredProject } from "../lib/project"
 import { toAbsolute } from "../lib/paths"
 import { PipelineIO, reporter, runStep } from "./shared"
@@ -49,22 +49,28 @@ export const extractAudioStep = createStep({
       let doneSec = 0
 
       for (const file of sources) {
+        const source = toAbsolute(projectPath, file.path)
+        const audio = audioPathFor(project.id, file.path)
+
+        if (await audioIsFresh(source, audio)) {
+          doneSec += file.durationSec
+          await report.progress(doneSec / totalSec, file.path)
+          await report.log(`${path.basename(file.path)} → cached`)
+          continue
+        }
+
         await report.detail(file.path)
-        await extractAudio(
-          toAbsolute(projectPath, file.path),
-          audioPathFor(project.id, file.path),
-          {
-            durationSec: file.durationSec,
-            // Weighted by duration, so a 40-minute A-cam doesn't share a
-            // progress bar equally with a 30-second pickup.
-            onProgress: (fraction) => {
-              void report.progress(
-                (doneSec + fraction * file.durationSec) / totalSec,
-                file.path
-              )
-            },
-          }
-        )
+        await extractAudio(source, audio, {
+          durationSec: file.durationSec,
+          // Weighted by duration, so a 40-minute A-cam doesn't share a
+          // progress bar equally with a 30-second pickup.
+          onProgress: (fraction) => {
+            void report.progress(
+              (doneSec + fraction * file.durationSec) / totalSec,
+              file.path
+            )
+          },
+        })
         doneSec += file.durationSec
         await report.log(`${path.basename(file.path)} → audio`)
       }

@@ -46,6 +46,21 @@ folder moves the work. `~/.videotool/mastra.db` owns run state and is
 disposable — losing it costs a re-run. Every step writes to `project.json`
 before returning, which is why a lost stream costs nothing but the progress bar.
 
+### Big source files never leave the machine
+
+Step 2 pulls mono 16 kHz mp3 out of each transcription source with
+`ffmpeg -vn`, and only that goes to AssemblyAI. Measured on an 11 GB camera
+file: **3.8 MB out**, identical duration, ~3 minutes at 1% CPU — the cost is
+reading the source, not transcoding it, since `-vn` drops the video stream and
+ffmpeg is just demuxing.
+
+That read is why extraction is cached in `os.tmpdir()` and skipped when the
+existing mp3 is newer than its source. Re-running the pipeline is the normal
+way to iterate on prompts (idea.md §9), and without the check a 40 GB shoot
+would pay ten minutes of disk on every single run. A zero-byte output counts as
+a miss — that's a previous run that died mid-extract, and reusing it would send
+silence to the transcriber.
+
 ### Recording in numbered segments
 
 Several recordings become one script, and nothing in a file knows when it was
@@ -185,7 +200,7 @@ lib/
   project.ts                  derivations — clean script, shot list, counts
   scene-controller.ts         postMessage scrubber injected into previews
 tests/                        segments, transcript units, media roles,
-                              scene validation
+                              audio caching, scene validation
 ```
 
 ## Projects list
