@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // `mastra dev` bundles src/mastra to here — 20MB of generated output that
+    // linting has no opinion worth having about, and enough of it to exhaust
+    // the heap.
+    ".mastra/**",
   ]),
 ]);
 

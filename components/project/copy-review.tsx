@@ -62,7 +62,9 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
       <Card>
         <CardHeader>
           <CardTitle>YouTube</CardTitle>
-          <CardDescription>Title options, description, chapters, tags.</CardDescription>
+          <CardDescription>
+            Title options, description, chapters, tags.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <section className="flex flex-col gap-2">
@@ -82,7 +84,14 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
           <Separator />
 
           <section className="flex flex-col gap-2">
-            <SectionLabel action={<CopyButton value={copy.youtube.description} label="Copy description" />}>
+            <SectionLabel
+              action={
+                <CopyButton
+                  value={copy.youtube.description}
+                  label="Copy description"
+                />
+              }
+            >
               Description
             </SectionLabel>
             <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
@@ -93,13 +102,15 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
           <Separator />
 
           <section className="flex flex-col gap-2">
-            <SectionLabel action={<CopyButton value={chaptersText} label="Copy chapters" />}>
+            <SectionLabel
+              action={<CopyButton value={chaptersText} label="Copy chapters" />}
+            >
               Chapters
             </SectionLabel>
             <div className="flex flex-col gap-1 font-mono text-sm">
               {copy.youtube.chapters.map((chapter) => (
                 <div key={chapter.timecode} className="flex gap-4">
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="text-muted-foreground tabular-nums">
                     {chapter.timecode}
                   </span>
                   <span>{chapter.label}</span>
@@ -111,7 +122,14 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
           <Separator />
 
           <section className="flex flex-col gap-2">
-            <SectionLabel action={<CopyButton value={copy.youtube.tags.join(", ")} label="Copy tags" />}>
+            <SectionLabel
+              action={
+                <CopyButton
+                  value={copy.youtube.tags.join(", ")}
+                  label="Copy tags"
+                />
+              }
+            >
               Tags
             </SectionLabel>
             <div className="flex flex-wrap gap-2">
@@ -128,7 +146,9 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
       <Card>
         <CardHeader>
           <CardTitle>Twitter</CardTitle>
-          <CardDescription>Hook, thread, and a standalone insight.</CardDescription>
+          <CardDescription>
+            Hook, thread, and a standalone insight.
+          </CardDescription>
           <CardAction>
             <CopyButton
               value={[copy.twitter.hook, ...copy.twitter.thread].join("\n\n")}
@@ -139,7 +159,11 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <section className="flex flex-col gap-2">
-            <SectionLabel action={<CopyButton value={copy.twitter.hook} label="Copy hook" />}>
+            <SectionLabel
+              action={
+                <CopyButton value={copy.twitter.hook} label="Copy hook" />
+              }
+            >
               Hook
             </SectionLabel>
             <p className="text-sm leading-relaxed">{copy.twitter.hook}</p>
@@ -169,7 +193,14 @@ export function CopyReview({ copy }: { copy: ProjectCopy | null }) {
           <Separator />
 
           <section className="flex flex-col gap-2">
-            <SectionLabel action={<CopyButton value={copy.twitter.standalone} label="Copy tweet" />}>
+            <SectionLabel
+              action={
+                <CopyButton
+                  value={copy.twitter.standalone}
+                  label="Copy tweet"
+                />
+              }
+            >
               Standalone
             </SectionLabel>
             <p className="text-sm leading-relaxed">{copy.twitter.standalone}</p>

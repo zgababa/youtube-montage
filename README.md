@@ -6,40 +6,95 @@ animated HTML scenes, and exports the approved ones as ProRes 4444 with alpha.
 
 The full spec is in [idea.md](idea.md).
 
-## Status
-
-**The UI layer is built. The pipeline is not.**
-
-Every screen is complete and driven by fixtures — no Mastra workflow, no ffmpeg,
-no Playwright, no API routes yet.
+## Running it
 
 ```bash
-npm run dev
+cp .env.example .env.local   # OPENROUTER_API_KEY and OPENAI_API_KEY
+npm run dev                  # the app, port 3000
+npm run studio               # Mastra Studio, port 4111 — optional
 ```
 
-## Where the pipeline plugs in
+Needs `ffmpeg` and `ffprobe` on PATH plus Playwright's Chromium
+(`npx playwright install chromium`). The first step of every run checks all of
+them and fails with an install message rather than halfway through.
 
-[`lib/api.ts`](lib/api.ts) is the only file the UI reads data through. Each
-function currently returns a fixture from `lib/mock-data.ts` and maps 1:1 to a
-route from §8 of the spec:
+Both processes share `~/.videotool/mastra.db`, so a run started in the app is
+inspectable in Studio and vice versa.
 
-| `lib/api.ts` | becomes |
-|---|---|
-| `listProjects()` | `GET /api/projects` |
-| `getProject(id)` | `GET /api/projects/[id]` |
-| `getLatestRun(id)` | `GET /api/runs/[id]` |
-| `browse(path)` | `GET /api/browse` |
+```bash
+npm test        # segment tiling, chunk offsets, scene validation
+npm run lint
+npm run typecheck
+```
 
-Mutations live in [`components/project/project-workspace.tsx`](components/project/project-workspace.tsx)
-and are local to the session. Approvals become `run.resume({ resumeData })` on a
-suspended workflow; everything else writes back to `project.json`.
+## How the pipeline works
+
+One Mastra workflow, eleven steps, two human gates:
+
+```
+scan → extract-audio → transcribe → cleanup ⏸ → style-guide → scenarios
+     → generate ×3 → review ⏸ → export → copy → shotlist
+```
+
+The gates are Mastra `suspend()` calls resumed with `run.resume()`, not
+application state — so an approval can arrive days later, across a server
+restart.
+
+**Storage is split on purpose.** `project.json` inside the project folder owns
+the deliverables (transcript, spans, scenes, copy) and is portable; moving the
+folder moves the work. `~/.videotool/mastra.db` owns run state and is
+disposable — losing it costs a re-run. Every step writes to `project.json`
+before returning, which is why a lost stream costs nothing but the progress bar.
+
+### The AI never rewrites the transcript
+
+The cleanup agent never sees raw word timings and never emits prose. Words are
+grouped into numbered segments, the agent returns *cuts by segment index*, and
+[`src/mastra/lib/segments.ts`](src/mastra/lib/segments.ts) converts those back to
+exact times and fills every gap with `keep` spans. Keeps are derived, never
+asked for — that's what guarantees the spans tile the transcript with nothing
+missing, since the clean script is just the kept spans concatenated.
+
+### Streaming, end to end typed
+
+[`src/mastra/stream/contract.ts`](src/mastra/stream/contract.ts) declares every
+event once. `PipelineDataParts` feeds `useChat<PipelineUIMessage>` on the
+client; `emitter()` keys into the same object on the writing side. Since AI SDK
+derives `part.type` from `data-${key}`, a step emitting `data-scene` and a
+component reading `part.data` are checked against one definition — and a Zod
+`.parse()` inside `emit` covers the one hop TypeScript can't see through
+(Mastra's `writer.custom(chunk: unknown)`).
+
+[`lib/run-reducer.ts`](lib/run-reducer.ts) folds the stream back into `Project`
+and `Run`, so every component predates the pipeline and none of them changed
+when it landed.
 
 ## Layout
 
+`src/mastra/` has **zero Next imports** — the workflow has to run headless from
+Studio and from a plain script, which is how the renderer gets debugged.
+
 ```
+src/mastra/
+  index.ts                    the instance: agents, workflows, LibSQL storage
+  schemas.ts                  project.json as Zod — the single source of truth
+  models.ts                   openrouter/anthropic/* ids
+  stream/contract.ts          every event, once; the typed emitter
+  agents/                     cleanup, style, scenario, scene, copy
+  workflows/                  broll-workflow, generate-scene-workflow
+  steps/                      one file per step
+  lib/
+    project.ts                project.json read/modify/write, atomic + queued
+    segments.ts               words ↔ segments ↔ spans
+    whisper.ts                word timestamps, chunking, offsets
+    render.ts                 Playwright frame-stepping and measurement
+    validate-scene.ts         the §5 constraints, enforced
+    ffmpeg.ts  preflight.ts  paths.ts  audio.ts  structured.ts
 app/
-  page.tsx                    projects grid
+  page.tsx                    projects list
   p/[id]/page.tsx             project view
+  api/pipeline/route.ts       start and resume, both streaming
+  api/projects  api/browse  api/reveal
 components/
   project/                    header, pipeline progress, cleanup diff,
                               scene list, copy, style guide, shot list
@@ -49,13 +104,15 @@ components/
   search-input.tsx            shared search field
   highlight.tsx               wraps matches without altering the text
   ui/                         shadcn components (owned source)
+hooks/use-pipeline.ts         useChat over the workflow
 lib/
-  types.ts                    project.json + run state shapes
-  api.ts                      the seam described above
+  types.ts                    re-exports the inferred schema types
+  api.ts                      server-only reads
+  client-api.ts               browse, add, reveal
+  run-reducer.ts              stream parts → Project and Run
   project.ts                  derivations — clean script, shot list, counts
   scene-controller.ts         postMessage scrubber injected into previews
-  scene-html.ts               sample generated scenes
-  mock-data.ts                fixtures
+tests/                        segments, whisper offsets, scene validation
 ```
 
 ## Projects list
@@ -99,6 +156,24 @@ preview and render frozen in the export; the scrubber is what surfaces that.
 
 Previews are mounted only while on screen. A scene preview is a live 1920×1080
 document, and a dozen of them at once is enough to stall the compositor.
+
+## Where this departs from the spec
+
+Three deliberate deviations from [idea.md](idea.md), all found while building:
+
+- **Export viewport is 1920×1080 at scale 1**, not 960×540 at
+  `deviceScaleFactor: 2` (§6). §5 tells the scene agent to design for 1920×1080,
+  and in a 960 CSS viewport such a scene renders only its top-left quarter while
+  `100vw` covers half the frame. The two sections can't both hold; authoring
+  space wins. The density concern §6 raises was about upscaling a 960-wide
+  design, which is no longer what happens.
+- **Audio is extracted as mp3, not WAV** (§4.2). Whisper caps uploads at 25 MB
+  and an hour of 16 kHz mono WAV is ~115 MB, so every long recording would need
+  splitting; the same audio as mp3 is a tenth of that. Files still over the cap
+  are split into ten-minute pieces with their word timestamps offset back.
+- **A `style-guide` step was added.** §5 requires one guide shared by every
+  scene agent but the §4 step table omits it. Giving it its own step means it
+  can be re-run from Studio to try a different look without regenerating scenes.
 
 ## Components
 

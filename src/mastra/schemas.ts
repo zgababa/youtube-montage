@@ -1,0 +1,208 @@
+/**
+ * `project.json`, as Zod (idea.md §7).
+ *
+ * These schemas do three jobs at once, which is why they live here rather than
+ * being written out three times:
+ *
+ *   1. workflow step `inputSchema` / `outputSchema`
+ *   2. validation when reading a `project.json` off disk — projects are
+ *      portable, so the file on disk may have been written by an older build
+ *   3. the UI's TypeScript types, via `z.infer` re-exported from `lib/types.ts`
+ *
+ * Nothing here imports from `next`. The workflow has to run headless from
+ * Studio and from a plain script (idea.md §8), so this file and everything
+ * under `src/mastra/` stays framework-free.
+ */
+
+import { z } from "zod"
+
+/* -------------------------------------------------------------------------- */
+/* Span decisions — the load-bearing part (idea.md §3)                         */
+/* -------------------------------------------------------------------------- */
+
+export const SpanActionSchema = z.enum(["keep", "cut"])
+
+export const SpanCategorySchema = z.enum([
+  "filler",
+  "redundant",
+  "bad_take",
+  "tangent",
+  "false_start",
+])
+
+export const SpanSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+  action: SpanActionSchema,
+  reason: z.string().optional(),
+  category: SpanCategorySchema.optional(),
+})
+
+/** One transcribed word. `start`/`end` are absolute seconds within `file`. */
+export const WordSchema = z.object({
+  w: z.string(),
+  start: z.number(),
+  end: z.number(),
+  file: z.string(),
+})
+
+/* -------------------------------------------------------------------------- */
+/* Media and scenes                                                            */
+/* -------------------------------------------------------------------------- */
+
+export const MediaFileSchema = z.object({
+  path: z.string(),
+  durationSec: z.number(),
+  hasAudio: z.boolean(),
+})
+
+export const SceneStatusSchema = z.enum([
+  "pending",
+  "generating",
+  "ready",
+  "approved",
+  "rejected",
+  "exporting",
+  "exported",
+  "failed",
+])
+
+/** Different types get different generation prompts and different hit rates. */
+export const SceneTypeSchema = z.enum([
+  "diagram",
+  "code",
+  "data",
+  "process",
+  "concept",
+])
+
+export const StyleGuideSchema = z.object({
+  palette: z.array(z.string()),
+  fontStack: z.string(),
+  motion: z.string(),
+  notes: z.string(),
+})
+
+/** A scene as stored in `project.json` — HTML lives in its own file. */
+export const SceneSchema = z.object({
+  id: z.string(),
+  scriptStart: z.number(),
+  scriptEnd: z.number(),
+  windowSec: z.number(),
+  coversLine: z.string(),
+  sourceFile: z.string(),
+  intent: z.string(),
+  type: SceneTypeSchema,
+  status: SceneStatusSchema,
+  htmlPath: z.string().nullable(),
+  exportPath: z.string().nullable(),
+  measuredDurationSec: z.number().nullable(),
+  /** Set when generation returned `{ html: null, failed: true }`. */
+  error: z.string().optional(),
+  /** Note attached to the last regenerate request. */
+  note: z.string().optional(),
+})
+
+/**
+ * A scene with its HTML read in.
+ *
+ * The HTML is deliberately *not* in `project.json` — it would balloon the file
+ * and duplicate `scenes/scene_NN.html`. It is read server-side and passed as a
+ * string, because previews are never served as files (idea.md §10).
+ */
+export const HydratedSceneSchema = SceneSchema.extend({
+  html: z.string().nullable(),
+})
+
+/* -------------------------------------------------------------------------- */
+/* Copy                                                                        */
+/* -------------------------------------------------------------------------- */
+
+export const YouTubeCopySchema = z.object({
+  title: z.array(z.string()),
+  description: z.string(),
+  chapters: z.array(z.object({ timecode: z.string(), label: z.string() })),
+  tags: z.array(z.string()),
+})
+
+export const TwitterCopySchema = z.object({
+  hook: z.string(),
+  thread: z.array(z.string()),
+  standalone: z.string(),
+})
+
+export const ProjectCopySchema = z.object({
+  youtube: YouTubeCopySchema,
+  twitter: TwitterCopySchema,
+})
+
+/* -------------------------------------------------------------------------- */
+/* The file itself                                                             */
+/* -------------------------------------------------------------------------- */
+
+export const StoredProjectSchema = z.object({
+  version: z.literal(1),
+  id: z.string(),
+  path: z.string(),
+  name: z.string(),
+  createdAt: z.string(),
+  fps: z.number(),
+  media: z.array(MediaFileSchema),
+  transcript: z.object({ words: z.array(WordSchema) }),
+  spans: z.array(SpanSchema),
+  cleanupApprovedAt: z.string().nullable(),
+  styleGuide: StyleGuideSchema,
+  scenes: z.array(SceneSchema),
+  copy: ProjectCopySchema.nullable(),
+})
+
+/** What the UI receives: the file plus each scene's HTML. */
+export const ProjectSchema = StoredProjectSchema.extend({
+  scenes: z.array(HydratedSceneSchema),
+})
+
+/** Row in `~/.videotool/projects.json`, enriched with counts for the list. */
+export const ProjectSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  createdAt: z.string(),
+  lastOpened: z.string(),
+  sceneCount: z.number(),
+  exportedCount: z.number(),
+  /** Scene HTML used as the thumbnail, frozen at its midpoint. */
+  thumbnailHtml: z.string().nullable(),
+})
+
+/**
+ * The projects index. Deliberately disposable — entries whose folders no longer
+ * exist are dropped on read, and the whole thing is rebuildable by re-adding
+ * folders (idea.md §7).
+ */
+export const ProjectsIndexSchema = z.object({
+  projects: z.array(
+    z.object({
+      id: z.string(),
+      path: z.string(),
+      lastOpened: z.string(),
+    })
+  ),
+})
+
+export type SpanAction = z.infer<typeof SpanActionSchema>
+export type SpanCategory = z.infer<typeof SpanCategorySchema>
+export type Span = z.infer<typeof SpanSchema>
+export type Word = z.infer<typeof WordSchema>
+export type MediaFile = z.infer<typeof MediaFileSchema>
+export type SceneStatus = z.infer<typeof SceneStatusSchema>
+export type SceneType = z.infer<typeof SceneTypeSchema>
+export type StyleGuide = z.infer<typeof StyleGuideSchema>
+export type StoredScene = z.infer<typeof SceneSchema>
+export type Scene = z.infer<typeof HydratedSceneSchema>
+export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>
+export type TwitterCopy = z.infer<typeof TwitterCopySchema>
+export type ProjectCopy = z.infer<typeof ProjectCopySchema>
+export type StoredProject = z.infer<typeof StoredProjectSchema>
+export type Project = z.infer<typeof ProjectSchema>
+export type ProjectSummary = z.infer<typeof ProjectSummarySchema>
+export type ProjectsIndex = z.infer<typeof ProjectsIndexSchema>

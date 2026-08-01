@@ -1,149 +1,48 @@
 /**
- * Types mirroring `project.json` (idea.md §7) plus the run/progress shape the UI
- * renders from Mastra workflow events (idea.md §4.3).
+ * The UI's view of the pipeline's types.
  *
- * These are the contract between the UI and the pipeline. Nothing here is
- * UI-only state — that lives in the components.
+ * Almost nothing is defined here any more. The shapes in `project.json` are
+ * declared once as Zod in `src/mastra/schemas.ts` — they have to be, since the
+ * workflow steps validate against them — and this file re-exports the inferred
+ * types under the names the components already use. One definition, three
+ * consumers: step schemas, on-disk validation, and these types.
+ *
+ * What *is* defined here is run state, which has no on-disk form: it's folded
+ * out of the event stream by `lib/run-reducer.ts`, and the folder picker's
+ * types, which never leave the app.
  */
 
-export type SpanAction = "keep" | "cut"
+import type { StepId, StepStatus } from "@/src/mastra/stream/contract"
 
-export type SpanCategory =
-  | "filler"
-  | "redundant"
-  | "bad_take"
-  | "tangent"
-  | "false_start"
+export type {
+  MediaFile,
+  Project,
+  ProjectCopy,
+  ProjectSummary,
+  Scene,
+  SceneStatus,
+  SceneType,
+  Span,
+  SpanAction,
+  SpanCategory,
+  StoredProject,
+  StoredScene,
+  StyleGuide,
+  TwitterCopy,
+  Word,
+  YouTubeCopy,
+} from "@/src/mastra/schemas"
 
-export type SceneStatus =
-  | "pending"
-  | "generating"
-  | "ready"
-  | "approved"
-  | "rejected"
-  | "exporting"
-  | "exported"
-  | "failed"
-
-export type SceneType = "diagram" | "code" | "data" | "process" | "concept"
-
-export interface MediaFile {
-  path: string
-  durationSec: number
-  hasAudio: boolean
-}
-
-export interface Word {
-  w: string
-  start: number
-  end: number
-  file: string
-}
-
-export interface Span {
-  start: number
-  end: number
-  action: SpanAction
-  reason?: string
-  category?: SpanCategory
-}
-
-export interface StyleGuide {
-  palette: string[]
-  fontStack: string
-  motion: string
-  notes: string
-}
-
-export interface Scene {
-  id: string
-  scriptStart: number
-  scriptEnd: number
-  windowSec: number
-  coversLine: string
-  sourceFile: string
-  intent: string
-  type: SceneType
-  status: SceneStatus
-  htmlPath: string | null
-  exportPath: string | null
-  measuredDurationSec: number | null
-  /** Read server-side from `htmlPath` and passed as a string — never served as a file. */
-  html: string | null
-  /** Set when the generation step returned `{ html: null, failed: true }`. */
-  error?: string
-  /** Note attached to the last regenerate request. */
-  note?: string
-}
-
-export interface YouTubeCopy {
-  title: string[]
-  description: string
-  chapters: { timecode: string; label: string }[]
-  tags: string[]
-}
-
-export interface TwitterCopy {
-  hook: string
-  thread: string[]
-  standalone: string
-}
-
-export interface ProjectCopy {
-  youtube: YouTubeCopy
-  twitter: TwitterCopy
-}
-
-export interface Project {
-  version: 1
-  id: string
-  path: string
-  name: string
-  createdAt: string
-  fps: number
-  media: MediaFile[]
-  transcript: { words: Word[] }
-  spans: Span[]
-  cleanupApprovedAt: string | null
-  styleGuide: StyleGuide
-  scenes: Scene[]
-  copy: ProjectCopy | null
-}
-
-/** Row in `~/.videotool/projects.json`, enriched with counts for the grid. */
-export interface ProjectSummary {
-  id: string
-  name: string
-  path: string
-  createdAt: string
-  lastOpened: string
-  sceneCount: number
-  exportedCount: number
-  /** Scene HTML used as the card thumbnail, frozen at its midpoint. */
-  thumbnailHtml: string | null
-}
+export type {
+  Gate,
+  RunStatus,
+  StepId,
+  StepStatus,
+} from "@/src/mastra/stream/contract"
 
 /* -------------------------------------------------------------------------- */
-/* Run state — derived from `run.stream()` events, not stored in project.json  */
+/* Run state — folded from the stream, not stored anywhere                      */
 /* -------------------------------------------------------------------------- */
-
-export type StepId =
-  | "scan"
-  | "extract-audio"
-  | "transcribe"
-  | "cleanup"
-  | "scenarios"
-  | "generate"
-  | "export"
-  | "copy"
-  | "shotlist"
-
-export type StepStatus =
-  | "pending"
-  | "running"
-  | "suspended"
-  | "success"
-  | "failed"
 
 export interface RunStep {
   id: StepId
@@ -165,7 +64,11 @@ export interface Run {
   suspendedOn: "review-cleanup" | "review-scenes" | null
 }
 
-/** Directory listing from `/api/browse`, for the folder picker. */
+/* -------------------------------------------------------------------------- */
+/* Folder picker                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Directory listing from `/api/browse`. */
 export interface DirEntry {
   name: string
   path: string

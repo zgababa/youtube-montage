@@ -22,9 +22,10 @@ export default function ProjectNotFound() {
           </EmptyMedia>
           <EmptyTitle>Project not found</EmptyTitle>
           <EmptyDescription>
-            The index in <span className="font-mono">~/.videotool/projects.json</span>{" "}
-            is disposable — entries are dropped when their folder no longer
-            exists. Add the folder again to rebuild it.
+            The index in{" "}
+            <span className="font-mono">~/.videotool/projects.json</span> is
+            disposable — entries are dropped when their folder no longer exists.
+            Add the folder again to rebuild it.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>

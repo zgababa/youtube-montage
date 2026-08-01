@@ -9,7 +9,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Highlight } from "@/components/highlight"
 import { ProjectThumbnail } from "@/components/projects/project-thumbnail"
 
@@ -41,7 +45,7 @@ export function ProjectCard({
              */}
             <TooltipTrigger
               render={<Link href={`/p/${project.id}`} />}
-              className="block truncate after:absolute after:inset-0 group-hover/project:underline"
+              className="block truncate group-hover/project:underline after:absolute after:inset-0"
             >
               <Highlight text={project.name} query={query} />
             </TooltipTrigger>

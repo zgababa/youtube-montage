@@ -4,7 +4,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toast"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
 export const metadata = {
   title: "B-Roll Pipeline",
@@ -12,9 +12,12 @@ export const metadata = {
     "Local tool that decides where b-roll goes and generates the scenes.",
 }
 
-const figtreeHeading = Figtree({subsets:['latin'],variable:'--font-heading'});
+const figtreeHeading = Figtree({
+  subsets: ["latin"],
+  variable: "--font-heading",
+})
 
-const roboto = Roboto({subsets:['latin'],variable:'--font-sans'})
+const roboto = Roboto({ subsets: ["latin"], variable: "--font-sans" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -30,7 +33,13 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", roboto.variable, figtreeHeading.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        roboto.variable,
+        figtreeHeading.variable
+      )}
     >
       <body>
         <ThemeProvider>

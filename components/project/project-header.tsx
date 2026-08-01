@@ -23,7 +23,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 const FPS_ITEMS = [
   { label: "24 fps", value: 24 },
@@ -117,7 +121,12 @@ export function ProjectHeader({
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button variant="outline" size="icon" aria-label="Reveal in Finder" onClick={onReveal}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Reveal in Finder"
+                  onClick={onReveal}
+                >
                   <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
                 </Button>
               }

@@ -42,7 +42,11 @@ import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { Spinner } from "@/components/ui/spinner"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Highlight } from "@/components/highlight"
 import { SceneFrame, type SceneBackdrop } from "@/components/scene/scene-frame"
 import { RegenerateDialog } from "@/components/project/regenerate-dialog"
@@ -87,7 +91,10 @@ export function SceneRow({
   const { ref: viewRef, inView } = useInView<HTMLDivElement>("0px")
 
   const durationMs = Math.max(measuredSec, 0.1) * 1000
-  const overruns = overrunsWindow({ ...scene, measuredDurationSec: measuredSec })
+  const overruns = overrunsWindow({
+    ...scene,
+    measuredDurationSec: measuredSec,
+  })
   const TypeIcon = TYPE_ICONS[scene.type]
 
   const onReady = React.useCallback((durationSec: number) => {
@@ -140,7 +147,9 @@ export function SceneRow({
         </CardDescription>
         {/* The line being covered is what gets scanned while editing — it leads. */}
         <CardTitle className="text-base leading-snug font-medium text-balance">
-          &ldquo;<Highlight text={scene.coversLine} query={query} />&rdquo;
+          &ldquo;
+          <Highlight text={scene.coversLine} query={query} />
+          &rdquo;
         </CardTitle>
         <CardAction className="flex flex-wrap items-center justify-end gap-2">
           <Badge variant="outline">
@@ -198,7 +207,7 @@ export function SceneRow({
                   }
                   aria-label="Scrub scene"
                 />
-                <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
                   {(playheadMs / 1000).toFixed(2)}s
                 </span>
               </div>
@@ -248,7 +257,7 @@ export function SceneRow({
               </span>
             </Row>
             <Row label="Window">
-              <span className="font-mono tabular-nums text-muted-foreground">
+              <span className="font-mono text-muted-foreground tabular-nums">
                 {durationLabel(scene.windowSec)}
               </span>
             </Row>
@@ -283,7 +292,11 @@ export function SceneRow({
             scene.status === "exported"
           }
         >
-          <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} data-icon="inline-start" />
+          <HugeiconsIcon
+            icon={Tick02Icon}
+            strokeWidth={2}
+            data-icon="inline-start"
+          />
           Approve
         </Button>
         <Button
@@ -292,7 +305,11 @@ export function SceneRow({
           onClick={() => onReject(scene.id)}
           disabled={scene.status === "rejected" || scene.html === null}
         >
-          <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} data-icon="inline-start" />
+          <HugeiconsIcon
+            icon={Cancel01Icon}
+            strokeWidth={2}
+            data-icon="inline-start"
+          />
           Reject
         </Button>
         <RegenerateDialog

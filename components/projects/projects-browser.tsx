@@ -22,7 +22,11 @@ import {
 } from "@/components/ui/empty"
 import { ItemGroup } from "@/components/ui/item"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { SearchInput } from "@/components/search-input"
 import { AddProjectDialog } from "@/components/projects/add-project-dialog"
 import { ProjectCard } from "@/components/projects/project-card"
@@ -100,10 +104,7 @@ export function ProjectsBrowser({ projects }: { projects: ProjectSummary[] }) {
             <TooltipTrigger
               render={<ToggleGroupItem value="list" aria-label="List view" />}
             >
-              <HugeiconsIcon
-                icon={LeftToRightListBulletIcon}
-                strokeWidth={2}
-              />
+              <HugeiconsIcon icon={LeftToRightListBulletIcon} strokeWidth={2} />
             </TooltipTrigger>
             <TooltipContent>List view</TooltipContent>
           </Tooltip>

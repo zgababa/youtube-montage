@@ -1,41 +1,88 @@
+import "server-only"
+
 /**
- * The single seam between the UI and the pipeline.
+ * The seam between the UI and the pipeline.
  *
- * Today every function returns fixtures from `lib/mock-data.ts`. When the
- * Mastra workflow and the routes in idea.md §8 exist, each body becomes a
- * `fetch` (or a direct `mastra.getWorkflow(...)` call in a server component)
- * and nothing above this file changes.
+ * These were fixtures while the UI was built; they now read the real thing.
+ * Nothing above this file changed when they were swapped, which is what the
+ * seam was for.
+ *
+ * Server-only: it reaches into `src/mastra`, which pulls in `node:fs` and the
+ * LibSQL client. The `server-only` import turns an accidental client import
+ * into a build error rather than a confusing runtime one.
  */
 
-import {
-  MOCK_BROWSE_ROOT,
-  MOCK_PROJECT,
-  MOCK_PROJECTS,
-  MOCK_RUN,
-  mockBrowse,
-} from "@/lib/mock-data"
-import type { DirListing, Project, ProjectSummary, Run } from "@/lib/types"
+import { readProject, tryReadStoredProject } from "@/src/mastra/lib/project"
+import { findById, readIndex, touch } from "@/src/mastra/lib/projects-index"
+import type { Project, ProjectSummary } from "@/lib/types"
 
-/** GET /api/projects */
+/** Every folder the app knows about, most recently opened first. */
 export async function listProjects(): Promise<ProjectSummary[]> {
-  return MOCK_PROJECTS
+  const entries = await readIndex()
+
+  const summaries = await Promise.all(
+    entries.map(async (entry): Promise<ProjectSummary | null> => {
+      const stored = await tryReadStoredProject(entry.path)
+      // A folder that's in the index but has no readable project.json is a
+      // half-created project. Skip it rather than showing a broken card.
+      if (!stored) return null
+
+      const exported = stored.scenes.filter(
+        (scene) => scene.status === "exported"
+      ).length
+
+      return {
+        id: entry.id,
+        name: stored.name,
+        path: entry.path,
+        createdAt: stored.createdAt,
+        lastOpened: entry.lastOpened,
+        sceneCount: stored.scenes.length,
+        exportedCount: exported,
+        thumbnailHtml: await thumbnailFor(entry.path, stored.scenes),
+      }
+    })
+  )
+
+  return summaries
+    .filter((summary): summary is ProjectSummary => summary !== null)
+    .sort((a, b) => b.lastOpened.localeCompare(a.lastOpened))
 }
 
-/** GET /api/projects/[id] — reads the project's `project.json`. */
+/** The project's `project.json`, with each scene's HTML read in. */
 export async function getProject(id: string): Promise<Project | null> {
-  if (id !== MOCK_PROJECT.id) return null
-  return MOCK_PROJECT
+  const entry = await findById(id)
+  if (!entry) return null
+
+  try {
+    const project = await readProject(entry.path)
+    await touch(id)
+    // The id in the index is the app's handle on the folder; the one inside
+    // `project.json` came from whichever machine created it. The index wins,
+    // or moving a folder between machines breaks every URL.
+    return { ...project, id, path: entry.path }
+  } catch {
+    return null
+  }
 }
 
-/** GET /api/runs/[id] — latest run for a project, or null if it never ran. */
-export async function getLatestRun(projectId: string): Promise<Run | null> {
-  if (projectId !== MOCK_PROJECT.id) return null
-  return MOCK_RUN
-}
+/**
+ * The first scene with HTML, for the list thumbnail.
+ *
+ * Reading one file rather than hydrating the whole project: the projects list
+ * shows one frame per card, and a project with twelve scenes shouldn't read
+ * twelve HTML files to render a single thumbnail.
+ */
+async function thumbnailFor(
+  projectPath: string,
+  scenes: { htmlPath: string | null; status: string }[]
+): Promise<string | null> {
+  const { readSceneHtml } = await import("@/src/mastra/lib/project")
+  const candidate =
+    scenes.find(
+      (scene) =>
+        scene.htmlPath && ["approved", "exported"].includes(scene.status)
+    ) ?? scenes.find((scene) => scene.htmlPath)
 
-/** GET /api/browse — client-side, drives the folder picker. */
-export async function browse(path: string): Promise<DirListing> {
-  return mockBrowse(path)
+  return candidate ? readSceneHtml(projectPath, candidate.htmlPath) : null
 }
-
-export const BROWSE_ROOT = MOCK_BROWSE_ROOT
