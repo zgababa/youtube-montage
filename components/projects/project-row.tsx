@@ -11,6 +11,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item"
 import { Highlight } from "@/components/highlight"
+import { ProjectMenu } from "@/components/projects/project-menu"
 import { ProjectThumbnail } from "@/components/projects/project-thumbnail"
 
 export function ProjectRow({
@@ -53,6 +54,8 @@ export function ProjectRow({
           opened {relativeDate(project.lastOpened)}
         </span>
       </ItemContent>
+
+      <ProjectMenu project={project} />
     </Item>
   )
 }

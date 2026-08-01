@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Highlight } from "@/components/highlight"
+import { ProjectMenu } from "@/components/projects/project-menu"
 import { ProjectThumbnail } from "@/components/projects/project-thumbnail"
 
 export function ProjectCard({
@@ -30,6 +31,15 @@ export function ProjectCard({
       size="sm"
       className="group/project relative gap-3 transition-shadow hover:shadow-lg"
     >
+      {/*
+       * Above the stretched link, which otherwise covers the whole card and
+       * would swallow the menu's clicks. Revealed on hover so a wall of cards
+       * stays quiet, but kept reachable by keyboard at all times.
+       */}
+      <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover/project:opacity-100 focus-within:opacity-100">
+        <ProjectMenu project={project} />
+      </div>
+
       {/* Inert so the stretched link below owns every click on the card. */}
       <CardContent className="pointer-events-none">
         <ProjectThumbnail html={project.thumbnailHtml} />

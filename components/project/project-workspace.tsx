@@ -235,6 +235,17 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
     )
   }
 
+  /**
+   * Controlled, and seeded once.
+   *
+   * As an uncontrolled `defaultValue` this flipped the moment a run produced a
+   * transcript — which Base UI warns about, and which would yank the user off
+   * whichever tab they were reading mid-run.
+   */
+  const [tab, setTab] = React.useState(() =>
+    fromDisk.transcript.words.length === 0 ? "media" : "scenes"
+  )
+
   const counts = sceneCounts(project.scenes)
 
   /**
@@ -283,11 +294,7 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
 
       <PipelineProgress run={pipeline.run} onCancel={pipeline.stop} />
 
-      <Tabs
-        defaultValue={
-          project.transcript.words.length === 0 ? "media" : "scenes"
-        }
-      >
+      <Tabs value={tab} onValueChange={(value) => setTab(value as string)}>
         <TabsList>
           <TabsTrigger value="media">
             Media

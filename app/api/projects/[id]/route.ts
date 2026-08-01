@@ -12,7 +12,7 @@
 import { z } from "zod"
 
 import { updateProject } from "@/src/mastra/lib/project"
-import { findById } from "@/src/mastra/lib/projects-index"
+import { findById, removeFromIndex } from "@/src/mastra/lib/projects-index"
 import {
   MediaFileSchema,
   StyleGuideSchema,
@@ -42,6 +42,29 @@ const PatchSchema = z
 /** AssemblyAI's documented ceiling, counted the way they count it. */
 const MAX_KEYTERM_WORDS = 1000
 const MAX_WORDS_PER_PHRASE = 6
+
+/**
+ * Forgets the folder. Never deletes anything from it.
+ *
+ * The tool's premise is that footage stays where it is and nothing is copied
+ * (idea.md §2), so "delete" here can only reasonably mean the app's own
+ * bookkeeping. Removing the index entry loses nothing that isn't recoverable by
+ * pointing at the folder again — `project.json` and every deliverable in
+ * `scenes/` and `exports/` are still on disk.
+ */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const removed = await removeFromIndex(id)
+
+  if (!removed) {
+    return Response.json({ error: "Unknown project" }, { status: 404 })
+  }
+
+  return Response.json({ path: removed.path })
+}
 
 export async function PATCH(
   request: Request,

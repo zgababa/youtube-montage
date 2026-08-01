@@ -16,8 +16,17 @@
 import os from "node:os"
 import path from "node:path"
 
-/** `~/.videotool` — app-owned, outside any project. */
-export const APP_DIR = path.join(os.homedir(), ".videotool")
+/**
+ * `~/.videotool` — app-owned, outside any project.
+ *
+ * `VIDEOTOOL_HOME` overrides it. That exists so tests can point the whole app
+ * at a scratch directory: they otherwise resolve the *real* one and delete a
+ * real project list, which `os.homedir()` makes easy to do by accident — it
+ * reads the system's passwd entry, so setting `process.env.HOME` in a test does
+ * not redirect it.
+ */
+export const APP_DIR =
+  process.env.VIDEOTOOL_HOME ?? path.join(os.homedir(), ".videotool")
 
 /** Mastra run storage. Losing this costs a re-run and nothing else. */
 export const MASTRA_DB = path.join(APP_DIR, "mastra.db")

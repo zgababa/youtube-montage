@@ -50,6 +50,18 @@ export async function saveProject(
   })
 }
 
+/**
+ * Forgets a folder. Returns its path, so the caller can offer to undo.
+ *
+ * Removes the app's index entry and nothing else — the footage, `project.json`
+ * and every export stay on disk. Re-adding the same path brings it all back.
+ */
+export async function removeProject(id: string): Promise<{ path: string }> {
+  return request<{ path: string }>(`/api/projects/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })
+}
+
 /** `open -R` on a path — the "show in Finder" affordance (idea.md §8). */
 export async function reveal(path: string): Promise<void> {
   await request("/api/reveal", {
