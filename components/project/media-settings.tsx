@@ -125,6 +125,8 @@ export function MediaSettings({
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
+        {sources.length > 1 ? <ScriptOrder sources={sources} /> : null}
+
         {draft.map((file) => (
           <div
             key={file.path}
@@ -269,5 +271,36 @@ export function MediaSettings({
         </div>
       </CardFooter>
     </Card>
+  )
+}
+
+/**
+ * The order the recordings become one script.
+ *
+ * Shown rather than left to be inferred: with several segments this decides the
+ * narrative the copy agent reads, and a sequence that came out wrong is only
+ * obvious once the YouTube chapters are already scrambled. The names listed are
+ * the anchor clips, which is what `01 -`, `02 - ` prefixes belong on.
+ */
+function ScriptOrder({ sources }: { sources: MediaFile[] }) {
+  return (
+    <div className="rounded-lg border border-dashed bg-muted/40 p-4">
+      <p className="text-sm font-medium">Script order</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Stitched together in this order, by filename. Number your files{" "}
+        <span className="font-mono">01 -</span>,{" "}
+        <span className="font-mono">02 -</span> to control it.
+      </p>
+      <ol className="mt-3 flex flex-col gap-1">
+        {sources.map((file, index) => (
+          <li key={file.path} className="flex gap-2 font-mono text-xs">
+            <span className="text-muted-foreground tabular-nums">
+              {index + 1}.
+            </span>
+            <span className="truncate">{file.voices ?? file.path}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }

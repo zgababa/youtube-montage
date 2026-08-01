@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import {
   anchorWords,
   assignRoles,
+  compareForScript,
   type ProbedFile,
 } from "../src/mastra/lib/media"
 import type { MediaFile } from "../src/mastra/schemas"
@@ -136,6 +137,61 @@ describe("assignRoles", () => {
     const media = assignRoles([recut, mic], previous)
 
     expect(by(media, "raw/a-cam-01.mp4").durationSec).toBe(1200)
+  })
+})
+
+describe("compareForScript", () => {
+  const order = (paths: string[]) => [...paths].sort(compareForScript)
+
+  test("honours a zero-padded prefix", () => {
+    expect(
+      order(["raw/03 - outro.mp4", "raw/01 - intro.mp4", "raw/02 - demo.mp4"])
+    ).toEqual(["raw/01 - intro.mp4", "raw/02 - demo.mp4", "raw/03 - outro.mp4"])
+  })
+
+  /**
+   * The classic way a numbered sequence goes wrong on its tenth entry: plain
+   * string comparison puts "10" before "2", so the script silently reorders
+   * itself only once the shoot gets long enough.
+   */
+  test("sorts unpadded numbers numerically", () => {
+    expect(
+      order(["raw/10 - ten.mp4", "raw/2 - two.mp4", "raw/9 - nine.mp4"])
+    ).toEqual(["raw/2 - two.mp4", "raw/9 - nine.mp4", "raw/10 - ten.mp4"])
+  })
+
+  /**
+   * Sorting whole paths lets the folder outrank the number the user typed —
+   * "raw/02" would lead "screen/01" purely because r < s.
+   */
+  test("the number wins over the folder it's in", () => {
+    expect(order(["screen/02 - demo.mp4", "raw/01 - intro.mp4"])).toEqual([
+      "raw/01 - intro.mp4",
+      "screen/02 - demo.mp4",
+    ])
+  })
+
+  test("mixed separators after the number still order", () => {
+    expect(order(["raw/02-demo.mp4", "raw/01 - intro.mp4"])).toEqual([
+      "raw/01 - intro.mp4",
+      "raw/02-demo.mp4",
+    ])
+  })
+
+  test("same name in two folders is ordered, not tied", () => {
+    const sorted = order(["b/take.mp4", "a/take.mp4"])
+
+    expect(sorted).toEqual(["a/take.mp4", "b/take.mp4"])
+    // Deterministic either way round — an unstable tie would reshuffle the
+    // script between runs for no visible reason.
+    expect(order(["a/take.mp4", "b/take.mp4"])).toEqual(sorted)
+  })
+
+  test("unnumbered files fall back to name order", () => {
+    expect(order(["raw/interview.mp4", "raw/demo.mp4"])).toEqual([
+      "raw/demo.mp4",
+      "raw/interview.mp4",
+    ])
   })
 })
 

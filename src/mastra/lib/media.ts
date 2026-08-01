@@ -13,7 +13,35 @@
  * corrected.
  */
 
+import path from "node:path"
+
 import type { MediaFile } from "../schemas"
+
+/**
+ * Script order: the order recordings are concatenated into one transcript.
+ *
+ * Nothing in a file knows when it was recorded — container timestamps are the
+ * export time, not the shoot — so the only signal is what the user named
+ * things. A `01 - `, `02 - ` prefix is the convention this is built to honour,
+ * and two details make it hold:
+ *
+ *   - **Numeric collation**, so `9` sorts before `10`. Plain string comparison
+ *     puts `10 - ` first, which is the classic way a numbered sequence silently
+ *     comes out wrong on its tenth entry.
+ *   - **Filename before folder**, so `screen/02 - demo` follows
+ *     `raw/01 - intro` rather than leading it. Sorting whole paths lets the
+ *     directory name outrank the number the user actually typed.
+ *
+ * Full path breaks ties, so two files with the same name in different folders
+ * still order deterministically.
+ */
+export function compareForScript(a: string, b: string): number {
+  const collate = (x: string, y: string) =>
+    x.localeCompare(y, undefined, { numeric: true })
+
+  const byName = collate(path.basename(a), path.basename(b))
+  return byName !== 0 ? byName : collate(a, b)
+}
 
 /** What ffprobe knows, before any of this is decided. */
 export interface ProbedFile {

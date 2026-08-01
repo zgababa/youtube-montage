@@ -46,6 +46,26 @@ folder moves the work. `~/.videotool/mastra.db` owns run state and is
 disposable — losing it costs a re-run. Every step writes to `project.json`
 before returning, which is why a lost stream costs nothing but the progress bar.
 
+### Recording in numbered segments
+
+Several recordings become one script, and nothing in a file knows when it was
+shot — container timestamps are the export, not the take. So the order comes
+from the filename: prefix them `01 - `, `02 - ` and they stitch together that
+way. The project's **Media** tab shows the resulting order before anything runs.
+
+Two details make the convention hold, both of which the obvious implementation
+gets wrong:
+
+- **Numeric collation**, so `9` sorts before `10`. Plain string comparison puts
+  `10 - ` first — the classic way a numbered sequence silently reorders itself
+  on its tenth entry.
+- **Filename before folder**, so `screen/03 - demo` slots between
+  `raw/02 - problem` and `raw/09 - nine`. Comparing whole paths lets the
+  directory outrank the number that was actually typed.
+
+Unnumbered files fall back to name order, which is a guess — there's no other
+signal to use.
+
 ### Telling the transcriber what it's listening to
 
 Every asset the pipeline produces is a rewrite of the transcript, so a

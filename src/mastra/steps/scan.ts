@@ -12,7 +12,12 @@ import path from "node:path"
 import { createStep } from "@mastra/core/workflows"
 
 import { isMediaFile, probe } from "../lib/ffmpeg"
-import { assignRoles, describeRoles, type ProbedFile } from "../lib/media"
+import {
+  assignRoles,
+  compareForScript,
+  describeRoles,
+  type ProbedFile,
+} from "../lib/media"
 import { preflight } from "../lib/preflight"
 import {
   createProject,
@@ -87,9 +92,11 @@ export const scanStep = createStep({
         await report.log(`${relative} — ${durationSec.toFixed(1)}s`)
       }
 
-      // Longest first: it's almost always the A-cam, and scanning it first
-      // makes the media list read sensibly.
-      probed.sort((a, b) => b.durationSec - a.durationSec)
+      // Script order, so the media list reads in the order the recordings will
+      // be stitched into one transcript. Previously longest-first, on the
+      // theory that the longest file is the A-cam — true for one performance,
+      // actively misleading for a talk recorded as numbered segments.
+      probed.sort((a, b) => compareForScript(a.path, b.path))
 
       const existing = await tryReadStoredProject(projectPath)
       // Settings carry forward from whatever's on disk, so re-running scan

@@ -9,7 +9,7 @@
 import { createStep } from "@mastra/core/workflows"
 
 import { audioPathFor } from "../lib/audio"
-import { anchorWords } from "../lib/media"
+import { anchorWords, compareForScript } from "../lib/media"
 import { readStoredProject, updateProject } from "../lib/project"
 import { transcribeFile } from "../lib/stt"
 import type { Word } from "../schemas"
@@ -83,11 +83,13 @@ export const transcribeStep = createStep({
         )
       }
 
-      // Sorted by time within each file, files in the order they were scanned.
-      // Segment building depends on this: a word out of order would split a
-      // segment in the wrong place and shift every span that follows.
+      // Sorted by time within each file, files in script order. Segment
+      // building depends on this: a word out of order would split a segment in
+      // the wrong place and shift every span that follows. Across files it's
+      // what decides the narrative the copy agent reads, so a `01 - `, `02 - `
+      // naming convention is honoured here rather than raw path order.
       words.sort((a, b) =>
-        a.file === b.file ? a.start - b.start : a.file.localeCompare(b.file)
+        a.file === b.file ? a.start - b.start : compareForScript(a.file, b.file)
       )
 
       await updateProject(projectPath, (current) => ({
