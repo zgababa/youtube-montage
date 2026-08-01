@@ -9,6 +9,11 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 
+import {
+  blankProject,
+  createProject,
+  tryReadStoredProject,
+} from "@/src/mastra/lib/project"
 import { addToIndex } from "@/src/mastra/lib/projects-index"
 import { listProjects } from "@/lib/api"
 
@@ -37,12 +42,22 @@ export async function POST(request: Request) {
   }
 
   const entry = await addToIndex(projectPath)
+
+  // Create the file if the folder doesn't have one. Without this the folder is
+  // indexed but invisible — `listProjects` drops entries with no readable
+  // `project.json`, so there's no card to click, and the only way to create one
+  // was to run the pipeline, which needs the card. Adding a folder in the UI
+  // dead-ended there.
+  if (!(await tryReadStoredProject(projectPath))) {
+    await createProject(projectPath, blankProject(projectPath))
+  }
+
   const projects = await listProjects()
   const summary = projects.find((project) => project.id === entry.id)
 
-  // No summary means the folder has no `project.json` yet, which is the normal
-  // case for a folder that hasn't been run. Answer with a placeholder rather
-  // than an error — the run is what fills it in.
+  // A summary can still be missing if the file was written but is unreadable —
+  // a folder from another tool with its own `project.json`, say. Answer with a
+  // placeholder rather than an error; the projects list will show what it can.
   return Response.json(
     summary ?? {
       id: entry.id,

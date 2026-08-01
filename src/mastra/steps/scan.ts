@@ -6,7 +6,6 @@
  * (idea.md §13) without the UI having set anything up first.
  */
 
-import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createStep } from "@mastra/core/workflows"
@@ -20,22 +19,15 @@ import {
 } from "../lib/media"
 import { preflight } from "../lib/preflight"
 import {
+  blankProject,
   createProject,
   tryReadStoredProject,
   updateProject,
 } from "../lib/project"
-import type { MediaFile, StoredProject } from "../schemas"
 import { PipelineIO, reporter, runStep } from "./shared"
 
 /** Generated output — never inputs. Walking these would find our own exports. */
 const SKIP_DIRECTORIES = new Set(["scenes", "exports", "node_modules"])
-
-const DEFAULT_STYLE_GUIDE = {
-  palette: ["#0B0B0F", "#E8E8ED", "#7C5CFF"],
-  fontStack: "ui-sans-serif, system-ui, sans-serif",
-  motion: "slow, heavy easing, opacity and scale only",
-  notes: "dark, high contrast, generous whitespace",
-}
 
 export const scanStep = createStep({
   id: "scan",
@@ -122,27 +114,6 @@ export const scanStep = createStep({
     })
   },
 })
-
-function blankProject(projectPath: string, media: MediaFile[]): StoredProject {
-  return {
-    version: 1,
-    id: randomUUID(),
-    path: projectPath,
-    name: path.basename(projectPath),
-    createdAt: new Date().toISOString(),
-    // idea.md §6: fps must match the editing timeline or the export judders.
-    // 30 is the default; the UI can change it before export.
-    fps: 30,
-    media,
-    transcriptionHints: { prompt: "", keyterms: [] },
-    transcript: { words: [] },
-    spans: [],
-    cleanupApprovedAt: null,
-    styleGuide: DEFAULT_STYLE_GUIDE,
-    scenes: [],
-    copy: null,
-  }
-}
 
 async function walk(root: string): Promise<string[]> {
   const found: string[] = []

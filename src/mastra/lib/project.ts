@@ -24,6 +24,7 @@ import path from "node:path"
 import {
   ProjectSchema,
   StoredProjectSchema,
+  type MediaFile,
   type Project,
   type StoredProject,
 } from "../schemas"
@@ -202,4 +203,50 @@ async function writeAtomic(file: string, contents: string) {
 /** Indented, so the file stays reviewable in a diff. */
 function stringify(value: unknown) {
   return `${JSON.stringify(value, null, 2)}\n`
+}
+
+/**
+ * The default look, before the style agent has had an opinion.
+ *
+ * Real values rather than empty strings: a project added and previewed before
+ * its first run should render as something deliberate, not as unstyled text.
+ */
+const DEFAULT_STYLE_GUIDE = {
+  palette: ["#0B0B0F", "#E8E8ED", "#7C5CFF"],
+  fontStack: "ui-sans-serif, system-ui, sans-serif",
+  motion: "slow, heavy easing, opacity and scale only",
+  notes: "dark, high contrast, generous whitespace",
+}
+
+/**
+ * An empty `project.json` for a folder that has one of nothing yet.
+ *
+ * Written from two places, which is why it lives here rather than in the scan
+ * step: adding a folder in the UI creates the file so the project is openable
+ * straight away, and a headless run creates it for a folder the UI has never
+ * seen (idea.md §13). Both must produce the same shape, or a project would
+ * behave differently depending on which door it came through.
+ */
+export function blankProject(
+  projectPath: string,
+  media: MediaFile[] = []
+): StoredProject {
+  return {
+    version: 1,
+    id: randomUUID(),
+    path: projectPath,
+    name: path.basename(projectPath),
+    createdAt: new Date().toISOString(),
+    // idea.md §6: fps must match the editing timeline or the export judders.
+    // 30 is the default; the UI can change it before export.
+    fps: 30,
+    media,
+    transcriptionHints: { prompt: "", keyterms: [] },
+    transcript: { words: [] },
+    spans: [],
+    cleanupApprovedAt: null,
+    styleGuide: DEFAULT_STYLE_GUIDE,
+    scenes: [],
+    copy: null,
+  }
 }

@@ -140,8 +140,8 @@ export function AddProjectDialog() {
               className="font-mono text-xs"
             />
             <FieldDescription>
-              A <span className="font-mono">project.json</span> is created here
-              if one doesn&apos;t exist yet.
+              A <span className="font-mono">project.json</span>{" "}
+              <span>is created here if one doesn&apos;t exist yet.</span>
             </FieldDescription>
           </Field>
         </FieldGroup>
