@@ -4,9 +4,9 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 
 import { applyPatch } from "@/lib/run-reducer"
-import { reveal } from "@/lib/client-api"
+import { reveal, saveProject } from "@/lib/client-api"
 import { sceneCounts } from "@/lib/project"
-import type { Project, Scene, Span, StyleGuide } from "@/lib/types"
+import type { MediaFile, Project, Scene, Span, StyleGuide } from "@/lib/types"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import { usePipeline } from "@/hooks/use-pipeline"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "@/components/ui/toast"
 import { CleanupReview } from "@/components/project/cleanup-review"
 import { CopyReview } from "@/components/project/copy-review"
+import { MediaSettings } from "@/components/project/media-settings"
 import { PipelineProgress } from "@/components/project/pipeline-progress"
 import { ProjectHeader } from "@/components/project/project-header"
 import { SceneList } from "@/components/project/scene-list"
@@ -66,6 +67,35 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
 
   function patch(next: Partial<Project>) {
     setLocal((current) => ({ ...current, ...next }))
+  }
+
+  /**
+   * Settings the pipeline reads but doesn't produce: media roles and sync, fps,
+   * style guide.
+   *
+   * These have to reach `project.json`, not just React state — the steps that
+   * consume them read the file on the server, so a change held only on screen
+   * was never actually applied. Shown immediately and written behind it; on a
+   * write failure the local overlay is dropped so the UI stops claiming a
+   * setting that isn't saved.
+   */
+  function persist(next: Partial<Project>, title: string, description: string) {
+    patch(next)
+    saveProject(project.id, next)
+      .then(() => {
+        toast.add({ title, description })
+        router.refresh()
+      })
+      .catch((error: Error) => {
+        setLocal((current) => {
+          const rolledBack = { ...current }
+          for (const key of Object.keys(next)) {
+            delete rolledBack[key as keyof Project]
+          }
+          return rolledBack
+        })
+        toast.add({ title: "Couldn't save", description: error.message })
+      })
   }
 
   function patchScene(id: string, next: Partial<Scene>) {
@@ -169,14 +199,37 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   }
 
   function saveStyleGuide(styleGuide: StyleGuide) {
-    patch({ styleGuide })
-    toast.add({
-      title: "Style guide updated",
-      description: "Applies to the next scenes generated.",
-    })
+    persist(
+      { styleGuide },
+      "Style guide saved",
+      "Applies to the next scenes generated."
+    )
+  }
+
+  function saveMedia(media: MediaFile[]) {
+    const sources = media.filter((file) => file.hasAudio && file.transcribe)
+    persist(
+      { media },
+      "Media settings saved",
+      sources.length === 1
+        ? `${sources[0].path} is the transcription source.`
+        : `${sources.length} files will be transcribed.`
+    )
   }
 
   const counts = sceneCounts(project.scenes)
+
+  /**
+   * More than one file feeding the transcriber, before anything has been
+   * transcribed.
+   *
+   * Legitimate when the files are different footage, wrong when they're two
+   * recordings of the same talk — and only the user knows which. Scan pairs
+   * them automatically when it's unambiguous, so reaching here means it wasn't.
+   */
+  const needsMediaAttention =
+    project.transcript.words.length === 0 &&
+    project.media.filter((file) => file.hasAudio && file.transcribe).length > 1
   const pendingReview = project.scenes.filter(
     (scene) => scene.status === "ready"
   ).length
@@ -189,7 +242,13 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
       <ProjectHeader
         project={project}
         run={pipeline.run}
-        onFpsChange={(fps) => patch({ fps })}
+        onFpsChange={(fps) =>
+          persist(
+            { fps },
+            "Frame rate saved",
+            `Scenes export at ${fps} fps — match your timeline or the overlay judders.`
+          )
+        }
         onRun={() => {
           pipeline.start()
           toast.add({
@@ -206,8 +265,18 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
 
       <PipelineProgress run={pipeline.run} onCancel={pipeline.stop} />
 
-      <Tabs defaultValue="scenes">
+      <Tabs
+        defaultValue={
+          project.transcript.words.length === 0 ? "media" : "scenes"
+        }
+      >
         <TabsList>
+          <TabsTrigger value="media">
+            Media
+            {needsMediaAttention ? (
+              <Badge variant="secondary">check</Badge>
+            ) : null}
+          </TabsTrigger>
           <TabsTrigger value="cleanup">
             Cleanup
             {project.spans.length > 0 && project.cleanupApprovedAt === null ? (
@@ -223,6 +292,10 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
           <TabsTrigger value="copy">Copy</TabsTrigger>
           <TabsTrigger value="style">Style guide</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="media" className="pt-4">
+          <MediaSettings media={project.media} onSave={saveMedia} />
+        </TabsContent>
 
         <TabsContent value="cleanup" className="pt-4">
           <CleanupReview

@@ -5,7 +5,7 @@
  * is server-only. These go over HTTP, from components running in the browser.
  */
 
-import type { DirListing, ProjectSummary } from "@/lib/types"
+import type { DirListing, Project, ProjectSummary } from "@/lib/types"
 
 /**
  * Where the folder picker opens.
@@ -28,6 +28,23 @@ export async function addProject(path: string): Promise<ProjectSummary> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path }),
+  })
+}
+
+/**
+ * Saves the settings a run reads: media roles and sync, fps, style guide.
+ *
+ * Everything else on a project is pipeline output; the route whitelists these
+ * three and drops the rest rather than letting a client overwrite results.
+ */
+export async function saveProject(
+  id: string,
+  patch: Partial<Pick<Project, "media" | "fps" | "styleGuide">>
+): Promise<Project> {
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
   })
 }
 

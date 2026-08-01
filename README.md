@@ -22,7 +22,7 @@ Both processes share `~/.videotool/mastra.db`, so a run started in the app is
 inspectable in Studio and vice versa.
 
 ```bash
-npm test        # segment tiling, transcript units, scene validation
+npm test        # segment tiling, transcript units, media roles, scene validation
 npm run lint
 npm run typecheck
 ```
@@ -45,6 +45,37 @@ the deliverables (transcript, spans, scenes, copy) and is portable; moving the
 folder moves the work. `~/.videotool/mastra.db` owns run state and is
 disposable — losing it costs a re-run. Every step writes to `project.json`
 before returning, which is why a lost stream costs nothing but the progress bar.
+
+### Two recorders, one transcript
+
+The ordinary shooting setup records the same speech twice — a camera capturing
+its own scratch audio, and a separate mic or recorder capturing the good audio.
+Both are media, both have sound, and transcribing both puts the whole talk into
+the script twice.
+
+So each file carries three settings, on the project's **Media** tab:
+
+| | |
+|---|---|
+| `transcribe` | whether this file's audio is sent to the transcriber |
+| `voices` | the clip this file is the audio *for* |
+| `offsetSec` | seconds added to its word timings to land on that clip's clock |
+
+`scan` fills them in when the reading is unambiguous — exactly one standalone
+audio file and exactly one video with sound gets paired automatically, mic as
+the source and camera as the anchor. Anything more ambiguous transcribes
+everything and flags the Media tab, because pairing the wrong two files produces
+a result that still looks plausible.
+
+`voices` is what keeps the shot list useful: words from the mic are re-tagged
+with the camera clip, so a scene tells you to scrub the file actually on your
+timeline rather than an mp3. `offsetSec` is the one thing nothing can infer —
+sync in your NLE, read the delta, type it in. A mic that rolled 8.2s before the
+camera is `-8.2`. Settings survive a re-scan, and a run warns if the offset
+pushes words before 00:00.
+
+A screen recording that captured its own audio needs none of this: one file,
+one clock, `voices: null`.
 
 ### The AI never rewrites the transcript
 
@@ -86,6 +117,7 @@ src/mastra/
   lib/
     project.ts                project.json read/modify/write, atomic + queued
     segments.ts               words ↔ segments ↔ spans
+    media.ts                  transcription sources, pairing, sync offsets
     stt.ts                    AssemblyAI word timestamps, ms → seconds
     render.ts                 Playwright frame-stepping and measurement
     validate-scene.ts         the §5 constraints, enforced
@@ -94,10 +126,12 @@ app/
   page.tsx                    projects list
   p/[id]/page.tsx             project view
   api/pipeline/route.ts       start and resume, both streaming
+  api/projects/[id]/route.ts  PATCH media roles, fps, style guide
   api/projects  api/browse  api/reveal
 components/
-  project/                    header, pipeline progress, cleanup diff,
-                              scene list, copy, style guide, shot list
+  project/                    header, pipeline progress, media settings,
+                              cleanup diff, scene list, copy, style guide,
+                              shot list
   projects/                   browser (list/card views), row, card,
                               thumbnail, add-project dialog
   scene/scene-frame.tsx       the sandboxed preview iframe
@@ -112,7 +146,8 @@ lib/
   run-reducer.ts              stream parts → Project and Run
   project.ts                  derivations — clean script, shot list, counts
   scene-controller.ts         postMessage scrubber injected into previews
-tests/                        segments, transcript units, scene validation
+tests/                        segments, transcript units, media roles,
+                              scene validation
 ```
 
 ## Projects list

@@ -50,10 +50,42 @@ export const WordSchema = z.object({
 /* Media and scenes                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * One file in the project folder.
+ *
+ * The last three fields exist because the same performance is routinely
+ * captured twice: a camera recording its own scratch audio, and a separate mic
+ * recording the good audio. Without them, `scan` finds both, `transcribe`
+ * transcribes both, and the script contains the whole talk twice — with half
+ * the resulting scenes carrying timecodes on one clock and half on the other.
+ *
+ * All three default, so a `project.json` written before they existed still
+ * parses and behaves the way it used to.
+ */
 export const MediaFileSchema = z.object({
   path: z.string(),
   durationSec: z.number(),
   hasAudio: z.boolean(),
+  /** False for a standalone audio file — how a separate mic track is spotted. */
+  hasVideo: z.boolean().default(true),
+  /** Whether this file's audio is sent to the transcriber. */
+  transcribe: z.boolean().default(true),
+  /**
+   * Seconds added to every word from this file to land it on the anchor clock.
+   *
+   * A mic started 8.2s before the camera reads -8.2: its own 10.0s mark is the
+   * camera's 1.8s. Zero for a file that is its own anchor.
+   */
+  offsetSec: z.number().default(0),
+  /**
+   * The clip this file is the audio for, as a project-relative path.
+   *
+   * Set, and words from this file are tagged with *that* path — so a scene cut
+   * from the good mic still tells the editor to scrub the camera clip, which is
+   * the one they actually have on the timeline. Null means the file speaks for
+   * itself.
+   */
+  voices: z.string().nullable().default(null),
 })
 
 export const SceneStatusSchema = z.enum([

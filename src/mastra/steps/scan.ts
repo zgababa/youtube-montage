@@ -12,6 +12,7 @@ import path from "node:path"
 import { createStep } from "@mastra/core/workflows"
 
 import { isMediaFile, probe } from "../lib/ffmpeg"
+import { assignRoles, describeRoles, type ProbedFile } from "../lib/media"
 import { preflight } from "../lib/preflight"
 import {
   createProject,
@@ -77,24 +78,32 @@ export const scanStep = createStep({
         )
       }
 
-      const media: MediaFile[] = []
+      const probed: ProbedFile[] = []
       for (const [index, absolute] of files.entries()) {
         const relative = path.relative(projectPath, absolute)
         await report.progress(index / files.length, relative)
-        const { durationSec, hasAudio } = await probe(absolute)
-        media.push({ path: relative, durationSec, hasAudio })
+        const { durationSec, hasAudio, hasVideo } = await probe(absolute)
+        probed.push({ path: relative, durationSec, hasAudio, hasVideo })
         await report.log(`${relative} — ${durationSec.toFixed(1)}s`)
       }
 
       // Longest first: it's almost always the A-cam, and scanning it first
       // makes the media list read sensibly.
-      media.sort((a, b) => b.durationSec - a.durationSec)
+      probed.sort((a, b) => b.durationSec - a.durationSec)
 
       const existing = await tryReadStoredProject(projectPath)
+      // Settings carry forward from whatever's on disk, so re-running scan
+      // doesn't discard a sync offset the user measured by hand.
+      const media = assignRoles(probed, existing?.media)
+
       if (existing) {
         await updateProject(projectPath, (project) => ({ ...project, media }))
       } else {
         await createProject(projectPath, blankProject(projectPath, media))
+      }
+
+      for (const line of describeRoles(media)) {
+        await report.log(line)
       }
 
       await report.emit("media", {

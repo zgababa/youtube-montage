@@ -26,21 +26,29 @@ export const extractAudioStep = createStep({
 
     return runStep(report, async () => {
       const project = await readStoredProject(projectPath)
-      const withAudio = project.media.filter((file) => file.hasAudio)
 
-      if (withAudio.length === 0) {
+      if (!project.media.some((file) => file.hasAudio)) {
         throw new Error(
           "None of the media files have an audio track — there is nothing to transcribe."
         )
       }
 
-      const totalSec = withAudio.reduce(
-        (sum, file) => sum + file.durationSec,
-        0
+      // Only the transcription sources. Extracting the camera's scratch audio
+      // when a separate mic is the source is pure waste — nothing reads it.
+      const sources = project.media.filter(
+        (file) => file.hasAudio && file.transcribe
       )
+
+      if (sources.length === 0) {
+        throw new Error(
+          "No media file is marked as a transcription source. Pick one in the project's Media tab — with a camera and a separate mic, that's usually the mic."
+        )
+      }
+
+      const totalSec = sources.reduce((sum, file) => sum + file.durationSec, 0)
       let doneSec = 0
 
-      for (const file of withAudio) {
+      for (const file of sources) {
         await report.detail(file.path)
         await extractAudio(
           toAbsolute(projectPath, file.path),

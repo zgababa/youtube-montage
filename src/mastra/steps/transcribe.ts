@@ -9,6 +9,7 @@
 import { createStep } from "@mastra/core/workflows"
 
 import { audioPathFor } from "../lib/audio"
+import { anchorWords } from "../lib/media"
 import { readStoredProject, updateProject } from "../lib/project"
 import { transcribeFile } from "../lib/stt"
 import type { Word } from "../schemas"
@@ -25,16 +26,24 @@ export const transcribeStep = createStep({
 
     return runStep(report, async () => {
       const project = await readStoredProject(projectPath)
-      const withAudio = project.media.filter((file) => file.hasAudio)
+      // Not every file with sound is a transcription source. A camera rolling
+      // alongside a separate mic captures the same speech, and transcribing
+      // both would put the whole talk in the script twice.
+      const sources = project.media.filter(
+        (file) => file.hasAudio && file.transcribe
+      )
+
+      if (sources.length === 0) {
+        throw new Error(
+          "No media file is marked as a transcription source. Pick one in the project's Media tab — with a camera and a separate mic, that's usually the mic."
+        )
+      }
 
       const words: Word[] = []
-      const totalSec = withAudio.reduce(
-        (sum, file) => sum + file.durationSec,
-        0
-      )
+      const totalSec = sources.reduce((sum, file) => sum + file.durationSec, 0)
       let doneSec = 0
 
-      for (const file of withAudio) {
+      for (const file of sources) {
         await report.detail(file.path)
         const fileWords = await transcribeFile(
           audioPathFor(project.id, file.path),
@@ -49,13 +58,27 @@ export const transcribeStep = createStep({
           }
         )
         doneSec += file.durationSec
-        words.push(...fileWords)
-        await report.log(`${file.path} — ${fileWords.length} words`)
+        // Onto the anchor clock before anything else sees them: every span,
+        // scene window and chapter below this line assumes one timeline.
+        words.push(...anchorWords(fileWords, file))
+        await report.log(
+          `${file.path} — ${fileWords.length} words` +
+            (file.voices ? ` (as ${file.voices})` : "")
+        )
       }
 
       if (words.length === 0) {
         throw new Error(
           "Transcription returned no words. Check the audio actually contains speech, and that ASSEMBLYAI_API_KEY is valid."
+        )
+      }
+
+      // A wrong-signed offset is otherwise invisible: the transcript reads
+      // perfectly and every timecode is shifted off the front of the clip.
+      const early = words.filter((word) => word.start < 0).length
+      if (early > 0) {
+        await report.log(
+          `warning: ${early} words land before 00:00 — check the sync offset`
         )
       }
 
@@ -74,7 +97,7 @@ export const transcribeStep = createStep({
       await report.emit("transcript", {
         wordCount: words.length,
         durationSec: words[words.length - 1].end - words[0].start,
-        fileCount: withAudio.length,
+        fileCount: sources.length,
       })
 
       return { projectPath }

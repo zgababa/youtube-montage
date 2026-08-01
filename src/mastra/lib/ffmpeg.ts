@@ -13,6 +13,7 @@ import path from "node:path"
 export interface ProbeResult {
   durationSec: number
   hasAudio: boolean
+  hasVideo: boolean
 }
 
 /** Video and audio containers worth scanning for. */
@@ -56,9 +57,15 @@ export async function probe(file: string): Promise<ProbeResult> {
     streams?: { codec_type?: string }[]
   }
 
+  const streams = parsed.streams ?? []
+
   return {
     durationSec: Number(parsed.format?.duration ?? 0),
-    hasAudio: (parsed.streams ?? []).some((s) => s.codec_type === "audio"),
+    hasAudio: streams.some((s) => s.codec_type === "audio"),
+    // Asked of ffprobe rather than inferred from the extension: `.mov` and
+    // `.mp4` are both perfectly legal containers for audio alone, and a
+    // separately-recorded mic track is exactly what this distinguishes.
+    hasVideo: streams.some((s) => s.codec_type === "video"),
   }
 }
 
