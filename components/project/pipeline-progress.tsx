@@ -195,8 +195,24 @@ function StepIcon({ status }: { status: RunStep["status"] }) {
 function StepRow({ step }: { step: RunStep }) {
   const hasLog = step.log.length > 0
 
+  /**
+   * Open while the step is working, closed once it isn't — until the user says
+   * otherwise, after which their choice sticks.
+   *
+   * The agent steps stream their decisions into this log as they make them, and
+   * a running step is the one moment that's worth watching. Leaving it shut by
+   * default meant the only visible sign of a minute of thinking was a progress
+   * bar that couldn't move.
+   */
+  const [pinned, setPinned] = React.useState<boolean | null>(null)
+  const open = pinned ?? (step.status === "running" && hasLog)
+
   return (
-    <Collapsible className="py-1">
+    <Collapsible
+      className="py-1"
+      open={open}
+      onOpenChange={(next) => setPinned(next)}
+    >
       <div className="flex items-center gap-3">
         <span
           className={cn(

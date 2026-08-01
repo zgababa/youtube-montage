@@ -22,6 +22,18 @@ export interface GenerateStructuredOptions<T extends z.ZodType> {
   schema: T
   /** Labels the error if both attempts fail. */
   label: string
+  /**
+   * Called with the object as it fills in, for steps that want to show work.
+   *
+   * These agents think for a long time — a 400-segment cleanup window is the
+   * better part of a minute — and a progress bar that can only move between
+   * whole passes says nothing about whether anything is happening. Partials are
+   * the only signal available during a call.
+   *
+   * Never awaited: reporting must not backpressure generation, and a failure to
+   * describe the work is not a reason to lose it.
+   */
+  onPartial?: (partial: Partial<z.infer<T>>) => void
 }
 
 export async function generateStructured<T extends z.ZodType>({
@@ -29,8 +41,9 @@ export async function generateStructured<T extends z.ZodType>({
   prompt,
   schema,
   label,
+  onPartial,
 }: GenerateStructuredOptions<T>): Promise<z.infer<T>> {
-  const first = await attempt(agent, prompt, schema)
+  const first = await attempt(agent, prompt, schema, onPartial)
   if (first.ok) return first.value
 
   const repairPrompt = [
@@ -43,7 +56,7 @@ export async function generateStructured<T extends z.ZodType>({
     "Return the corrected result. Output only the data — no commentary, no explanation of what changed.",
   ].join("\n")
 
-  const second = await attempt(agent, repairPrompt, schema)
+  const second = await attempt(agent, repairPrompt, schema, onPartial)
   if (second.ok) return second.value
 
   throw new Error(
@@ -51,15 +64,33 @@ export async function generateStructured<T extends z.ZodType>({
   )
 }
 
+/**
+ * The elements of a streaming array that are known to be finished.
+ *
+ * Partial JSON arrives left to right, so the last element in a partial is
+ * always suspect — its final field may be half a string. Everything before it
+ * is settled, because the parser only starts an element once the previous one
+ * closed. Reporting the last one too would show a truncated `reason` as the
+ * model's decision.
+ *
+ * `from` is how many the caller has already handled, so this returns only what
+ * is newly safe to report.
+ */
+export function settled<T>(list: T[] | undefined, from: number): T[] {
+  const items = list ?? []
+  return items.slice(from, Math.max(from, items.length - 1))
+}
+
 type Attempt<T> = { ok: true; value: T } | { ok: false; error: string }
 
 async function attempt<T extends z.ZodType>(
   agent: Agent,
   prompt: string,
-  schema: T
+  schema: T,
+  onPartial?: (partial: Partial<z.infer<T>>) => void
 ): Promise<Attempt<z.infer<T>>> {
   try {
-    const response = await agent.generate(prompt, {
+    const stream = await agent.stream(prompt, {
       structuredOutput: {
         schema,
         // 'auto' uses the provider's native structured output where it's
@@ -69,7 +100,17 @@ async function attempt<T extends z.ZodType>(
       },
     })
 
-    const parsed = schema.safeParse(response.object)
+    // Streamed rather than generated even with no observer, so there's one code
+    // path to reason about. `stream.object` still resolves to the whole
+    // validated result, so callers that ignore partials behave exactly as they
+    // did when this called `generate`.
+    if (onPartial) {
+      for await (const partial of stream.objectStream) {
+        onPartial(partial as Partial<z.infer<T>>)
+      }
+    }
+
+    const parsed = schema.safeParse(await stream.object)
     if (parsed.success) return { ok: true, value: parsed.data }
     return { ok: false, error: formatIssues(parsed.error) }
   } catch (error) {

@@ -4,6 +4,7 @@ import {
   assertTiles,
   buildSegments,
   cutsToSpans,
+  describeCut,
   keptSegments,
   type CutDecision,
 } from "../src/mastra/lib/segments"
@@ -198,5 +199,76 @@ describe("keptSegments", () => {
 
   test("returns everything when nothing is cut", () => {
     expect(keptSegments(segments, cutsToSpans([], segments))).toHaveLength(4)
+  })
+})
+
+describe("describeCut", () => {
+  const segments = buildSegments([
+    { w: "um", start: 10, end: 10.3, file: "a.mp4" },
+    { w: "so", start: 10.35, end: 10.6, file: "a.mp4" },
+    { w: "the", start: 10.65, end: 10.9, file: "a.mp4" },
+    { w: "agent", start: 71.0, end: 71.5, file: "a.mp4" },
+    { w: "runs", start: 71.55, end: 72.0, file: "a.mp4" },
+  ])
+
+  /**
+   * The agent works in segment indices, which say nothing to a reader. The log
+   * has to show the moment and the words, or a streaming cleanup pass is just
+   * a list of numbers going by.
+   */
+  test("renders a cut as timecode, category and the words it removes", () => {
+    const line = describeCut(
+      { from: 0, to: 0, category: "filler", reason: "hesitation" },
+      segments
+    )
+
+    expect(line).toContain("00:10")
+    expect(line).toContain("filler")
+    expect(line).toContain("um so the")
+  })
+
+  test("spans a multi-segment cut from first start to last end", () => {
+    const line = describeCut({ from: 0, to: 1, category: "tangent" }, segments)
+
+    expect(line).toContain("00:10")
+    expect(line).toContain("01:12")
+  })
+
+  test("numbers the line when given a position", () => {
+    expect(describeCut({ from: 0 }, segments, 7)).toMatch(/^\s*7\. /)
+  })
+
+  /** Called mid-stream, so most fields are routinely still missing. */
+  test("survives a half-arrived decision", () => {
+    const line = describeCut({ from: 0 }, segments)
+
+    expect(line).toContain("um so the")
+    // No category yet — shown as unknown rather than crashing or guessing.
+    expect(line).toContain("?")
+  })
+
+  test("nothing to render before an index has arrived", () => {
+    expect(describeCut({}, segments)).toBeNull()
+    expect(describeCut({ category: "filler" }, segments)).toBeNull()
+  })
+
+  test("an index outside the window renders nothing", () => {
+    // A hallucinated index must not be reported as a real decision.
+    expect(describeCut({ from: 99, to: 99 }, segments)).toBeNull()
+  })
+
+  test("long text is truncated to one line", () => {
+    const long = buildSegments(
+      Array.from({ length: 30 }, (_, i) => ({
+        w: `word${i}`,
+        start: 1 + i * 0.2,
+        end: 1.15 + i * 0.2,
+        file: "a.mp4",
+      }))
+    )
+    const line = describeCut({ from: 0, category: "filler" }, long)!
+
+    expect(line).toContain("…")
+    expect(line.length).toBeLessThan(120)
   })
 })

@@ -17,11 +17,12 @@ import {
   assertTiles,
   buildSegments,
   cutsToSpans,
+  describeCut,
   renderSegments,
   windowSegments,
   type CutDecision,
 } from "../lib/segments"
-import { generateStructured } from "../lib/structured"
+import { generateStructured, settled } from "../lib/structured"
 import { SpanCategorySchema, SpanSchema, type Span } from "../schemas"
 import { PipelineIO, message, reporter } from "./shared"
 
@@ -95,17 +96,36 @@ export const cleanupStep = createStep({
       const cuts: CutDecision[] = []
 
       for (const [index, window] of windows.entries()) {
-        await report.progress(
-          index / windows.length,
-          windows.length > 1
-            ? `Pass ${index + 1} of ${windows.length}`
-            : undefined
-        )
+        const pass =
+          windows.length > 1 ? `Pass ${index + 1} of ${windows.length}` : "Pass"
+
+        await report.progress(index / windows.length, pass)
+
+        let announced = 0
+
+        /** One cut, logged as the words it removes rather than two indices. */
+        const describe = (cut: Partial<CutDecision>, position: number) => {
+          const line = describeCut(cut, window, position + 1)
+          return line ? report.log(line) : Promise.resolve()
+        }
 
         const result = await generateStructured({
           agent: cleanupAgent,
           schema: CutsSchema,
           label: "cleanup",
+          onPartial: (partial) => {
+            for (const cut of settled(partial.cuts, announced)) {
+              void describe(cut, announced)
+              announced += 1
+            }
+            // Creeps within the pass rather than jumping between passes. The
+            // divisor is a guess at a typical cut count — capped, so a long
+            // window can't run the bar past the pass it's in.
+            void report.progress(
+              (index + Math.min(0.95, announced / 40)) / windows.length,
+              `${pass} · ${announced} cuts so far`
+            )
+          },
           prompt: [
             "Here is the transcript as numbered segments. Decide what to cut.",
             "",
@@ -115,8 +135,14 @@ export const cleanupStep = createStep({
           ].join("\n"),
         })
 
+        // Whatever the stream didn't get to announce — always at least the last
+        // element, which the one-short rule above deliberately holds back.
+        for (let i = announced; i < result.cuts.length; i += 1) {
+          await describe(result.cuts[i], i)
+        }
+
         cuts.push(...result.cuts)
-        await report.log(`Pass ${index + 1}: ${result.cuts.length} cuts`)
+        await report.log(`${pass}: ${result.cuts.length} cuts`)
       }
 
       // Indices back to seconds, gaps filled with keeps. This is where §3's

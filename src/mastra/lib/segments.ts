@@ -295,3 +295,41 @@ export function assertTiles(spans: Span[], segments: Segment[]) {
     }
   }
 }
+
+/**
+ * One proposed cut, as a line to read while it streams in.
+ *
+ * The agent works in segment indices, which are meaningless to look at. This
+ * turns a decision back into the thing it removes — when, what category, and
+ * the actual words — so a cleanup pass shows its reasoning as it happens
+ * rather than only its total afterwards.
+ *
+ * Takes a partial because it is called mid-stream, before every field of a
+ * decision has arrived.
+ */
+export function describeCut(
+  cut: Partial<CutDecision>,
+  segments: Segment[],
+  position?: number
+): string | null {
+  if (cut.from === undefined) return null
+
+  const covered = segments.filter(
+    (segment) =>
+      segment.index >= cut.from! && segment.index <= (cut.to ?? cut.from!)
+  )
+  if (covered.length === 0) return null
+
+  const first = covered[0]
+  const last = covered[covered.length - 1]
+  const text = covered.map((segment) => segment.text).join(" ")
+  const prefix =
+    position === undefined ? "" : `${String(position).padStart(3)}. `
+
+  return `${prefix}${clock(first.start)}–${clock(last.end)}  ${cut.category ?? "?"}  “${truncate(text)}”`
+}
+
+/** Long enough to recognise the moment, short enough to stay on one line. */
+function truncate(text: string, max = 70) {
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
+}
