@@ -69,8 +69,20 @@ export const generateSceneStep = createStep({
     "Generate one scene's HTML, validate it, and repair it if needed",
   inputSchema: SceneJobSchema,
   outputSchema: SceneResultSchema,
-  execute: async ({ inputData, writer }) =>
-    generateAndPersistScene(inputData, writer as PipelineWriter | undefined),
+  execute: async ({ inputData, writer }) => {
+    const stream = writer as PipelineWriter | undefined
+    const result = await generateAndPersistScene(inputData, stream)
+
+    // Only the foreach runs this step — review regenerates a scene by calling
+    // the body directly — so this line belongs to the `generate` row and can't
+    // land in a phase that has already reported itself finished.
+    await emitter(stream)("log", {
+      step: "generate",
+      line: `${result.id} → ${result.status}`,
+    })
+
+    return result
+  },
 })
 
 /**

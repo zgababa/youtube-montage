@@ -118,7 +118,9 @@ export function reduceParts(
   }
 
   return {
-    run: head ? toRun(head, steps, gate, logs, streaming) : null,
+    run: head
+      ? toRun(head, steps, gate, logs, streaming, patch.scenes ?? [])
+      : null,
     patch,
     gate,
   }
@@ -129,7 +131,8 @@ function toRun(
   steps: Map<string, PipelineDataParts["step"]>,
   gate: PipelineDataParts["gate"] | null,
   logs: Record<string, string[]>,
-  streaming: boolean
+  streaming: boolean,
+  scenes: Scene[]
 ): Run {
   return {
     id: head.runId,
@@ -139,17 +142,46 @@ function toRun(
     // shows the shape of the run rather than growing a row at a time.
     steps: STEP_IDS.map((id): RunStep => {
       const reported = steps.get(id)
+      const fanOut = id === "generate" && reported?.status === "running"
+
       return {
         id,
         label: STEP_LABELS[id],
         status: reported?.status ?? "pending",
-        progress: reported?.progress,
-        detail: reported?.detail,
+        progress: fanOut ? generateProgress(scenes) : reported?.progress,
+        detail:
+          (fanOut ? generateDetail(scenes) : undefined) ?? reported?.detail,
         log: logs[id] ?? [],
       }
     }),
     suspendedOn: gate?.on ?? null,
   }
+}
+
+/**
+ * How far the scene fan-out has got, counted from the scenes themselves.
+ *
+ * The phase can't report a fraction from the server: it's a `.foreach` of
+ * independent runs finishing out of order, so no single one of them knows how
+ * many of its siblings are done. The client does — every scene reaches it as
+ * `data-scene`, reconciled by id — so the count is derived here rather than
+ * being threaded through shared state on the way out.
+ */
+function generateProgress(scenes: Scene[]): number | undefined {
+  if (scenes.length === 0) return undefined
+  return (settledScenes(scenes) / scenes.length) * 100
+}
+
+function generateDetail(scenes: Scene[]): string | undefined {
+  if (scenes.length === 0) return undefined
+  return `${settledScenes(scenes)} of ${scenes.length} scenes`
+}
+
+/** Neither queued nor being written: this scene's generation is over. */
+function settledScenes(scenes: Scene[]): number {
+  return scenes.filter(
+    (scene) => scene.status !== "pending" && scene.status !== "generating"
+  ).length
 }
 
 /**

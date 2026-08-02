@@ -19,7 +19,8 @@ import { SceneJobSchema } from "../steps/generate-scene"
 import { reviewStep } from "../steps/review"
 import { scanStep } from "../steps/scan"
 import { scenariosStep } from "../steps/scenarios"
-import { PipelineIO } from "../steps/shared"
+import { PipelineIO, reporter } from "../steps/shared"
+import type { PipelineWriter } from "../stream/contract"
 import { shotlistStep } from "../steps/shotlist"
 import { styleGuideStep } from "../steps/style-guide"
 import { transcribeStep } from "../steps/transcribe"
@@ -50,8 +51,16 @@ export const brollWorkflow = createWorkflow({
   .then(scenariosStep)
   // `.foreach` consumes an array, so the single `{ projectPath }` has to be
   // fanned out into one self-contained job per scene here.
-  .map(async ({ inputData }) => {
+  //
+  // The fan-out is also where the `generate` row starts and stops reporting.
+  // Nothing else can: the phase is a `.foreach` rather than a step, so there is
+  // no single execution whose lifecycle the panel could follow — which is why
+  // the row used to sit on "waiting" through the whole phase and stay there
+  // long after every scene had come back.
+  .map(async ({ inputData, writer }) => {
     const project = await readStoredProject(inputData.projectPath)
+    await reporter("generate", writer as PipelineWriter).start()
+
     return project.scenes.map((scene) => ({
       projectPath: inputData.projectPath,
       scene,
@@ -62,7 +71,13 @@ export const brollWorkflow = createWorkflow({
   // And folded back in: `.foreach` returns a bare array of per-scene results,
   // which carries no `projectPath`. `getInitData()` recovers it from the run's
   // original input rather than threading it through every scene job's output.
-  .map(async ({ getInitData }) => getInitData<PipelineIO>())
+  //
+  // Reached whether or not every scene succeeded — one scene failing is not the
+  // phase failing (it reports itself on its own card), and the run continues.
+  .map(async ({ getInitData, writer }) => {
+    await reporter("generate", writer as PipelineWriter).done()
+    return getInitData<PipelineIO>()
+  })
   // Suspends: approve, reject, or regenerate scenes.
   .then(reviewStep)
   .then(exportStep)
