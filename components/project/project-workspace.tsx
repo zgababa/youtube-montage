@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation"
 
 import { applyPatch } from "@/lib/run-reducer"
 import { reveal, saveProject } from "@/lib/client-api"
-import { sceneCounts } from "@/lib/project"
+import { sceneCounts, withDecisions } from "@/lib/project"
 import type {
   MediaFile,
   Project,
-  Scene,
   Span,
   StyleGuide,
   TranscriptionHints,
@@ -61,16 +60,36 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   const pipeline = usePipeline(fromDisk.path, { onSettled })
 
   /**
-   * Disk, then local edits, then the live run — in that order.
+   * Decisions are collected locally and submitted together.
+   *
+   * One resume per click would be wrong: each `run.resume()` restarts the step,
+   * so approving twelve scenes individually would be twelve round trips through
+   * the gate.
+   */
+  const [decisions, setDecisions] = React.useState<
+    Record<string, SceneDecision>
+  >({})
+
+  /**
+   * Disk, then local edits, then the live run, then this round's decisions.
    *
    * The run wins over local edits on purpose. A span the user toggled is only
    * theirs until the workflow confirms what it actually did with it, and the
    * confirmation is the thing worth showing. It also means local edits retire
    * themselves as the run reports, with nothing to clear.
+   *
+   * Scene decisions are the exception, and have to come last. The run's patch
+   * carries the whole scenes array, so anything merged before it is replaced by
+   * those scenes on the next render — which is exactly what made Approve and
+   * Reject look like dead buttons.
    */
   const project = React.useMemo(
-    () => applyPatch(applyPatch(fromDisk, local), pipeline.patch),
-    [fromDisk, local, pipeline.patch]
+    () =>
+      withDecisions(
+        applyPatch(applyPatch(fromDisk, local), pipeline.patch),
+        decisions
+      ),
+    [fromDisk, local, pipeline.patch, decisions]
   )
 
   function patch(next: Partial<Project>) {
@@ -104,15 +123,6 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
         })
         toast.add({ title: "Couldn't save", description: error.message })
       })
-  }
-
-  function patchScene(id: string, next: Partial<Scene>) {
-    setLocal((current) => ({
-      ...current,
-      scenes: (current.scenes ?? project.scenes).map((scene) =>
-        scene.id === id ? { ...scene, ...next } : scene
-      ),
-    }))
   }
 
   /* ---------------------------------------------------------------------- */
@@ -157,33 +167,23 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   /* ---------------------------------------------------------------------- */
 
   /**
-   * Decisions are collected locally and submitted together.
-   *
-   * One resume per click would be wrong: each `run.resume()` restarts the step,
-   * so approving twelve scenes individually would be twelve round trips through
-   * the gate.
+   * One entry per scene the user has touched. The card's status comes from
+   * here until the review is submitted, so a decision is a single write.
    */
-  const [decisions, setDecisions] = React.useState<
-    Record<string, SceneDecision>
-  >({})
-
   function decide(decision: SceneDecision) {
     setDecisions((current) => ({ ...current, [decision.id]: decision }))
   }
 
   function approveScene(id: string) {
     decide({ id, action: "approve" })
-    patchScene(id, { status: "approved" })
   }
 
   function rejectScene(id: string) {
     decide({ id, action: "reject" })
-    patchScene(id, { status: "rejected" })
   }
 
   function regenerateScene(id: string, note: string) {
     decide({ id, action: "regenerate", note: note || undefined })
-    patchScene(id, { status: "generating", note: note || undefined })
   }
 
   /** Sends everything decided so far and lets the run continue to export. */

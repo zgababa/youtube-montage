@@ -6,6 +6,7 @@
  */
 
 import { durationLabel, timecode } from "@/lib/format"
+import type { SceneDecision } from "@/src/mastra/stream/contract"
 import type { Project, Scene, Span, SpanCategory, Word } from "@/lib/types"
 
 export interface SpanText extends Span {
@@ -76,6 +77,52 @@ export function sceneCounts(scenes: Scene[]) {
     failed: scenes.filter((scene) => scene.status === "failed").length,
     overrunning: scenes.filter(overrunsWindow).length,
   }
+}
+
+/**
+ * The project as it looks with this round's decisions on it.
+ *
+ * Applied *after* the live run's patch, which is the whole point. A run patch
+ * carries the entire scenes array, and a shallow merge replaces the array
+ * wholesale — so a decision held anywhere earlier in the chain is overwritten
+ * by the same streamed scenes on the next render, and clicking Approve does
+ * visibly nothing.
+ *
+ * The precedence is right as well as necessary. A decision is the user telling
+ * the workflow what to do with a scene it has already reported on; until they
+ * submit, theirs is the newer fact. Submitting clears them, and the statuses
+ * the run reports back take over again.
+ */
+export function withDecisions(
+  project: Project,
+  decisions: Record<string, SceneDecision>
+): Project {
+  if (Object.keys(decisions).length === 0) return project
+
+  return {
+    ...project,
+    scenes: project.scenes.map((scene) => {
+      const decision = decisions[scene.id]
+      if (!decision) return scene
+
+      return {
+        ...scene,
+        status: DECIDED_STATUS[decision.action],
+        // Only meaningful for `regenerate`, and only worth showing once the
+        // user actually typed one.
+        note: decision.note ?? scene.note,
+      }
+    }),
+  }
+}
+
+/** What the card shows between deciding and submitting. */
+const DECIDED_STATUS: Record<SceneDecision["action"], Scene["status"]> = {
+  approve: "approved",
+  reject: "rejected",
+  // Not "pending": the workflow regenerates it the moment the review resumes,
+  // and the row already knows how to render a scene being written.
+  regenerate: "generating",
 }
 
 /** The plain-text file that sits on the second monitor during the edit (§11). */
