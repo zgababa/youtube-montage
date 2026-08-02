@@ -24,7 +24,7 @@ import {
 } from "@/lib/format"
 import { overrunsWindow } from "@/lib/project"
 import { useInView } from "@/hooks/use-in-view"
-import type { Scene, SceneType } from "@/lib/types"
+import type { Scene, SceneDraft, SceneType } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/tooltip"
 import { Highlight } from "@/components/highlight"
 import { SceneFrame, type SceneBackdrop } from "@/components/scene/scene-frame"
+import { SceneDraftFrame } from "@/components/scene/scene-draft-frame"
 import { RegenerateDialog } from "@/components/project/regenerate-dialog"
 
 const TYPE_ICONS: Record<SceneType, typeof FlowIcon> = {
@@ -62,6 +63,8 @@ const TYPE_ICONS: Record<SceneType, typeof FlowIcon> = {
 interface SceneRowProps {
   scene: Scene
   backdrop: SceneBackdrop
+  /** Set only while this scene is being written, and only during a live run. */
+  draft?: SceneDraft
   /** Active scene search, highlighted in the covered line and intent. */
   query?: string
   onApprove: (id: string) => void
@@ -73,6 +76,7 @@ interface SceneRowProps {
 export function SceneRow({
   scene,
   backdrop,
+  draft,
   query = "",
   onApprove,
   onReject,
@@ -212,7 +216,7 @@ export function SceneRow({
                 </span>
               </div>
             </>
-          ) : (
+          ) : scene.status === "failed" ? (
             <Alert variant="destructive">
               <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} />
               <AlertTitle>Generation failed</AlertTitle>
@@ -221,6 +225,31 @@ export function SceneRow({
                   "The scene step returned no HTML. The rest of the run was unaffected."}
               </AlertDescription>
             </Alert>
+          ) : (
+            /*
+             * Not finished, and not failed. The absence of HTML used to be read
+             * as failure here, which meant every scene accused the run of
+             * having broken for the whole minute it was being written.
+             */
+            <>
+              {inView && draft ? (
+                // Keyed by attempt: a repair is a new document, and the frame
+                // it streams into can only be written forwards.
+                <SceneDraftFrame
+                  key={draft.attempt}
+                  html={draft.html}
+                  backdrop={backdrop}
+                  title={`Draft of ${scene.id}`}
+                />
+              ) : (
+                <Skeleton className="aspect-video w-full rounded-xl" />
+              )}
+              <p className="text-xs text-muted-foreground">
+                {scene.status === "generating"
+                  ? "Writing — it becomes replayable once it passes validation."
+                  : "Queued — scenes are generated three at a time."}
+              </p>
+            </>
           )}
         </div>
 

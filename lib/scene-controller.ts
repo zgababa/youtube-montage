@@ -117,6 +117,69 @@ const CONTROLLER = `
 </script>
 `
 
+/**
+ * The frame a scene streams into while it is still being written.
+ *
+ * A finished scene goes into `srcDoc`, but a scene arriving a few characters at
+ * a time cannot: every assignment reloads the frame, which restarts the
+ * animations and flashes the card ten times a second. So the frame is loaded
+ * once with this shell, and each chunk is `document.write`n into it — the same
+ * incremental parse the browser does for any streamed page, which is why a
+ * half-finished document renders as a half-finished *scene* rather than as
+ * markup.
+ *
+ * Two details are load-bearing:
+ *
+ *   - `document.open()` removes every listener registered on the window, so the
+ *     shell reinstalls its own from a script in the prefix it writes. Without
+ *     that, exactly one chunk ever lands and the scene stops mid-sentence.
+ *   - The prefix leads with a doctype. The scene's own doctype arrives later,
+ *     by which point it is a stray token the parser drops — so writing one
+ *     first is the only way the draft renders in standards mode, and the only
+ *     way its layout matches the finished frame's.
+ */
+export const SCENE_DRAFT_SHELL = `
+<!doctype html>
+<html>
+  <head></head>
+  <body>
+    <script>
+      (function () {
+        var TARGET = ${JSON.stringify(SCENE_MESSAGE_TARGET)};
+        var PREFIX =
+          "<!doctype html>" +
+          ${JSON.stringify(TRANSPARENT_CANVAS)} +
+          "<" + "script>window.__install && window.__install()<" + "/script>";
+
+        function onMessage(event) {
+          var data = event.data;
+          if (!data || data.target !== TARGET) return;
+          if (data.type !== "draft") return;
+          try {
+            if (!window.__opened) {
+              window.__opened = true;
+              document.open();
+              document.write(PREFIX);
+            }
+            document.write(data.chunk);
+          } catch (err) {}
+        }
+
+        // Reachable from the written prefix, which runs in a document that no
+        // longer has this script in it.
+        window.__install = function () {
+          window.removeEventListener("message", onMessage);
+          window.addEventListener("message", onMessage);
+        };
+
+        window.__install();
+        parent.postMessage({ source: TARGET, type: "draft-ready" }, "*");
+      })();
+    </script>
+  </body>
+</html>
+`.trim()
+
 /** Appends the controller to a generated scene without touching its markup. */
 export function withSceneController(html: string) {
   // The canvas bits go in the head — a `color-scheme` meta is only honoured
@@ -135,3 +198,5 @@ export type SceneMessage =
   | { target: typeof SCENE_MESSAGE_TARGET; type: "seek"; ms: number }
   | { target: typeof SCENE_MESSAGE_TARGET; type: "pause"; ms: number }
   | { target: typeof SCENE_MESSAGE_TARGET; type: "play" }
+  /** Appended to the draft frame's open document. Never a whole document. */
+  | { target: typeof SCENE_MESSAGE_TARGET; type: "draft"; chunk: string }

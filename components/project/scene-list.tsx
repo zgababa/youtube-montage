@@ -10,7 +10,7 @@ import {
 } from "@hugeicons/core-free-icons"
 
 import { sceneCounts } from "@/lib/project"
-import type { Project } from "@/lib/types"
+import type { Project, SceneDraft } from "@/lib/types"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +36,8 @@ const BACKDROPS: { value: SceneBackdrop; label: string }[] = [
 
 interface SceneListProps {
   project: Project
+  /** Documents still being written, keyed by scene id. Empty outside a run. */
+  drafts?: Record<string, SceneDraft>
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onRegenerate: (id: string, note: string) => void
@@ -49,6 +51,7 @@ interface SceneListProps {
  */
 export function SceneList({
   project,
+  drafts = {},
   onApprove,
   onReject,
   onRegenerate,
@@ -213,6 +216,7 @@ export function SceneList({
             key={scene.id}
             scene={scene}
             backdrop={backdrop}
+            draft={drafts[scene.id]}
             query={query}
             onApprove={onApprove}
             onReject={onReject}

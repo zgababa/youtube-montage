@@ -11,7 +11,7 @@ import type {
   PipelineUIMessage,
   SceneDecision,
 } from "@/src/mastra/stream/contract"
-import type { Span } from "@/lib/types"
+import type { SceneDraft, Span } from "@/lib/types"
 
 /**
  * The live view of a workflow run.
@@ -47,6 +47,10 @@ export function usePipeline(
   // from `onData` instead. Keyed by step, newest last.
   const [logs, setLogs] = React.useState<Record<string, string[]>>({})
 
+  // Same reason, and the same shape of problem: scene documents arrive in
+  // deltas, keyed by scene, and only matter while the run is in front of you.
+  const [drafts, setDrafts] = React.useState<Record<string, SceneDraft>>({})
+
   const transport = React.useMemo(
     () =>
       new DefaultChatTransport<PipelineUIMessage>({
@@ -65,14 +69,34 @@ export function usePipeline(
       transport,
       onFinish: onSettled,
       onData: (part) => {
-        if (part.type !== "data-log") return
-        const { step, line } = part.data
-        setLogs((current) => ({
-          ...current,
-          // Bounded: a long transcription can emit thousands of lines, and the
-          // collapsible log only ever shows the tail.
-          [step]: [...(current[step] ?? []), line].slice(-200),
-        }))
+        if (part.type === "data-log") {
+          const { step, line } = part.data
+          setLogs((current) => ({
+            ...current,
+            // Bounded: a long transcription can emit thousands of lines, and
+            // the collapsible log only ever shows the tail.
+            [step]: [...(current[step] ?? []), line].slice(-200),
+          }))
+          return
+        }
+
+        if (part.type === "data-scene-draft") {
+          const { id, delta, attempt } = part.data
+          setDrafts((current) => {
+            // A repair is a different document. Keeping the attempt number in
+            // the draft is what lets the frame know to start a new one rather
+            // than append the second attempt to the first.
+            const previous = current[id]
+            const same = previous?.attempt === attempt
+            return {
+              ...current,
+              [id]: {
+                attempt,
+                html: same ? previous.html + delta : delta,
+              },
+            }
+          })
+        }
       },
     })
 
@@ -96,6 +120,7 @@ export function usePipeline(
   return {
     ...(messages.length === 0 ? EMPTY_PIPELINE_STATE : state),
     logs,
+    drafts,
     streaming,
     error,
     stop,

@@ -342,6 +342,7 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
           <div className="flex flex-col gap-6">
             <SceneList
               project={project}
+              drafts={pipeline.drafts}
               onApprove={approveScene}
               onReject={rejectScene}
               onRegenerate={regenerateScene}

@@ -152,6 +152,25 @@ export const pipelineDataSchemas = {
    */
   scene: HydratedSceneSchema,
 
+  /**
+   * A scene's document as the model writes it, in deltas.
+   *
+   * Transient and lossy on purpose. It exists so a scene that is still being
+   * written looks like a scene being written rather than a blank card — the
+   * authoritative HTML arrives as `scene` once it has passed validation, and is
+   * on disk before the run ends.
+   */
+  "scene-draft": z.object({
+    id: z.string(),
+    /** Appended since this scene's last chunk. */
+    delta: z.string(),
+    /**
+     * Which attempt this belongs to. A repair writes a fresh document, so the
+     * client starts over rather than concatenating two of them.
+     */
+    attempt: z.number().int(),
+  }),
+
   /** Transient — frame-level export progress, throttled at the source. */
   export: z.object({
     sceneId: z.string(),
@@ -240,7 +259,11 @@ export type PipelinePartType = `data-${PipelineDataType}`
  * them would bloat every stored run for no gain. They reach the client through
  * `onData` only, never `message.parts`.
  */
-const TRANSIENT: ReadonlySet<PipelineDataType> = new Set(["log", "export"])
+const TRANSIENT: ReadonlySet<PipelineDataType> = new Set([
+  "log",
+  "export",
+  "scene-draft",
+])
 
 /* -------------------------------------------------------------------------- */
 /* The writing side                                                            */

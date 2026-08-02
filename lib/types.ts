@@ -56,6 +56,19 @@ export interface RunStep {
   log: string[]
 }
 
+/**
+ * A scene's document as it is being written, accumulated from the stream.
+ *
+ * Run state, not project state: it exists between "the model started this
+ * scene" and "the scene passed validation", and the finished HTML that
+ * supersedes it is the thing that gets stored.
+ */
+export interface SceneDraft {
+  /** Attempt it belongs to. A repair replaces the draft instead of extending it. */
+  attempt: number
+  html: string
+}
+
 export interface Run {
   id: string
   status: "running" | "suspended" | "success" | "failed"

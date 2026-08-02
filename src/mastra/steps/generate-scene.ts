@@ -25,10 +25,30 @@ import {
   type StoredScene,
   type StyleGuide,
 } from "../schemas"
-import { emitter, type PipelineWriter } from "../stream/contract"
+import { emitter, type Emit, type PipelineWriter } from "../stream/contract"
 
 /** Generation plus two repairs. A third attempt almost never differs. */
 const MAX_ATTEMPTS = 3
+
+/**
+ * How often a scene reports what it has written so far.
+ *
+ * A scene document is a couple of hundred tokens per second arriving in chunks
+ * of a few characters. Forwarding every one of them would be a chunk on the
+ * wire — and a React render — per handful of characters, for three scenes at
+ * once. At this interval the preview still reads as typing.
+ */
+const DRAFT_INTERVAL_MS = 100
+
+/**
+ * Characters held back from the draft.
+ *
+ * The model wraps its answer in a code fence about half the time, and the
+ * closing one only shows up at the very end. Never emitting the tail means the
+ * fence is never written into the preview — the last few characters cost
+ * nothing, because the finished document replaces the draft anyway.
+ */
+const DRAFT_TAIL = 4
 
 export const SceneJobSchema = z.object({
   projectPath: z.string(),
@@ -132,13 +152,14 @@ async function generateWithRepair(
   let lastHtml: string | null = null
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const response = await sceneAgent.generate(
+    const html = await writeScene(
       attempt === 1
         ? briefFor(scene, styleGuide)
-        : repairPrompt(briefFor(scene, styleGuide), lastHtml!, problems)
+        : repairPrompt(briefFor(scene, styleGuide), lastHtml!, problems),
+      scene.id,
+      attempt,
+      emit
     )
-
-    const html = stripFences(response.text)
     lastHtml = html
 
     const result = await validateScene(html, scene.windowSec)
@@ -154,6 +175,73 @@ async function generateWithRepair(
   throw new Error(
     `failed validation after ${MAX_ATTEMPTS} attempts — ${problems.join(" ")}`
   )
+}
+
+/**
+ * One attempt, streamed rather than generated.
+ *
+ * The stream is what makes the card show something. A scene takes the better
+ * part of a minute to write, and the deltas *are* the document — so the client
+ * can put them straight into a frame and let the scene draw itself, instead of
+ * spinning on a placeholder until the whole thing lands.
+ */
+async function writeScene(
+  prompt: string,
+  sceneId: string,
+  attempt: number,
+  emit: Emit
+): Promise<string> {
+  const response = await sceneAgent.stream(prompt)
+
+  let text = ""
+  let sent = 0
+  let flushedAt = 0
+
+  for await (const delta of response.textStream) {
+    text += delta
+
+    const now = Date.now()
+    if (now - flushedAt < DRAFT_INTERVAL_MS) continue
+
+    const body = draftBody(text)
+    if (body === null) continue
+
+    const upTo = body.length - DRAFT_TAIL
+    if (upTo <= sent) continue
+
+    flushedAt = now
+    // Awaited, because concurrent writes lock the stream — but never allowed
+    // to take the scene down with it. A dropped chunk costs a frame of the
+    // preview, and the finished document arrives on its own path regardless.
+    try {
+      await emit("scene-draft", {
+        id: sceneId,
+        attempt,
+        delta: body.slice(sent, upTo),
+      })
+      sent = upTo
+    } catch {
+      // Reporting failed. The scene did not.
+    }
+  }
+
+  return stripFences(await response.text)
+}
+
+/**
+ * The document so far, minus the fence the model may have opened with.
+ *
+ * `null` until the first line is complete, because that is the point at which
+ * the answer is known to be fenced or not. Emitting before then risks putting
+ * half of a "```html" into the preview and having no way to take it back —
+ * the client writes deltas into an open document, so nothing can be unwritten.
+ */
+function draftBody(text: string): string | null {
+  const trimmed = text.trimStart()
+  if (!trimmed.includes("\n")) return null
+
+  const fence = /^```[^\n]*\n/.exec(trimmed)
+  return fence ? trimmed.slice(fence[0].length) : trimmed
 }
 
 function briefFor(scene: StoredScene, styleGuide: StyleGuide): string {
