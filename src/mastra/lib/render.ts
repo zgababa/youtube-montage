@@ -26,13 +26,27 @@ import { tmpDir } from "./paths"
  * its top-left quarter, and `100vw` covers half the frame.
  *
  * Authoring space wins, since it's what the agent's prompt and the preview
- * iframe both assume. At 1920×1080 CSS with scale 1 there is no scaling
- * anywhere: a 96px heading is 96 pixels in the export, and viewport units mean
- * what they say. The density concern doesn't apply — it was about upscaling a
- * 960-wide design, which is no longer what happens.
+ * iframe both assume. The viewport stays 1920×1080 CSS: a 96px heading is 96
+ * CSS pixels and viewport units mean what they say.
  */
 const VIEWPORT = { width: 1920, height: 1080 }
-const DEVICE_SCALE_FACTOR = 1
+
+/**
+ * Rasterization density, which is a separate question from layout.
+ *
+ * `deviceScaleFactor` doesn't move anything — `window.innerWidth` is 1920
+ * either way — it decides how many device pixels each CSS pixel is drawn with.
+ * At 1 the export was a true 1080p file, and a true 1080p file dropped on a 4K
+ * timeline is scaled up by the NLE, which is what made crisp vector type look
+ * soft. At 2 the same layout rasterizes to 3840×2160: the glyphs are *drawn* at
+ * 4K rather than enlarged to it.
+ *
+ * Four times the pixels, so roughly four times the frame size and the encode
+ * time. Only the export pays it — measuring reads animation timings and doesn't
+ * care, and a list thumbnail at 4K would be absurd.
+ */
+const EXPORT_SCALE = 2
+const PREVIEW_SCALE = 1
 
 let browser: Browser | undefined
 
@@ -59,13 +73,14 @@ export async function closeBrowser() {
  */
 async function withScene<T>(
   html: string,
-  body: (page: Page) => Promise<T>
+  body: (page: Page) => Promise<T>,
+  deviceScaleFactor = PREVIEW_SCALE
 ): Promise<T> {
   const context = await (
     await getBrowser()
   ).newContext({
     viewport: VIEWPORT,
-    deviceScaleFactor: DEVICE_SCALE_FACTOR,
+    deviceScaleFactor,
   })
   const page = await context.newPage()
   try {
@@ -174,7 +189,7 @@ export interface ExportOptions {
  * prevents.
  *
  * Frames land in `os.tmpdir()` and are deleted after encoding. A 7-second scene
- * at 30fps is 210 PNGs at 1920×1080; written inside the project folder, the
+ * at 30fps is 210 PNGs at 3840×2160; written inside the project folder, the
  * dev server's watcher would try to follow all of them.
  *
  * The directory is unique per call, not per scene. Two exports of the same
@@ -199,23 +214,27 @@ export async function exportScene(
   try {
     const totalFrames = Math.max(1, Math.ceil(durationSec * fps))
 
-    await withScene(html, async (page) => {
-      for (let frame = 0; frame < totalFrames; frame++) {
-        const ms = (frame / fps) * 1000
-        await page.evaluate((time) => {
-          document.getAnimations().forEach((animation) => {
-            animation.currentTime = time
+    await withScene(
+      html,
+      async (page) => {
+        for (let frame = 0; frame < totalFrames; frame++) {
+          const ms = (frame / fps) * 1000
+          await page.evaluate((time) => {
+            document.getAnimations().forEach((animation) => {
+              animation.currentTime = time
+            })
+          }, ms)
+          await page.screenshot({
+            path: path.join(framesDir, `${String(frame).padStart(5, "0")}.png`),
+            omitBackground: true,
           })
-        }, ms)
-        await page.screenshot({
-          path: path.join(framesDir, `${String(frame).padStart(5, "0")}.png`),
-          omitBackground: true,
-        })
-        // Throttled by the caller — reporting all 210 frames of a short scene
-        // floods the stream with chunks nobody reads.
-        await onProgress?.(frame + 1, totalFrames)
-      }
-    })
+          // Throttled by the caller — reporting all 210 frames of a short scene
+          // floods the stream with chunks nobody reads.
+          await onProgress?.(frame + 1, totalFrames)
+        }
+      },
+      EXPORT_SCALE
+    )
 
     await encodeProRes(framesDir, fps, outputPath)
   } finally {

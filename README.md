@@ -257,12 +257,14 @@ document, and a dozen of them at once is enough to stall the compositor.
 
 Three deliberate deviations from [idea.md](idea.md), all found while building:
 
-- **Export viewport is 1920×1080 at scale 1**, not 960×540 at
-  `deviceScaleFactor: 2` (§6). §5 tells the scene agent to design for 1920×1080,
-  and in a 960 CSS viewport such a scene renders only its top-left quarter while
-  `100vw` covers half the frame. The two sections can't both hold; authoring
-  space wins. The density concern §6 raises was about upscaling a 960-wide
-  design, which is no longer what happens.
+- **Export viewport is 1920×1080 CSS at `deviceScaleFactor: 2`**, not 960×540
+  at scale 2 (§6). §5 tells the scene agent to design for 1920×1080, and in a
+  960 CSS viewport such a scene renders only its top-left quarter while `100vw`
+  covers half the frame. The two sections can't both hold; authoring space wins.
+  The scale factor is then a separate question — it changes rasterization
+  density, not layout — and at 2 the same 1920-wide layout is drawn into a
+  3840×2160 frame. Exports are 4K because a 1080p file on a 4K timeline is
+  upscaled by the NLE, which is what made vector-crisp type look soft.
 - **Audio is extracted as mp3, not WAV** (§4.2). §4.2 asks for WAV, but the only
   thing the file is used for is a single upload, and mp3 is a tenth the size at
   no cost to transcription accuracy. On an hour of footage that is ~115 MB
