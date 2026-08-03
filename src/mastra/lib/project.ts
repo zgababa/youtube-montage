@@ -219,14 +219,18 @@ function stringify(value: unknown) {
  *
  * Palette order is meaningful, and `sceneAgent` is told to read it this way:
  * dominant surface, primary text, then accents.
+ *
+ * Light, not dark. Both work over footage, but a near-white surface reads as
+ * deliberate against almost any grade, while a near-black one tends to look
+ * like the footage dipped rather than like something placed on top of it.
  */
 const DEFAULT_STYLE_GUIDE = {
-  palette: ["#0B0B0F", "#F5F5F7", "#7C5CFF"],
+  palette: ["#F5F5F7", "#0B0B0F", "#7C5CFF"],
   fontStack: 'ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif',
   motion:
     "Choreographed, not simultaneous: entrances stagger 40–80ms apart on a long ease-out, 400–900ms for a major move, opacity and scale and blur only, holds between beats.",
   notes:
-    "Apple keynote restraint. One idea per scene, generous negative space, large tight-tracked type, depth from blur and translucency rather than borders, at most one accent colour.",
+    "Light and airy, Apple keynote restraint. Near-white surfaces carrying near-black type, one idea per scene, generous negative space, large tight-tracked type, depth from blur and soft shadow rather than borders, at most one accent colour.",
 }
 
 /**

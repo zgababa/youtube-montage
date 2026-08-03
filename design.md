@@ -18,6 +18,9 @@ Apple product film.
   Never crowd the frame.
 - **Typography carries the message.** Large, tight-tracked headlines, restrained
   weights. Text appears sparingly and deliberately.
+- **Light, not dark.** Near-white surfaces carrying near-black type. Both work
+  over footage, but a light surface reads as something deliberately placed on
+  top of the shot, where a near-black one tends to read as the footage dipping.
 - **Restrained palette.** Monochrome, with at most one accent colour per scene.
   Soft gradients and elevation over hard borders.
 - **Depth through light, not lines.** Blur, glow, translucency, soft shadow —
@@ -79,7 +82,7 @@ by Playwright and frame-stepped to ProRes. Four rules invert:
 | B-Roll Studio                        | Here                                         | Why                                                                                                                                                                                                                                                              |
 | ------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Vite + React + Motion                | One self-contained HTML file, CSS/WAAPI only | Motion's springs run on `requestAnimationFrame`, which is invisible to `document.getAnimations()`. The exporter pauses animations and sets `currentTime`, so a spring renders **frozen** — and the validator rejects the scene outright as having no animations. |
-| Near-black or near-white backgrounds | **No background at all**                     | Scenes are transparent overlays composited over the camera footage. A background turns the scene into a full-frame cutaway.                                                                                                                                      |
+| Near-black or near-white backgrounds | **No background at all**                     | Scenes are transparent overlays composited over the camera footage. A background turns the scene into a full-frame cutaway. The light register lives on the scene's own surfaces — panels, cards, type — not on the frame.                                        |
 | Settles into a gentle idle loop      | Settles into a **held** end state            | An infinite animation has no end time, so it can't be frame-stepped. `animation-fill-mode: both` holds the last frame instead.                                                                                                                                   |
 | 5–15 seconds, one route per scene    | The window comes from the gap in the script  | Placement is decided by the scenario agent against the approved transcript. Windows vary widely, and a scene that overruns its gap is thrown away.                                                                                                               |
 

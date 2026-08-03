@@ -104,6 +104,11 @@ Every scene should look like it belongs in an Apple product film.
   sits over footage that is visually busy — so, heavy contrast.
 - **Depth through light, not lines.** Blur, glow, translucency and soft
   elevation instead of visible strokes and boxes.
+- **A surface carrying text has to be opaque enough to carry it.** These sit
+  over moving footage, so a panel at 40% opacity leaves the text fighting
+  whatever passes behind it. Around 90% and a soft shadow reads as placed on top
+  of the shot; much less than that reads as a mistake. This applies to the
+  scene's own panels — the frame itself still has no background at all.
 - **No clutter.** No watermarks, no fake browser chrome, no cursors, no debug
   UI.
 - Follow the supplied style guide's palette, font stack, and motion character
