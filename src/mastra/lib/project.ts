@@ -225,12 +225,12 @@ function stringify(value: unknown) {
  * like the footage dipped rather than like something placed on top of it.
  */
 const DEFAULT_STYLE_GUIDE = {
-  palette: ["#F5F5F7", "#0B0B0F", "#7C5CFF"],
+  palette: ["#F5F5F7", "#0B0B0F", "#FF6B5A"],
   fontStack: 'ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif',
   motion:
     "Choreographed, not simultaneous: entrances stagger 40–80ms apart on a long ease-out, 400–900ms for a major move, opacity and scale and blur only, holds between beats.",
   notes:
-    "Light and airy, Apple keynote restraint. Near-white surfaces carrying near-black type, one idea per scene, generous negative space, large tight-tracked type, depth from blur and soft shadow rather than borders, at most one accent colour.",
+    "Light and airy, Apple keynote restraint. Near-white surfaces carrying near-black type, warm coral as the only accent. One idea per scene, almost no words — the voiceover is doing the explaining. Generous negative space, large tight-tracked type, depth from blur and soft shadow rather than borders. No cards unless something genuinely needs its own plane.",
 }
 
 /**
