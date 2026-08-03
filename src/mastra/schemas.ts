@@ -133,6 +133,15 @@ export const SceneSchema = z.object({
   error: z.string().optional(),
   /** Note attached to the last regenerate request. */
   note: z.string().optional(),
+  /**
+   * Router id of the model that wrote the current HTML.
+   *
+   * Written by the generate step rather than by the reviewer, so it always
+   * describes what actually ran — including on a failed scene, where knowing
+   * which model couldn't do it is most of the diagnosis. Absent on scenes
+   * generated before the field existed.
+   */
+  model: z.string().optional(),
 })
 
 /**

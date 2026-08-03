@@ -111,6 +111,9 @@ export function withDecisions(
         // Only meaningful for `regenerate`, and only worth showing once the
         // user actually typed one.
         note: decision.note ?? scene.note,
+        // Shown as soon as it's picked rather than after the run confirms it,
+        // so a scene queued against a different model says so while it waits.
+        model: decision.model ?? scene.model,
       }
     }),
   }

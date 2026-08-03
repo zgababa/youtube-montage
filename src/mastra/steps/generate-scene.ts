@@ -12,11 +12,17 @@
  *     id so the client reconciles them in place instead of appending.
  */
 
+import { RequestContext } from "@mastra/core/request-context"
 import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
-import { sceneAgent } from "../agents/scene-agent"
+import {
+  sceneAgent,
+  SCENE_MODEL_KEY,
+  type SceneModelContext,
+} from "../agents/scene-agent"
 import { updateProject, writeSceneHtml } from "../lib/project"
+import { SCENE_MODEL } from "../models"
 import { validateScene } from "../lib/validate-scene"
 import {
   SceneSchema,
@@ -101,18 +107,25 @@ export async function generateAndPersistScene(
     const emit = emitter(writer)
     const publish = (next: Scene) => emit("scene", next, { id: next.id })
 
-    await publish({ ...scene, status: "generating", html: null })
+    // Resolved here rather than read straight off the scene, so the field
+    // stored against the result names a real model even on the first pass,
+    // where nobody has chosen one.
+    const model = scene.model ?? SCENE_MODEL
+
+    await publish({ ...scene, model, status: "generating", html: null })
 
     try {
       const { html, durationSec } = await generateWithRepair(
         scene,
         styleGuide,
+        model,
         writer
       )
 
       const htmlPath = await writeSceneHtml(projectPath, scene.id, html)
       const ready: StoredScene = {
         ...scene,
+        model,
         status: "ready",
         htmlPath,
         measuredDurationSec: durationSec,
@@ -130,6 +143,7 @@ export async function generateAndPersistScene(
       const reason = error instanceof Error ? error.message : String(error)
       const failed: StoredScene = {
         ...scene,
+        model,
         status: "failed",
         htmlPath: null,
         measuredDurationSec: null,
@@ -157,6 +171,7 @@ export async function generateAndPersistScene(
 async function generateWithRepair(
   scene: StoredScene,
   styleGuide: StyleGuide,
+  model: string,
   writer: PipelineWriter | undefined
 ): Promise<{ html: string; durationSec: number }> {
   const emit = emitter(writer)
@@ -170,6 +185,7 @@ async function generateWithRepair(
         : repairPrompt(briefFor(scene, styleGuide), lastHtml!, problems),
       scene.id,
       attempt,
+      model,
       emit
     )
     lastHtml = html
@@ -201,9 +217,16 @@ async function writeScene(
   prompt: string,
   sceneId: string,
   attempt: number,
+  model: string,
   emit: Emit
 ): Promise<string> {
-  const response = await sceneAgent.stream(prompt)
+  // Per-request, not per-agent: `sceneAgent` resolves its model from this on
+  // every call, so two scenes generating concurrently under different models
+  // don't have to fight over one agent's configuration.
+  const requestContext = new RequestContext<SceneModelContext>([
+    [SCENE_MODEL_KEY, model],
+  ])
+  const response = await sceneAgent.stream(prompt, { requestContext })
 
   let text = ""
   let sent = 0

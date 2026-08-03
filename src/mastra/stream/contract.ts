@@ -214,6 +214,11 @@ export const SceneDecisionSchema = z.object({
   action: z.enum(["approve", "reject", "regenerate"]),
   /** Fed back into the scene prompt. Only meaningful for `regenerate`. */
   note: z.string().optional(),
+  /**
+   * Router id to write the scene with. Only meaningful for `regenerate`, and
+   * omitted when the reviewer left the selector where it was.
+   */
+  model: z.string().optional(),
 })
 
 export type SceneDecision = z.infer<typeof SceneDecisionSchema>

@@ -13,6 +13,7 @@ import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
 import { readStoredProject, updateProject } from "../lib/project"
+import { modelLabel, SCENE_MODEL } from "../models"
 import { SceneStatusSchema, type StoredScene } from "../schemas"
 import type { PipelineWriter } from "../stream/contract"
 import { generateAndPersistScene } from "./generate-scene"
@@ -23,6 +24,8 @@ const DecisionSchema = z.object({
   action: z.enum(["approve", "reject", "regenerate"]),
   /** Only meaningful for `regenerate` — fed back into the scene prompt. */
   note: z.string().optional(),
+  /** Only meaningful for `regenerate` — which model writes the new version. */
+  model: z.string().optional(),
 })
 
 export const reviewStep = createStep({
@@ -129,13 +132,20 @@ async function applyDecisions(
     const scene = byId.get(decision.id)
     if (!scene) continue
 
-    // The note rides along on the scene so it reaches the prompt and survives
-    // in project.json as a record of what was asked for.
-    const withNote: StoredScene = { ...scene, note: decision.note }
+    // The note and the model ride along on the scene: the note so it reaches
+    // the prompt, the model so the generate step writes with it — and both so
+    // project.json records what was asked for.
+    const requested: StoredScene = {
+      ...scene,
+      note: decision.note,
+      model: decision.model ?? scene.model,
+    }
 
-    await report.detail(`Regenerating ${scene.id}`)
+    await report.detail(
+      `Regenerating ${scene.id} with ${modelLabel(requested.model ?? SCENE_MODEL)}`
+    )
     await generateAndPersistScene(
-      { projectPath, scene: withNote, styleGuide: project.styleGuide },
+      { projectPath, scene: requested, styleGuide: project.styleGuide },
       writer
     )
   }

@@ -25,6 +25,7 @@ import { overrunsWindow } from "@/lib/project"
 import { useInView } from "@/hooks/use-in-view"
 import type { Scene, SceneDraft, SceneType } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { modelLabel } from "@/src/mastra/models"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -72,7 +73,7 @@ interface SceneRowProps {
   onCollapse?: () => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
-  onRegenerate: (id: string, note: string) => void
+  onRegenerate: (id: string, note: string, model: string) => void
 }
 
 /**
@@ -322,6 +323,16 @@ export function SceneRow({
                 {scene.exportPath ?? "not exported"}
               </span>
             </Row>
+            {/*
+              Which model wrote this version. Worth a row of its own: the point
+              of being able to change it is being able to tell afterwards
+              whether the change helped.
+            */}
+            <Row label="Model">
+              <span className="truncate text-muted-foreground">
+                {scene.model ? modelLabel(scene.model) : "—"}
+              </span>
+            </Row>
           </div>
 
           {overruns ? (
@@ -370,7 +381,7 @@ export function SceneRow({
         </Button>
         <RegenerateDialog
           scene={scene}
-          onSubmit={(note) => onRegenerate(scene.id, note)}
+          onSubmit={(note, model) => onRegenerate(scene.id, note, model)}
           trigger={
             <Button size="sm" variant="outline">
               <HugeiconsIcon

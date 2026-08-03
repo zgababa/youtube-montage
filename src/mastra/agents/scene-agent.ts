@@ -20,10 +20,26 @@ import { Agent } from "@mastra/core/agent"
 
 import { SCENE_MODEL } from "../models"
 
+/**
+ * The request-context key carrying the model for one generation.
+ *
+ * A scene can be sent back with a different model than the one that wrote it,
+ * which means the model can't be fixed at construction — but it also isn't a
+ * second agent. Mastra resolves `model` per request, so the same agent, the
+ * same prompt and the same constraints run against whatever the reviewer
+ * picked. See `generate-scene.ts`, which is the only place this is set.
+ */
+export const SCENE_MODEL_KEY = "scene-model"
+
+export type SceneModelContext = { [SCENE_MODEL_KEY]: string }
+
 export const sceneAgent = new Agent({
   id: "scene-agent",
   name: "Scene Agent",
-  model: SCENE_MODEL,
+  model: ({ requestContext }) =>
+    requestContext.get<typeof SCENE_MODEL_KEY, string | undefined>(
+      SCENE_MODEL_KEY
+    ) ?? SCENE_MODEL,
   instructions: `
 You write a single self-contained HTML file containing one animated b-roll
 scene. It will be rendered at 1920×1080 and composited over camera footage of

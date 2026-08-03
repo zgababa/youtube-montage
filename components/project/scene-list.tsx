@@ -43,7 +43,7 @@ interface SceneListProps {
   drafts?: Record<string, SceneDraft>
   onApprove: (id: string) => void
   onReject: (id: string) => void
-  onRegenerate: (id: string, note: string) => void
+  onRegenerate: (id: string, note: string, model: string) => void
 }
 
 /**

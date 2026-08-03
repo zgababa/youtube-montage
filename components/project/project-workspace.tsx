@@ -242,8 +242,8 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
     decide({ id, action: "reject" })
   }
 
-  function regenerateScene(id: string, note: string) {
-    decide({ id, action: "regenerate", note: note || undefined })
+  function regenerateScene(id: string, note: string, model: string) {
+    decide({ id, action: "regenerate", note: note || undefined, model })
   }
 
   /** Sends everything decided so far and lets the run continue to export. */

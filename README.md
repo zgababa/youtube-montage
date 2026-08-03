@@ -108,11 +108,11 @@ the script twice.
 
 So each file carries three settings, under **Footage & transcript**:
 
-| | |
-|---|---|
-| `transcribe` | whether this file's audio is sent to the transcriber |
-| `voices` | the clip this file is the audio *for* |
-| `offsetSec` | seconds added to its word timings to land on that clip's clock |
+|              |                                                                |
+| ------------ | -------------------------------------------------------------- |
+| `transcribe` | whether this file's audio is sent to the transcriber           |
+| `voices`     | the clip this file is the audio _for_                          |
+| `offsetSec`  | seconds added to its word timings to land on that clip's clock |
 
 `scan` fills them in when the reading is unambiguous — exactly one standalone
 audio file and exactly one video with sound gets paired automatically, mic as
@@ -141,11 +141,36 @@ one clock, `voices: null`.
 ### The AI never rewrites the transcript
 
 The cleanup agent never sees raw word timings and never emits prose. Words are
-grouped into numbered segments, the agent returns *cuts by segment index*, and
+grouped into numbered segments, the agent returns _cuts by segment index_, and
 [`src/mastra/lib/segments.ts`](src/mastra/lib/segments.ts) converts those back to
 exact times and fills every gap with `keep` spans. Keeps are derived, never
 asked for — that's what guarantees the spans tile the transcript with nothing
 missing, since the clean script is just the kept spans concatenated.
+
+### A scene can be sent back to a different model
+
+Regenerating is the one place in the pipeline where the model is worth choosing
+per call — it's the only output judged by eye and thrown back, and a scene that
+has failed twice is exactly when it's worth paying for a slower model. The other
+agents produce text nobody re-rolls a model over.
+
+There is still one scene agent. Mastra resolves `model` per request, so
+[`scene-agent.ts`](src/mastra/agents/scene-agent.ts) reads the id off the
+request context and the whole prompt, style guide and constraint list stay
+identical:
+
+```ts
+model: ({ requestContext }) =>
+  requestContext.get(SCENE_MODEL_KEY) ?? SCENE_MODEL
+```
+
+The choice rides on the review decision and is stored on the scene, so
+`project.json` records what actually wrote each version — including on a failure,
+where knowing which model couldn't do it is most of the diagnosis. The scene
+row shows it under **Model**; scenes generated before the field existed show
+`—`. The candidate list is [`SCENE_MODELS`](src/mastra/models.ts), and
+`tests/scene-model.test.ts` resolves every entry through the router so a typo
+surfaces there rather than in a failed regeneration.
 
 ### Streaming, end to end typed
 
@@ -170,7 +195,7 @@ Studio and from a plain script, which is how the renderer gets debugged.
 src/mastra/
   index.ts                    the instance: agents, workflows, LibSQL storage
   schemas.ts                  project.json as Zod — the single source of truth
-  models.ts                   openrouter/anthropic/* ids
+  models.ts                   router ids, plus the models a scene can be re-rolled on
   stream/contract.ts          every event, once; the typed emitter
   agents/                     cleanup, scenario, scene, copy
   workflows/                  broll-workflow, generate-scene-workflow

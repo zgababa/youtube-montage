@@ -87,6 +87,34 @@ describe("withDecisions", () => {
     expect(cleared).toBe(onDisk)
   })
 
+  test("shows the model a scene was sent back to, before the run confirms it", () => {
+    const decided = withDecisions(
+      onDisk,
+      decisions({
+        id: "scene_01",
+        action: "regenerate",
+        model: "openrouter/anthropic/claude-opus-5",
+      })
+    )
+
+    expect(decided.scenes[0].model).toBe("openrouter/anthropic/claude-opus-5")
+  })
+
+  test("keeps the model that wrote a scene when a decision names none", () => {
+    // Approve and reject carry no model, and must not blank the field — the
+    // row would stop saying what wrote the version being approved.
+    const generated = project([
+      { ...scene("scene_01", "ready", 0), model: "openrouter/x-ai/grok-4.20" },
+    ])
+
+    const decided = withDecisions(
+      generated,
+      decisions({ id: "scene_01", action: "approve" })
+    )
+
+    expect(decided.scenes[0].model).toBe("openrouter/x-ai/grok-4.20")
+  })
+
   test("ignores a decision for a scene that is no longer there", () => {
     const decided = withDecisions(
       onDisk,
