@@ -22,7 +22,6 @@ import { scenariosStep } from "../steps/scenarios"
 import { PipelineIO, reporter } from "../steps/shared"
 import type { PipelineWriter } from "../stream/contract"
 import { shotlistStep } from "../steps/shotlist"
-import { styleGuideStep } from "../steps/style-guide"
 import { transcribeStep } from "../steps/transcribe"
 import { generateSceneWorkflow } from "./generate-scene-workflow"
 
@@ -47,7 +46,8 @@ export const brollWorkflow = createWorkflow({
   .then(transcribeStep)
   // Suspends: the human approves the diff before anything downstream runs.
   .then(cleanupStep)
-  .then(styleGuideStep)
+  // No style-guide step: the look is a house style with a per-project override
+  // (`design.md`), not something an agent derives from the transcript.
   .then(scenariosStep)
   // `.foreach` consumes an array, so the single `{ projectPath }` has to be
   // fanned out into one self-contained job per scene here.

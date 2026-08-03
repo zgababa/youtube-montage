@@ -27,7 +27,12 @@ export interface StageDefinition {
   label: string
   /** One line on what the stage is for, shown while it's open. */
   blurb: string
-  /** The steps it owns, in execution order. Every step belongs to exactly one. */
+  /**
+   * The steps it owns, in execution order. Every step belongs to exactly one.
+   *
+   * Empty for a stage the pipeline doesn't run — the style guide is an input
+   * the user sets, not a phase that executes.
+   */
   steps: StepId[]
 }
 
@@ -57,8 +62,8 @@ export const STAGES: readonly StageDefinition[] = [
     id: "look",
     label: "Style guide",
     blurb:
-      "Handed to every scene agent. Without it, scenes generated in parallel don't match.",
-    steps: ["style-guide"],
+      "Handed to every scene agent. Without it, scenes generated in parallel don't match. Set before the run rather than produced by it — the house default is in design.md.",
+    steps: [],
   },
   {
     id: "scenes",
@@ -152,6 +157,9 @@ export function focusStage(states: StageState[], project: Project): StageId {
 
 /** Failure beats a gate beats work in progress beats done. */
 function rollUp(steps: RunStep[]): StepStatus {
+  // A stage the pipeline never runs has nothing to report, and `every` on an
+  // empty list would otherwise call it a success the moment the page loaded.
+  if (steps.length === 0) return "pending"
   if (steps.some((step) => step.status === "failed")) return "failed"
   if (steps.some((step) => step.status === "suspended")) return "suspended"
   if (steps.some((step) => step.status === "running")) return "running"

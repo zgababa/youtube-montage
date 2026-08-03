@@ -25,9 +25,6 @@ export const CLEANUP_MODEL = "openrouter/anthropic/claude-sonnet-5"
 /** Decides where b-roll helps. Needs to hold the whole script in view. */
 export const SCENARIO_MODEL = "openrouter/anthropic/claude-sonnet-5"
 
-/** One palette/type/motion guide per project. Short, one-shot. */
-export const STYLE_MODEL = "openrouter/anthropic/claude-sonnet-5"
-
 /** YouTube and Twitter copy from the approved script. */
 export const COPY_MODEL = "openrouter/anthropic/claude-sonnet-5"
 

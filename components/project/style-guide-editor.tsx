@@ -89,7 +89,8 @@ export function StyleGuideEditor({
             />
           </div>
           <FieldDescription>
-            Comma separated. Background, foreground, then accents.
+            Comma separated. Surface, then text, then accents — scenes are
+            transparent overlays, so none of these is a page background.
           </FieldDescription>
         </Field>
 

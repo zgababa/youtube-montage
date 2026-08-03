@@ -78,10 +78,6 @@ export function reduceParts(
         patch.spans = part.data.spans
         break
 
-      case "data-style-guide":
-        patch.styleGuide = part.data.styleGuide
-        break
-
       case "data-scenes":
         for (const scene of part.data.scenes) scenes.set(scene.id, scene)
         break

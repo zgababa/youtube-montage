@@ -28,7 +28,6 @@ import {
   ProjectCopySchema,
   SpanCategorySchema,
   SpanSchema,
-  StyleGuideSchema,
   type Span,
 } from "../schemas"
 
@@ -41,7 +40,6 @@ export const StepIdSchema = z.enum([
   "extract-audio",
   "transcribe",
   "cleanup",
-  "style-guide",
   "scenarios",
   "generate",
   "review",
@@ -74,7 +72,6 @@ export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
   "extract-audio": "Extract audio",
   transcribe: "Transcribe",
   cleanup: "Cleanup pass",
-  "style-guide": "Style guide",
   scenarios: "Plan scenes",
   generate: "Generate scenes",
   review: "Review scenes",
@@ -134,10 +131,6 @@ export const pipelineDataSchemas = {
     spans: z.array(SpanSchema),
     cutSeconds: z.number(),
     counts: z.array(z.tuple([SpanCategorySchema, z.number()])),
-  }),
-
-  "style-guide": z.object({
-    styleGuide: StyleGuideSchema,
   }),
 
   /** Scene metadata only — placements decided, nothing generated yet. */

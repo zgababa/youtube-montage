@@ -72,6 +72,19 @@ describe("the stage list", () => {
     expect([...owned].sort()).toEqual([...STEP_IDS].sort())
   })
 
+  test("never claims the style guide ran, because it isn't a step", () => {
+    // It's an input the user sets, not a phase. With no steps of its own an
+    // "are they all done?" roll-up would otherwise call it finished on load,
+    // and finished again after a run it took no part in.
+    const everything = run(
+      Object.fromEntries(STEP_IDS.map((id) => [id, "success" as StepStatus]))
+    )
+    const state = stage("look", project(), everything)
+
+    expect(state.runSteps).toEqual([])
+    expect(state.status).toBe("pending")
+  })
+
   test("reads as pending before anything has run", () => {
     const states = stageStates(project(), null)
 

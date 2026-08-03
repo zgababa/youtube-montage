@@ -206,16 +206,27 @@ function stringify(value: unknown) {
 }
 
 /**
- * The default look, before the style agent has had an opinion.
+ * The house look — `design.md`, compressed to the four fields the scene brief
+ * carries.
  *
- * Real values rather than empty strings: a project added and previewed before
- * its first run should render as something deliberate, not as unstyled text.
+ * This is the style guide, not a placeholder waiting to be overwritten. It used
+ * to be generated per project from a sample of the transcript, which was wrong
+ * twice over: a transcript says what a video is about, not what it should look
+ * like, and a look invented per project means video three doesn't match video
+ * one. Consistency across a channel is the whole point of having a guide.
+ *
+ * Editable per project in the UI when a video genuinely wants its own look.
+ *
+ * Palette order is meaningful, and `sceneAgent` is told to read it this way:
+ * dominant surface, primary text, then accents.
  */
 const DEFAULT_STYLE_GUIDE = {
-  palette: ["#0B0B0F", "#E8E8ED", "#7C5CFF"],
-  fontStack: "ui-sans-serif, system-ui, sans-serif",
-  motion: "slow, heavy easing, opacity and scale only",
-  notes: "dark, high contrast, generous whitespace",
+  palette: ["#0B0B0F", "#F5F5F7", "#7C5CFF"],
+  fontStack: 'ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif',
+  motion:
+    "Choreographed, not simultaneous: entrances stagger 40–80ms apart on a long ease-out, 400–900ms for a major move, opacity and scale and blur only, holds between beats.",
+  notes:
+    "Apple keynote restraint. One idea per scene, generous negative space, large tight-tracked type, depth from blur and translucency rather than borders, at most one accent colour.",
 }
 
 /**

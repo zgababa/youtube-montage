@@ -9,6 +9,11 @@
  * looking perfect in the preview. That failure is invisible until the .mov is
  * in the timeline, and fixing it later means regenerating every scene ever
  * made.
+ *
+ * The taste below is `design.md`, and lives here rather than in the style guide
+ * because none of it varies by project. What a scene should look like is a
+ * house style; what the style guide carries is the handful of values — palette,
+ * type, motion character — that a particular video might want to differ on.
  */
 
 import { Agent } from "@mastra/core/agent"
@@ -67,21 +72,53 @@ regenerated.
 
 ## Motion style
 
-Exported frames are instantaneous samples with **no motion blur**, so fast
-movement strobes badly against real camera footage.
+Motion is the product here. Exported frames are instantaneous samples with **no
+motion blur**, so fast movement strobes badly against real camera footage.
 
-- Slower moves. Generous easing — long ease-out, nothing linear.
-- Prefer opacity, scale, and blur over objects travelling across the frame.
-- Stagger elements in rather than moving them around.
-- If something must translate, keep it short and slow.
+- **Choreographed, not simultaneous.** Elements enter in a deliberate sequence,
+  staggered 40–80ms apart, guiding the eye through the story. Never animate
+  everything at once.
+- **Ease-out for entrances** — fast start, gentle landing. Never \`ease-in\` on
+  something appearing, never \`linear\` on anything.
+- **Calm tempo.** 400–900ms for a major move, with holds between beats. This is
+  watched, not clicked.
+- **Scale subtly.** Prefer \`scale(0.95 → 1)\` and small translations over
+  objects flying across the frame. Big motion is for the one hero moment.
+- **Physical and continuous.** Scale from where the element originates (correct
+  \`transform-origin\`), fade and move together, never teleport. Crossfade
+  rather than cut; blur can mask a transition.
+- **Animate only \`transform\`, \`opacity\` and \`filter\`.** Animating layout
+  properties — width, height, top, left, margin — stutters in the live preview
+  and is far slower to render frame by frame.
+- End on a held state, not a loop. \`animation-fill-mode: both\` keeps the last
+  frame so the tail of the clip is calm and easy to trim.
 
 ## Composition
 
-- Large type. This gets watched at 40% size on a phone.
-- Heavy contrast — it sits over footage, which is visually busy.
-- Generous margins. Keep content well inside the frame edges.
+Every scene should look like it belongs in an Apple product film.
+
+- **Space is the layout.** One focal idea, generous negative space. Never crowd
+  the frame. Keep content well inside the edges.
+- **Typography carries the message.** Large, tight-tracked type, restrained
+  weights, text used sparingly. This gets watched at 40% size on a phone, and it
+  sits over footage that is visually busy — so, heavy contrast.
+- **Depth through light, not lines.** Blur, glow, translucency and soft
+  elevation instead of visible strokes and boxes.
+- **No clutter.** No watermarks, no fake browser chrome, no cursors, no debug
+  UI.
 - Follow the supplied style guide's palette, font stack, and motion character
-  exactly. Consistency across scenes matters more than any single scene being
-  interesting.
+  exactly. Its palette is ordered: the first colour is the dominant surface, the
+  second is primary text, the rest are accents — and at most one accent belongs
+  in any single scene. Consistency across scenes matters more than any one scene
+  being interesting.
+
+## Content
+
+- Visualize **concepts, not screenshots**: abstract diagrams, flowing messages,
+  connecting nodes, elegant text reveals — a stylized representation of what the
+  script says.
+- Code or terminal output is **stylized**: beautiful monospace, syntax-highlight
+  accents, line-by-line reveals. Never a raw editor capture.
+- Answer one question: what single idea from this moment should the viewer feel?
 `.trim(),
 })

@@ -77,30 +77,37 @@ export function RunStrip({
         </div>
 
         <div className="flex items-center gap-3">
-          {stages.map((stage) => (
-            <Tooltip key={stage.id}>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    onClick={() => onJump(stage.id)}
-                    aria-label={`Open ${stage.label}`}
-                    className="flex cursor-pointer items-center gap-0.5 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                  />
-                }
-              >
-                {stage.runSteps.map((step) => (
-                  <span
-                    key={step.id}
-                    className={cn("h-1.5 w-4 rounded-full", tick(step.status))}
-                  />
-                ))}
-              </TooltipTrigger>
-              <TooltipContent>
-                {stage.label} · {stage.status}
-              </TooltipContent>
-            </Tooltip>
-          ))}
+          {/* A stage the pipeline doesn't run has no ticks, and a tick group
+              with nothing in it is an invisible click target. */}
+          {stages
+            .filter((stage) => stage.runSteps.length > 0)
+            .map((stage) => (
+              <Tooltip key={stage.id}>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => onJump(stage.id)}
+                      aria-label={`Open ${stage.label}`}
+                      className="flex cursor-pointer items-center gap-0.5 rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                    />
+                  }
+                >
+                  {stage.runSteps.map((step) => (
+                    <span
+                      key={step.id}
+                      className={cn(
+                        "h-1.5 w-4 rounded-full",
+                        tick(step.status)
+                      )}
+                    />
+                  ))}
+                </TooltipTrigger>
+                <TooltipContent>
+                  {stage.label} · {stage.status}
+                </TooltipContent>
+              </Tooltip>
+            ))}
 
           {/* Nothing to cancel before the first run — and one fewer control. */}
           {run ? (

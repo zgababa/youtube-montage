@@ -19,7 +19,6 @@ import { cleanupAgent } from "./agents/cleanup-agent"
 import { copyAgent } from "./agents/copy-agent"
 import { scenarioAgent } from "./agents/scenario-agent"
 import { sceneAgent } from "./agents/scene-agent"
-import { styleAgent } from "./agents/style-agent"
 import { APP_DIR, MASTRA_DB_URL } from "./lib/paths"
 import { brollWorkflow } from "./workflows/broll-workflow"
 import { generateSceneWorkflow } from "./workflows/generate-scene-workflow"
@@ -30,7 +29,7 @@ fs.mkdirSync(APP_DIR, { recursive: true })
 
 export const mastra = new Mastra({
   workflows: { brollWorkflow, generateSceneWorkflow },
-  agents: { cleanupAgent, styleAgent, scenarioAgent, sceneAgent, copyAgent },
+  agents: { cleanupAgent, scenarioAgent, sceneAgent, copyAgent },
 
   /**
    * Run state only — which step is executing, suspended payloads, snapshots.

@@ -29,10 +29,10 @@ npm run typecheck
 
 ## How the pipeline works
 
-One Mastra workflow, eleven steps, two human gates:
+One Mastra workflow, ten steps, two human gates:
 
 ```
-scan → extract-audio → transcribe → cleanup ⏸ → style-guide → scenarios
+scan → extract-audio → transcribe → cleanup ⏸ → scenarios
      → generate ×3 → review ⏸ → export → copy → shotlist
 ```
 
@@ -164,7 +164,7 @@ src/mastra/
   schemas.ts                  project.json as Zod — the single source of truth
   models.ts                   openrouter/anthropic/* ids
   stream/contract.ts          every event, once; the typed emitter
-  agents/                     cleanup, style, scenario, scene, copy
+  agents/                     cleanup, scenario, scene, copy
   workflows/                  broll-workflow, generate-scene-workflow
   steps/                      one file per step
   lib/
@@ -182,8 +182,8 @@ app/
   api/projects/[id]/route.ts  PATCH media roles, hints, fps, style guide
   api/projects  api/browse  api/reveal
 components/
-  project/                    header, pipeline progress, transcription hints,
-                              media settings, cleanup diff, scene list, copy,
+  project/                    header, run strip, stages, transcription hints,
+                              media settings, cleanup diff, scene grid, copy,
                               style guide, shot list
   projects/                   browser (list/card views), row, card,
                               thumbnail, add-project dialog
@@ -266,9 +266,13 @@ Three deliberate deviations from [idea.md](idea.md), all found while building:
   the Whisper path needed entirely. It does mean
   `disfluencies: true` is mandatory: AssemblyAI strips "um" and "uh" by default,
   and cutting exactly those is half of what step 4 does.
-- **A `style-guide` step was added.** §5 requires one guide shared by every
-  scene agent but the §4 step table omits it. Giving it its own step means it
-  can be re-run from Studio to try a different look without regenerating scenes.
+- **The style guide is a house style, not a generated one.** §5 requires one
+  guide shared by every scene agent, and it briefly had an agent and a step of
+  its own. Both are gone: a transcript says what a video is about, not what it
+  should look like, and generating the look per project means video three
+  doesn't match video one. The guide is now a default in `design.md`, overridable
+  per project in the UI, and everything that never varies moved into
+  `sceneAgent`'s prompt.
 
 ## Components
 

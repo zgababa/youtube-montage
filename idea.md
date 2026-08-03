@@ -161,7 +161,9 @@ Rendered frames are instantaneous samples with **no motion blur**, so fast movem
 
 ### Style guide
 
-A single style guide object is generated once per project and passed to **every** scene agent — palette, typography, motion character, spacing. Without it, parallel agents produce visually inconsistent scenes. Stored in `project.json` under `styleGuide`, editable in the UI, customizable per project later.
+A single style guide object is passed to **every** scene agent — palette, typography, motion character, spacing. Without it, parallel agents produce visually inconsistent scenes. Stored in `project.json` under `styleGuide`, editable in the UI, customizable per project.
+
+**Built, then unbuilt:** it was generated per project by its own agent and step. Both are gone. A transcript says what a video is about, not what it should look like, and a look invented per project means video three doesn't match video one — consistency across a channel is what the guide is for. The look is now a house default (`design.md`) that a project can override, and everything about it that never varies lives in `sceneAgent`'s prompt.
 
 ## 6. Export
 
