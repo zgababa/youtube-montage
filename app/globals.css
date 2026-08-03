@@ -140,14 +140,60 @@
     --scene-backdrop-dark: oklch(0.16 0.008 285);
     --scene-backdrop-light: oklch(0.94 0.003 285);
     --scene-checker: oklch(0.5 0 0 / 14%);
+
+    /*
+     * A dot lattice over the flat fields.
+     *
+     * Two offset layers rather than one, so the dots sit on a diamond lattice
+     * instead of a square grid — a square grid reads as a table behind the
+     * scene, which is the thing being reviewed. Faint enough that it doesn't
+     * change how the scene's own contrast reads against the field, which is
+     * what these two backdrops are for.
+     *
+     * Sized in screen pixels on the container, not inside the frame, so the
+     * spacing is the same on a review tile as on an expanded scene. The scene
+     * itself is `zoom`ed; this is not.
+     */
+    /* Light ink on a near-black field reads dimmer than dark ink on a
+       near-white one, so the two are not the same number. */
+    --scene-dot-dark: oklch(1 0 0 / 9%);
+    --scene-dot-light: oklch(0 0 0 / 7%);
+    --scene-dot-gap: 22px;
+    --scene-dot-size: 1.5px;
 }
 
 @utility scene-backdrop-dark {
     background-color: var(--scene-backdrop-dark);
+    background-image:
+        radial-gradient(
+            var(--scene-dot-dark) var(--scene-dot-size),
+            transparent var(--scene-dot-size)
+        ),
+        radial-gradient(
+            var(--scene-dot-dark) var(--scene-dot-size),
+            transparent var(--scene-dot-size)
+        );
+    background-size: var(--scene-dot-gap) var(--scene-dot-gap);
+    background-position:
+        0 0,
+        calc(var(--scene-dot-gap) / 2) calc(var(--scene-dot-gap) / 2);
 }
 
 @utility scene-backdrop-light {
     background-color: var(--scene-backdrop-light);
+    background-image:
+        radial-gradient(
+            var(--scene-dot-light) var(--scene-dot-size),
+            transparent var(--scene-dot-size)
+        ),
+        radial-gradient(
+            var(--scene-dot-light) var(--scene-dot-size),
+            transparent var(--scene-dot-size)
+        );
+    background-size: var(--scene-dot-gap) var(--scene-dot-gap);
+    background-position:
+        0 0,
+        calc(var(--scene-dot-gap) / 2) calc(var(--scene-dot-gap) / 2);
 }
 
 @utility scene-backdrop-checker {
