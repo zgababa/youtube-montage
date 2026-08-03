@@ -106,6 +106,14 @@ export interface SceneMeasurement {
   animationCount: number
   /** Console errors raised while loading — usually a syntax error in the scene. */
   consoleErrors: string[]
+  /** Words of visible text, counted from what actually renders. */
+  wordCount: number
+  /**
+   * How deeply painted surfaces nest — a chip inside a card inside a panel is
+   * 3. One is a scene with a single surface; zero is a scene composed of things
+   * rather than of boxes.
+   */
+  surfaceDepth: number
 }
 
 /**
@@ -124,7 +132,7 @@ export async function measureScene(html: string): Promise<SceneMeasurement> {
     })
     page.on("pageerror", (error) => consoleErrors.push(error.message))
 
-    const { durationSec, animationCount } = await page.evaluate(() => {
+    const measured = await page.evaluate(() => {
       const animations = document.getAnimations()
       let end = 0
       for (const animation of animations) {
@@ -136,10 +144,70 @@ export async function measureScene(html: string): Promise<SceneMeasurement> {
           end = Math.max(end, endTime)
         }
       }
-      return { durationSec: end / 1000, animationCount: animations.length }
+
+      const countWords = (text: string) =>
+        text.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length
+
+      // `innerText` rather than `textContent`: it reflects what renders, so a
+      // `display: none` variant doesn't count against the budget. Elements
+      // still at `opacity: 0` do count — they animate in later, and the budget
+      // is about what ends up on screen, not what's there at frame zero.
+      //
+      // Code doesn't count. A `code` scene is a stylized snippet revealed line
+      // by line, and it's read as an image rather than as prose — holding it to
+      // a prose budget would ban the scene type outright. Only the outermost
+      // `pre`/`code` is subtracted, or a `pre > code` would be taken off twice.
+      let codeWords = 0
+      for (const block of document.querySelectorAll("pre, code")) {
+        if (block.parentElement?.closest("pre, code")) continue
+        codeWords += countWords((block as HTMLElement).innerText || "")
+      }
+
+      const words = Math.max(
+        0,
+        countWords(document.body.innerText || "") - codeWords
+      )
+
+      /**
+       * A painted, rounded container — a card, a panel, a pill.
+       *
+       * Both conditions matter. Background alone catches a full-bleed wash or a
+       * progress track; the corner radius is what makes it read as a *box* laid
+       * on the frame, which is the thing being counted.
+       */
+      function isSurface(element: Element): boolean {
+        const style = getComputedStyle(element)
+        const parts = /rgba?\(([^)]+)\)/
+          .exec(style.backgroundColor)?.[1]
+          .split(",")
+          .map((value) => parseFloat(value))
+        if (!parts) return false
+        const alpha = parts.length > 3 ? parts[3] : 1
+        if (alpha < 0.03) return false
+        return (parseFloat(style.borderTopLeftRadius) || 0) >= 8
+      }
+
+      let surfaceDepth = 0
+      for (const element of document.querySelectorAll("*")) {
+        if (!isSurface(element)) continue
+        let depth = 1
+        let parent = element.parentElement
+        while (parent) {
+          if (isSurface(parent)) depth++
+          parent = parent.parentElement
+        }
+        surfaceDepth = Math.max(surfaceDepth, depth)
+      }
+
+      return {
+        durationSec: end / 1000,
+        animationCount: animations.length,
+        wordCount: words,
+        surfaceDepth,
+      }
     })
 
-    return { durationSec, animationCount, consoleErrors }
+    return { ...measured, consoleErrors }
   })
 }
 

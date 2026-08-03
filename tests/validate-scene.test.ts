@@ -1,7 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test"
 
-import { closeBrowser } from "../src/mastra/lib/render"
-import { staticProblems, validateScene } from "../src/mastra/lib/validate-scene"
+import { closeBrowser, type SceneMeasurement } from "../src/mastra/lib/render"
+import {
+  measurementProblems,
+  staticProblems,
+  validateScene,
+} from "../src/mastra/lib/validate-scene"
 
 afterAll(async () => {
   await closeBrowser()
@@ -89,6 +93,66 @@ describe("staticProblems", () => {
         scene({ extraHead: "<style>body{background:transparent}</style>" })
       )
     ).toEqual([])
+  })
+})
+
+/**
+ * The judgement, without the browser that produces the numbers.
+ *
+ * These thresholds were set against a real batch of generated scenes: 25 to 80
+ * words each, painted surfaces nesting as deep as five. Every one of them was
+ * rejected on sight by the person the b-roll is for.
+ */
+describe("what a scene is allowed to contain", () => {
+  function measured(over: Partial<SceneMeasurement> = {}): SceneMeasurement {
+    return {
+      durationSec: 3,
+      animationCount: 6,
+      consoleErrors: [],
+      wordCount: 8,
+      surfaceDepth: 1,
+      ...over,
+    }
+  }
+
+  test("passes a spare scene", () => {
+    expect(measurementProblems(measured(), 7)).toEqual([])
+  })
+
+  test("sends back a scene carrying a paragraph", () => {
+    // The median of the batch this was calibrated against.
+    const problems = measurementProblems(measured({ wordCount: 49 }), 7)
+
+    expect(problems.join(" ")).toContain("49 words")
+    expect(problems.join(" ")).toContain("competes")
+  })
+
+  test("allows a scene that is merely a little wordy", () => {
+    // The instruction asks for twelve; the ceiling is twenty, so a scene that
+    // overshoots the target still ships rather than burning a repair attempt.
+    expect(measurementProblems(measured({ wordCount: 20 }), 7)).toEqual([])
+    expect(measurementProblems(measured({ wordCount: 21 }), 7)).not.toEqual([])
+  })
+
+  test("allows one surface, and one thing sitting on it", () => {
+    expect(measurementProblems(measured({ surfaceDepth: 2 }), 7)).toEqual([])
+  })
+
+  test("sends back cards inside cards", () => {
+    const problems = measurementProblems(measured({ surfaceDepth: 3 }), 7)
+
+    expect(problems.join(" ")).toContain("nest 3 deep")
+  })
+
+  test("reports every problem at once, not the first one", () => {
+    // The repair prompt gets the whole list — fixing one at a time would spend
+    // three attempts discovering three things.
+    const problems = measurementProblems(
+      measured({ wordCount: 60, surfaceDepth: 4, durationSec: 20 }),
+      7
+    )
+
+    expect(problems).toHaveLength(3)
   })
 })
 

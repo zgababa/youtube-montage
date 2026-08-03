@@ -9,6 +9,30 @@ Adapted from the B-Roll Studio doc, which described a hand-built Vite + React +
 Motion project. The taste carries over unchanged. The format does not, and the
 differences are load-bearing — see [What doesn't carry over](#what-doesnt-carry-over).
 
+## These are shots, not slides
+
+The scenes are **not a product UI** and not a deck. They are short, cinematic,
+self-contained visual sequences that play *under someone talking*, and almost
+everything that makes a generated scene look generated comes from forgetting
+that:
+
+- **A word budget, because the voice is the narration.** Twelve words is the
+  target, twenty is the ceiling the validator enforces. Measured across a real
+  batch, generated scenes averaged 49 words on three-to-eleven-second shots —
+  more text than the scene is on screen long enough to read, which is a precise
+  way of saying nobody read any of it. Code is exempt: a `code` scene is read as
+  an image.
+- **No title, no eyebrow, no caption.** The lockup of a small uppercase pill
+  above a big headline above a grey subtitle is the single strongest tell of a
+  generated scene. The speaker has already said the title out loud.
+- **One surface at most, ideally none.** Cards inside cards inside chips is a
+  settings page. Two things are compared by placing them apart and aligning
+  them, not by drawing a box around each. The validator rejects surfaces nested
+  more than two deep.
+- **No interface furniture.** Status pills, `01`/`02` row indices, progress bars
+  with numbers beside them, legends, tabs, toolbars, window chrome. All of it
+  says "screenshot of an app" rather than "shot in a film".
+
 ## Design language
 
 **Clean, minimal, confident.** Every scene should look like it belongs in an
@@ -21,8 +45,10 @@ Apple product film.
 - **Light, not dark.** Near-white surfaces carrying near-black type. Both work
   over footage, but a light surface reads as something deliberately placed on
   top of the shot, where a near-black one tends to read as the footage dipping.
-- **Restrained palette.** Monochrome, with at most one accent colour per scene.
-  Soft gradients and elevation over hard borders.
+- **Restrained palette.** Monochrome, with **warm coral** (`#FF6B5A`) as the one
+  accent. One accent per scene, used on the single thing that matters — a coral
+  that appears in six places is decoration, not emphasis. Soft gradients and
+  elevation over hard borders.
 - **Depth through light, not lines.** Blur, glow, translucency, soft shadow —
   instead of visible strokes and boxes.
 - **No clutter.** No watermarks, no fake browser chrome, no cursors, no debug UI.

@@ -16,7 +16,32 @@
  *   - overrunning the window → the scene is still animating when the gap ends
  */
 
-import { measureScene } from "./render"
+import { measureScene, type SceneMeasurement } from "./render"
+
+/**
+ * The most words that may end up on screen.
+ *
+ * B-roll plays under someone talking. Text on screen competes with the voice
+ * for the same attention, and loses — nobody reads a paragraph while listening
+ * to a sentence. Measured across a real batch of generated scenes, the median
+ * was 49 words and the worst was 80, on scenes running three to eleven seconds.
+ * At a comfortable reading speed that is more text than the scene is on screen
+ * for, which is a precise way of saying nobody read any of it.
+ *
+ * The prompt asks for twelve. This is the ceiling where the scene is sent back,
+ * deliberately looser than the instruction so that a scene which is merely a
+ * little wordy still ships.
+ */
+const MAX_WORDS = 20
+
+/**
+ * The deepest a painted surface may nest.
+ *
+ * One card is a composition; a card holding cards holding chips is a settings
+ * page. Two allows a single surface with something small on it, which is enough
+ * for anything that isn't a dashboard.
+ */
+const MAX_SURFACE_DEPTH = 2
 
 export interface ValidationResult {
   ok: boolean
@@ -122,18 +147,17 @@ export function staticProblems(html: string): string[] {
 }
 
 /**
- * Full validation. Skips the browser when the source is already disqualified,
- * since a scene that reads the clock will be regenerated regardless of how
- * long it animates for.
+ * Everything the browser had to render before it could be known.
+ *
+ * Split out from `validateScene` so the thresholds can be exercised without
+ * launching Chromium — the measuring is the slow part, and the judgement is the
+ * part worth testing.
  */
-export async function validateScene(
-  html: string,
+export function measurementProblems(
+  measurement: SceneMeasurement,
   windowSec: number
-): Promise<ValidationResult> {
-  const problems = staticProblems(html)
-  if (problems.length > 0) return { ok: false, durationSec: 0, problems }
-
-  const measurement = await measureScene(html)
+): string[] {
+  const problems: string[] = []
 
   if (measurement.consoleErrors.length > 0) {
     problems.push(
@@ -155,9 +179,39 @@ export async function validateScene(
     )
   }
 
+  if (measurement.wordCount > MAX_WORDS) {
+    problems.push(
+      `There are ${measurement.wordCount} words on screen and the limit is ${MAX_WORDS}. This plays under someone talking, so the text competes with what they are saying. Cut it to a few words — no title, no subtitle under a title, no sentences, no descriptive captions. Show the idea; the voice explains it.`
+    )
+  }
+
+  if (measurement.surfaceDepth > MAX_SURFACE_DEPTH) {
+    problems.push(
+      `Painted surfaces nest ${measurement.surfaceDepth} deep and the limit is ${MAX_SURFACE_DEPTH}. Cards inside cards inside cards read as a settings page. Delete the containers and lay the elements out with space and alignment instead.`
+    )
+  }
+
+  return problems
+}
+
+/**
+ * Full validation. Skips the browser when the source is already disqualified,
+ * since a scene that reads the clock will be regenerated regardless of how
+ * long it animates for.
+ */
+export async function validateScene(
+  html: string,
+  windowSec: number
+): Promise<ValidationResult> {
+  const problems = staticProblems(html)
+  if (problems.length > 0) return { ok: false, durationSec: 0, problems }
+
+  const measurement = await measureScene(html)
+  const measured = measurementProblems(measurement, windowSec)
+
   return {
-    ok: problems.length === 0,
+    ok: measured.length === 0,
     durationSec: measurement.durationSec,
-    problems,
+    problems: measured,
   }
 }

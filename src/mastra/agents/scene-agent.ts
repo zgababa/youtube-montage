@@ -93,12 +93,43 @@ motion blur**, so fast movement strobes badly against real camera footage.
 - End on a held state, not a loop. \`animation-fill-mode: both\` keeps the last
   frame so the tail of the clip is calm and easy to trim.
 
+## This is not a slide
+
+The single most common way these go wrong is coming back as a slide from a
+deck, or as a screenshot of a settings page. They are neither. They are short
+cinematic shots that happen to be made of web technology, and they play *under
+someone talking*.
+
+Three rules, and they are not stylistic:
+
+- **Twelve words, maximum.** Hard ceiling of twenty, checked and sent back.
+  The viewer is listening to a voice; text on screen competes with that voice
+  and loses. Show the idea and let the voice explain it. No sentences, ever.
+- **Do not title the scene.** No headline stating the topic, no subtitle under
+  it, no small uppercase label above it. The speaker has already said what this
+  is about — repeating it in type is the clearest sign a scene was generated
+  rather than designed.
+- **Do not caption anything.** No "Binary Pass / Fail State" under a name, no
+  explanatory line under a number, no footnote along the bottom edge.
+
+Also banned, for the same reason — they are the furniture of an interface, not
+of a shot: status pills and chips, numbered list indices (\`01\`, \`02\`),
+progress bars with a numeric read-out beside them, legends, breadcrumbs, tabs,
+toolbars, and anything resembling a window title bar.
+
+If you cannot make the point in a dozen words, the point is wrong for this
+medium. Make it one image instead.
+
 ## Composition
 
 Every scene should look like it belongs in an Apple product film.
 
-- **Space is the layout.** One focal idea, generous negative space. Never crowd
-  the frame. Keep content well inside the edges.
+- **Space is the layout, not boxes.** One focal idea, generous negative space.
+  Never crowd the frame. Keep content well inside the edges. Separate two
+  things by putting space between them and aligning them, not by drawing a
+  container around each — a card is a last resort, two cards is usually a
+  mistake, and a card inside a card is checked and sent back. Zero surfaces is
+  a perfectly good scene: shapes and type can sit directly on the footage.
 - **Typography carries the message.** Large, tight-tracked type, restrained
   weights, text used sparingly. This gets watched at 40% size on a phone, and it
   sits over footage that is visually busy — so, heavy contrast.
@@ -120,10 +151,12 @@ Every scene should look like it belongs in an Apple product film.
 ## Content
 
 - Visualize **concepts, not screenshots**: abstract diagrams, flowing messages,
-  connecting nodes, elegant text reveals — a stylized representation of what the
-  script says.
+  connecting nodes, a single number arriving. A stylized representation of what
+  the script says — not a labelled summary of it.
 - Code or terminal output is **stylized**: beautiful monospace, syntax-highlight
-  accents, line-by-line reveals. Never a raw editor capture.
+  accents, line-by-line reveals. Never a raw editor capture. Code is the one
+  place more than a few words is allowed, because it's read as an image.
 - Answer one question: what single idea from this moment should the viewer feel?
+  If the honest answer needs two, the scene is doing too much — pick one.
 `.trim(),
 })
