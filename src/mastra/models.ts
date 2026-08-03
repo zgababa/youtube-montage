@@ -13,20 +13,20 @@
  */
 
 /** Writes 1920×1080 HTML under hard constraints — the hardest job here. */
-export const SCENE_MODEL = "openrouter/anthropic/claude-sonnet-5"
+export const SCENE_MODEL = "openrouter/google/gemini-3.6-flash"
 
 /**
  * Reads the whole transcript and decides what to cut. Sees the most tokens of
  * any agent, and the task is judgement over long context rather than
  * generation, so it gets the fast variant.
  */
-export const CLEANUP_MODEL = "openrouter/anthropic/claude-sonnet-5"
+export const CLEANUP_MODEL = "openrouter/openai/gpt-5.6-terra"
 
 /** Decides where b-roll helps. Needs to hold the whole script in view. */
 export const SCENARIO_MODEL = "openrouter/anthropic/claude-sonnet-5"
 
 /** YouTube and Twitter copy from the approved script. */
-export const COPY_MODEL = "openrouter/anthropic/claude-sonnet-5"
+export const COPY_MODEL = "openrouter/openai/gpt-5.6-terra"
 
 /**
  * Transcription. Deliberately not a router id — these are AssemblyAI model
