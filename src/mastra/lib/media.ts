@@ -43,6 +43,20 @@ export function compareForScript(a: string, b: string): number {
   return byName !== 0 ? byName : collate(a, b)
 }
 
+/**
+ * Whether a file is named as a part of the script — `01.MP4`, `02 - demo.mov`.
+ *
+ * The same convention `compareForScript` sorts by, read as a second claim: a
+ * numbered file is a piece of the talk, and by implication an unnumbered one
+ * isn't. It's the only statement of intent a folder of footage carries.
+ *
+ * One to three digits, so a date-named export — `2026-08-03 shoot.mp4` — isn't
+ * mistaken for part 2026 of the script.
+ */
+export function isNumbered(file: string): boolean {
+  return /^\d{1,3}(\D|$)/.test(path.basename(file))
+}
+
 /** What ffprobe knows, before any of this is decided. */
 export interface ProbedFile {
   path: string
@@ -63,6 +77,7 @@ export function assignRoles(
 ): MediaFile[] {
   const before = new Map(previous.map((file) => [file.path, file]))
   const pairing = autoPair(probed)
+  const numbered = usesNumbering(probed)
 
   return probed.map((file): MediaFile => {
     const prior = before.get(file.path)
@@ -85,8 +100,35 @@ export function assignRoles(
       return { ...file, transcribe: false, offsetSec: 0, voices: null }
     }
 
+    // The folder says which files are the script. Anything else in it — a
+    // screen recording of the same take, a music bed, an unrelated clip — is
+    // footage, and transcribing it puts words in the script that were never
+    // said in that order.
+    if (numbered && !isNumbered(file.path)) {
+      return { ...file, transcribe: false, offsetSec: 0, voices: null }
+    }
+
     return { ...file, transcribe: true, offsetSec: 0, voices: null }
   })
+}
+
+/**
+ * Whether this folder is using the convention at all.
+ *
+ * The rule has to be conditional. Applied unconditionally to a folder where
+ * nothing is numbered it would transcribe nothing, and the run would die at
+ * step 2 with no source — a worse failure than the doubled transcript it's
+ * there to prevent. It only means anything when the user has numbered *some* of
+ * the files, which is what makes the rest of them a deliberate exclusion rather
+ * than an accident of naming.
+ */
+function usesNumbering(files: ProbedFile[]): boolean {
+  const sources = files.filter((file) => file.hasAudio)
+
+  return (
+    sources.some((file) => isNumbered(file.path)) &&
+    sources.some((file) => !isNumbered(file.path))
+  )
 }
 
 function settingsOf(file: MediaFile) {
@@ -119,13 +161,24 @@ function autoPair(
 
 /** Human-readable summary of what `assignRoles` decided, for the scan log. */
 export function describeRoles(media: MediaFile[]): string[] {
-  return media
+  const lines = media
     .filter((file) => file.hasAudio)
     .map((file) => {
       if (!file.transcribe) return `${file.path} — not transcribed`
       if (file.voices) return `${file.path} — transcribed as ${file.voices}`
       return `${file.path} — transcribed`
     })
+
+  // Said once, up front: a file left out for being unnumbered is the one
+  // decision here that looks like something went wrong if you don't know the
+  // rule — the file is right there in the folder and nothing transcribed it.
+  if (usesNumbering(media)) {
+    lines.unshift(
+      "Numbered files are the script; unnumbered files default to footage."
+    )
+  }
+
+  return lines
 }
 
 /**

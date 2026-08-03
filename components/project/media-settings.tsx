@@ -106,7 +106,7 @@ export function MediaSettings({
   return (
     <StageSection
       title="Media"
-      description="Transcribe one source per performance. If a camera and a separate mic both recorded the same talk, transcribing both puts it in the script twice — pick the mic, and tell it which clip it belongs to."
+      description="Files numbered 01, 02 are transcribed; anything else in the folder is footage. Transcribe one source per performance — if a camera and a separate mic both recorded the same talk, transcribing both puts it in the script twice, so pick the mic and tell it which clip it belongs to."
       footer={
         <>
           <p className="text-xs text-muted-foreground">
@@ -272,9 +272,10 @@ function ScriptOrder({ sources }: { sources: MediaFile[] }) {
     <div className="rounded-lg border border-dashed bg-muted/40 p-4">
       <p className="text-sm font-medium">Script order</p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Stitched together in this order, by filename. Number your files{" "}
+        Stitched together in this order, by filename. Numbering your files{" "}
         <span className="font-mono">01 -</span>,{" "}
-        <span className="font-mono">02 -</span> to control it.
+        <span className="font-mono">02 -</span> sets the order and keeps
+        everything else in the folder out of the transcript.
       </p>
       <ol className="mt-3 flex flex-col gap-1">
         {sources.map((file, index) => (

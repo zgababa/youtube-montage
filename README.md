@@ -106,7 +106,7 @@ its own scratch audio, and a separate mic or recorder capturing the good audio.
 Both are media, both have sound, and transcribing both puts the whole talk into
 the script twice.
 
-So each file carries three settings, on the project's **Media** tab:
+So each file carries three settings, under **Footage & transcript**:
 
 | | |
 |---|---|
@@ -116,9 +116,17 @@ So each file carries three settings, on the project's **Media** tab:
 
 `scan` fills them in when the reading is unambiguous — exactly one standalone
 audio file and exactly one video with sound gets paired automatically, mic as
-the source and camera as the anchor. Anything more ambiguous transcribes
-everything and flags the Media tab, because pairing the wrong two files produces
-a result that still looks plausible.
+the source and camera as the anchor. Pairing the wrong two files produces a
+result that still looks plausible, so anything more ambiguous is left alone
+rather than guessed at.
+
+Failing that, **the filenames decide**. A folder with some files numbered
+`01`, `02` and some not is making a statement: the numbered ones are the script
+and the rest is footage. Only the numbered files are transcribed. This is the
+same convention that sets script order, read as a second claim, and it's what
+keeps a screen recording of the same take — or an unrelated audio file that
+happened to be in the folder — out of the transcript. A folder that numbers
+nothing, or numbers everything, transcribes every file with sound as before.
 
 `voices` is what keeps the shot list useful: words from the mic are re-tagged
 with the camera clip, so a scene tells you to scrub the file actually on your

@@ -4,6 +4,7 @@ import {
   anchorWords,
   assignRoles,
   compareForScript,
+  isNumbered,
   type ProbedFile,
 } from "../src/mastra/lib/media"
 import type { MediaFile } from "../src/mastra/schemas"
@@ -137,6 +138,118 @@ describe("assignRoles", () => {
     const media = assignRoles([recut, mic], previous)
 
     expect(by(media, "raw/a-cam-01.mp4").durationSec).toBe(1200)
+  })
+})
+
+/**
+ * The folder that motivated this: two numbered parts of a talk, a screen
+ * recording of the second one (same duration to within half a second), and an
+ * unrelated audio file. Nothing pairs — three clips carry sound — so every one
+ * of them was transcribed, and the script contained the second part twice plus
+ * thirteen minutes that belonged to nothing.
+ */
+describe("numbered files are the script", () => {
+  const part1: ProbedFile = {
+    path: "01.MP4",
+    durationSec: 891.4,
+    hasAudio: true,
+    hasVideo: true,
+  }
+  const part2: ProbedFile = {
+    path: "02.MP4",
+    durationSec: 2569.4,
+    hasAudio: true,
+    hasVideo: true,
+  }
+  const restage: ProbedFile = {
+    path: "Helium.mp4",
+    durationSec: 2569.8,
+    hasAudio: true,
+    hasVideo: true,
+  }
+  const unrelated: ProbedFile = {
+    path: "before-demo-thumbs.mp3",
+    durationSec: 831.1,
+    hasAudio: true,
+    hasVideo: false,
+  }
+
+  test("transcribes the numbered files and nothing else", () => {
+    const media = assignRoles([part1, part2, restage, unrelated])
+    const sources = media.filter((file) => file.transcribe)
+
+    expect(sources.map((file) => file.path)).toEqual(["01.MP4", "02.MP4"])
+  })
+
+  test("leaves the excluded files as footage, not as anchors", () => {
+    const media = assignRoles([part1, part2, restage, unrelated])
+
+    expect(by(media, "Helium.mp4").voices).toBeNull()
+    expect(by(media, "before-demo-thumbs.mp3").voices).toBeNull()
+  })
+
+  /**
+   * Unconditional, this rule would transcribe nothing here and the run would
+   * die at step 2 with no source — worse than the doubled script it prevents.
+   */
+  test("does nothing to a folder that numbers nothing", () => {
+    const media = assignRoles([camera, screen])
+
+    expect(media.filter((file) => file.transcribe)).toHaveLength(2)
+  })
+
+  test("does nothing when every file is numbered", () => {
+    const media = assignRoles([part1, part2])
+
+    expect(media.filter((file) => file.transcribe)).toHaveLength(2)
+  })
+
+  /**
+   * The pairing is the narrower signal and runs first. A numbered camera clip
+   * with a separate mic still transcribes the mic, because "which file has the
+   * good audio" is a different question from "which files are the script".
+   */
+  test("does not override the mic pairing", () => {
+    const media = assignRoles([part1, mic])
+
+    expect(by(media, "raw/audio.mp3").transcribe).toBe(true)
+    expect(by(media, "raw/audio.mp3").voices).toBe("01.MP4")
+    expect(by(media, "01.MP4").transcribe).toBe(false)
+  })
+
+  test("a file the user switched back on stays on", () => {
+    const previous = assignRoles([part1, part2, restage]).map((file) =>
+      file.path === "Helium.mp4" ? { ...file, transcribe: true } : file
+    )
+
+    const media = assignRoles([part1, part2, restage], previous)
+
+    expect(by(media, "Helium.mp4").transcribe).toBe(true)
+  })
+})
+
+describe("isNumbered", () => {
+  test("accepts the shapes people actually name parts", () => {
+    for (const name of [
+      "01.MP4",
+      "1.mp4",
+      "02 - demo.mov",
+      "03-outro.mp4",
+      "raw/04_intro.mp4",
+      "12.mp4",
+    ]) {
+      expect(isNumbered(name)).toBe(true)
+    }
+  })
+
+  test("a date-named export is not part 2026 of the script", () => {
+    expect(isNumbered("2026-08-03 shoot.mp4")).toBe(false)
+  })
+
+  test("a number elsewhere in the name doesn't count", () => {
+    // The convention is a prefix. `a-cam-01` is a camera label, not a position.
+    expect(isNumbered("raw/a-cam-01.mp4")).toBe(false)
+    expect(isNumbered("Helium.mp4")).toBe(false)
   })
 })
 
