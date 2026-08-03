@@ -122,3 +122,48 @@ describe("the generate row", () => {
     expect(row?.detail).toBeUndefined()
   })
 })
+
+describe("a scene's document", () => {
+  const generated = {
+    type: "data-scene",
+    data: { ...scene("scene_01", "ready", 0), html: "<h1>generated</h1>" },
+  } as Part
+
+  test("survives a report that doesn't carry one", () => {
+    // What `review` emits when the user approves a scene: the new status, and
+    // `html: null` because it isn't re-sending the document it just approved.
+    const approved = {
+      type: "data-scene",
+      data: { ...scene("scene_01", "approved", 0), html: null },
+    } as Part
+
+    const { patch } = reduceParts(run(generated, approved))
+    const [only] = patch.scenes!
+
+    expect(only.status).toBe("approved")
+    // Taking the null literally blanked the preview the moment you approved.
+    expect(only.html).toBe("<h1>generated</h1>")
+  })
+
+  test("is replaced when a later report actually carries one", () => {
+    const regenerated = {
+      type: "data-scene",
+      data: { ...scene("scene_01", "ready", 0), html: "<h1>second go</h1>" },
+    } as Part
+
+    const { patch } = reduceParts(run(generated, regenerated))
+
+    expect(patch.scenes![0].html).toBe("<h1>second go</h1>")
+  })
+
+  test("stays null for a scene that never produced one", () => {
+    const failed = {
+      type: "data-scene",
+      data: { ...scene("scene_02", "failed", 20), html: null },
+    } as Part
+
+    const { patch } = reduceParts(run(failed))
+
+    expect(patch.scenes![0].html).toBeNull()
+  })
+})

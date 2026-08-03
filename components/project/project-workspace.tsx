@@ -315,10 +315,16 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   ).length
   /**
    * Either there's something new to say, or there are approved scenes that
-   * haven't been rendered yet.
+   * haven't been rendered yet — and the run isn't already working.
+   *
+   * The streaming half is load-bearing, not politeness. Every submit is a
+   * `run.resume()`, and a second one while the first is still going runs the
+   * export step twice over the same scenes; the two passes then delete each
+   * other's frames and every scene comes back failed.
    */
   const canSubmitReview =
-    decided.length > 0 || counts.approved > counts.exported
+    !pipeline.streaming &&
+    (decided.length > 0 || counts.approved > counts.exported)
 
   const body: Record<StageId, React.ReactNode> = {
     footage: (
@@ -383,7 +389,7 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
       <Button
         size="sm"
         onClick={approveCleanup}
-        disabled={project.cleanupApprovedAt !== null}
+        disabled={project.cleanupApprovedAt !== null || pipeline.streaming}
       >
         <HugeiconsIcon
           icon={Tick02Icon}

@@ -86,12 +86,20 @@ export function reduceParts(
         for (const scene of part.data.scenes) scenes.set(scene.id, scene)
         break
 
-      case "data-scene":
-        // Merge rather than replace. A scene arriving from `export` carries no
-        // HTML, and dropping the HTML that `generate` already sent would blank
-        // the preview the moment the export starts.
-        scenes.set(part.data.id, { ...scenes.get(part.data.id), ...part.data })
+      case "data-scene": {
+        // Merge rather than replace, and treat a null document as "not
+        // included" rather than "this scene lost its HTML". `review` reports an
+        // approval without re-sending the document it approved — taking that
+        // literally blanked the preview of every scene the moment it was
+        // approved, which is when you most want to still see it.
+        const seen = scenes.get(part.data.id)
+        scenes.set(part.data.id, {
+          ...seen,
+          ...part.data,
+          html: part.data.html ?? seen?.html ?? null,
+        })
         break
+      }
 
       case "data-copy":
         patch.copy = part.data.copy

@@ -7,6 +7,7 @@
  * perfect in a live preview and renders frozen here.
  */
 
+import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Browser, Page } from "playwright"
@@ -175,15 +176,24 @@ export interface ExportOptions {
  * Frames land in `os.tmpdir()` and are deleted after encoding. A 7-second scene
  * at 30fps is 210 PNGs at 1920×1080; written inside the project folder, the
  * dev server's watcher would try to follow all of them.
+ *
+ * The directory is unique per call, not per scene. Two exports of the same
+ * scene running at once — which a second `run.resume()` will happily start —
+ * used to share one path, and each one's cleanup deleted the other's frames
+ * mid-render. That surfaced as `ENOENT` on a frame five hundred into the
+ * sequence, or as ffmpeg reporting an empty directory, on scenes that were
+ * perfectly fine.
  */
 export async function exportScene(
   html: string,
   options: ExportOptions
 ): Promise<void> {
   const { fps, durationSec, outputPath, onProgress } = options
-  const framesDir = tmpDir("frames", path.parse(outputPath).name)
+  const framesDir = tmpDir(
+    "frames",
+    `${path.parse(outputPath).name}-${randomUUID()}`
+  )
 
-  await fs.rm(framesDir, { recursive: true, force: true })
   await fs.mkdir(framesDir, { recursive: true })
 
   try {
