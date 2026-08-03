@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Alert02Icon, Tick02Icon } from "@hugeicons/core-free-icons"
+import { Alert02Icon } from "@hugeicons/core-free-icons"
 
 import { CATEGORY_LABELS, durationLabel, timecode } from "@/lib/format"
 import {
@@ -17,15 +17,6 @@ import { cn } from "@/lib/utils"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
@@ -36,11 +27,16 @@ import {
 } from "@/components/ui/tooltip"
 import { Highlight } from "@/components/highlight"
 import { SearchInput } from "@/components/search-input"
+import { StageSection } from "@/components/project/stage"
 
 interface CleanupReviewProps {
   project: Project
   onToggleSpan: (index: number) => void
-  onApprove: () => void
+  /**
+   * Undoes the approval so the diff is editable again. Approving itself is the
+   * stage header's job — it's the thing the run is waiting on, and it used to
+   * sit below a 26rem scroll area where you had to go looking for it.
+   */
   onReopen: () => void
 }
 
@@ -55,7 +51,6 @@ interface CleanupReviewProps {
 export function CleanupReview({
   project,
   onToggleSpan,
-  onApprove,
   onReopen,
 }: CleanupReviewProps) {
   const [hideCuts, setHideCuts] = React.useState(false)
@@ -80,15 +75,11 @@ export function CleanupReview({
   const approved = project.cleanupApprovedAt !== null
 
   return (
-    <Card id="cleanup">
-      <CardHeader>
-        <CardTitle>Transcript cleanup</CardTitle>
-        <CardDescription>
-          {durationLabel(removed)} removed from {durationLabel(total)} ·{" "}
-          {project.transcript.words.length} words with timestamps
-        </CardDescription>
-        <CardAction>
-          <Field orientation="horizontal">
+    <StageSection
+      description={`${durationLabel(removed)} removed from ${durationLabel(total)} · ${project.transcript.words.length} words with timestamps`}
+      action={
+        <div className="flex items-center gap-3">
+          <Field orientation="horizontal" className="w-auto">
             <FieldLabel htmlFor="hide-cuts">Hide cuts</FieldLabel>
             <Switch
               id="hide-cuts"
@@ -96,10 +87,22 @@ export function CleanupReview({
               onCheckedChange={setHideCuts}
             />
           </Field>
-        </CardAction>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-4">
+          {approved ? (
+            <Button variant="ghost" size="sm" onClick={onReopen}>
+              Reopen
+            </Button>
+          ) : null}
+        </div>
+      }
+      footer={
+        <p className="text-xs text-muted-foreground">
+          {approved
+            ? `Approved ${new Date(project.cleanupApprovedAt!).toLocaleString()} — the scenario agent reads this script.`
+            : "Approving resumes the suspended workflow with the spans as they stand."}
+        </p>
+      }
+    >
+      <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
           {counts.map(([category, count]) => (
             <Badge key={category} variant="outline">
@@ -156,31 +159,8 @@ export function CleanupReview({
             )}
           </div>
         </ScrollArea>
-      </CardContent>
-
-      <CardFooter className="justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {approved
-            ? `Approved ${new Date(project.cleanupApprovedAt!).toLocaleString()} — steps 5 and up are unblocked.`
-            : "Approving resumes the suspended workflow with the spans as they stand."}
-        </p>
-        <div className="flex items-center gap-2">
-          {approved ? (
-            <Button variant="ghost" onClick={onReopen}>
-              Reopen
-            </Button>
-          ) : null}
-          <Button onClick={onApprove} disabled={approved}>
-            <HugeiconsIcon
-              icon={Tick02Icon}
-              strokeWidth={2}
-              data-icon="inline-start"
-            />
-            {approved ? "Cleanup approved" : "Approve cleanup"}
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
+      </div>
+    </StageSection>
   )
 }
 

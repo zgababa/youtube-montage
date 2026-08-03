@@ -4,7 +4,6 @@ import * as React from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Alert02Icon,
-  FileExportIcon,
   Search01Icon,
   Video01Icon,
 } from "@hugeicons/core-free-icons"
@@ -14,6 +13,7 @@ import type { Project, SceneDraft } from "@/lib/types"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { SceneTile } from "@/components/project/scene-tile"
 import {
   Empty,
   EmptyContent,
@@ -28,6 +28,9 @@ import { SearchInput } from "@/components/search-input"
 import type { SceneBackdrop } from "@/components/scene/scene-frame"
 import { SceneRow } from "@/components/project/scene-row"
 
+/** One expanded scene spans the whole grid, so the row it opens into is full width. */
+const FULL_WIDTH = "sm:col-span-2 xl:col-span-3"
+
 const BACKDROPS: { value: SceneBackdrop; label: string }[] = [
   { value: "checker", label: "Alpha" },
   { value: "dark", label: "Dark" },
@@ -41,8 +44,6 @@ interface SceneListProps {
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onRegenerate: (id: string, note: string) => void
-  onExport: (id: string) => void
-  onExportAll: () => void
 }
 
 /**
@@ -55,11 +56,11 @@ export function SceneList({
   onApprove,
   onReject,
   onRegenerate,
-  onExport,
-  onExportAll,
 }: SceneListProps) {
   const [backdrop, setBackdrop] = React.useState<SceneBackdrop>("checker")
   const [query, setQuery] = React.useState("")
+  /** At most one scene is open at a time — two full rows is the old scrolling. */
+  const [expanded, setExpanded] = React.useState<string | null>(null)
 
   const scenes = React.useMemo(
     () => [...project.scenes].sort((a, b) => a.scriptStart - b.scriptStart),
@@ -135,41 +136,25 @@ export function SceneList({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Field orientation="horizontal" className="w-auto">
-            <FieldLabel className="text-xs text-muted-foreground">
-              Preview over
-            </FieldLabel>
-            <ToggleGroup
-              size="sm"
-              value={[backdrop]}
-              onValueChange={(value) => {
-                const next = value[0] as SceneBackdrop | undefined
-                if (next) setBackdrop(next)
-              }}
-            >
-              {BACKDROPS.map((item) => (
-                <ToggleGroupItem key={item.value} value={item.value}>
-                  {item.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </Field>
-
-          <Button
-            variant="secondary"
+        <Field orientation="horizontal" className="w-auto">
+          <FieldLabel className="text-xs text-muted-foreground">
+            Preview over
+          </FieldLabel>
+          <ToggleGroup
             size="sm"
-            onClick={onExportAll}
-            disabled={counts.approved === counts.exported}
+            value={[backdrop]}
+            onValueChange={(value) => {
+              const next = value[0] as SceneBackdrop | undefined
+              if (next) setBackdrop(next)
+            }}
           >
-            <HugeiconsIcon
-              icon={FileExportIcon}
-              strokeWidth={2}
-              data-icon="inline-start"
-            />
-            Export approved
-          </Button>
-        </div>
+            {BACKDROPS.map((item) => (
+              <ToggleGroupItem key={item.value} value={item.value}>
+                {item.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </Field>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -186,8 +171,8 @@ export function SceneList({
           </span>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Exports run one at a time — four concurrent Playwright and ffmpeg
-            jobs makes the machine unusable.
+            Click a scene to scrub it, read its timings, or send it back with a
+            note.
           </p>
         )}
       </div>
@@ -211,19 +196,38 @@ export function SceneList({
           </EmptyContent>
         </Empty>
       ) : (
-        matches.map((scene) => (
-          <SceneRow
-            key={scene.id}
-            scene={scene}
-            backdrop={backdrop}
-            draft={drafts[scene.id]}
-            query={query}
-            onApprove={onApprove}
-            onReject={onReject}
-            onRegenerate={onRegenerate}
-            onExport={onExport}
-          />
-        ))
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {matches.map((scene) =>
+            scene.id === expanded ? (
+              // Spanning the whole grid rather than opening a dialog: the
+              // scene stays where it was in script order, and closing it puts
+              // you back in the same place instead of behind an overlay.
+              <SceneRow
+                key={scene.id}
+                className={FULL_WIDTH}
+                scene={scene}
+                backdrop={backdrop}
+                draft={drafts[scene.id]}
+                query={query}
+                onCollapse={() => setExpanded(null)}
+                onApprove={onApprove}
+                onReject={onReject}
+                onRegenerate={onRegenerate}
+              />
+            ) : (
+              <SceneTile
+                key={scene.id}
+                scene={scene}
+                backdrop={backdrop}
+                draft={drafts[scene.id]}
+                query={query}
+                onApprove={onApprove}
+                onReject={onReject}
+                onExpand={() => setExpanded(scene.id)}
+              />
+            )
+          )}
+        </div>
       )}
     </div>
   )

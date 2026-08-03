@@ -2,10 +2,13 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { Tick02Icon } from "@hugeicons/core-free-icons"
 
 import { applyPatch } from "@/lib/run-reducer"
 import { reveal, saveProject } from "@/lib/client-api"
 import { sceneCounts, withDecisions } from "@/lib/project"
+import { focusStage, stageStates, type StageId } from "@/lib/stages"
 import type {
   MediaFile,
   Project,
@@ -15,16 +18,18 @@ import type {
 } from "@/lib/types"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import { usePipeline } from "@/hooks/use-pipeline"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/toast"
 import { CleanupReview } from "@/components/project/cleanup-review"
 import { CopyReview } from "@/components/project/copy-review"
 import { MediaSettings } from "@/components/project/media-settings"
-import { PipelineProgress } from "@/components/project/pipeline-progress"
 import { ProjectHeader } from "@/components/project/project-header"
+import { RunStrip } from "@/components/project/run-strip"
 import { SceneList } from "@/components/project/scene-list"
 import { ShotlistCard } from "@/components/project/shotlist-card"
+import { Stage } from "@/components/project/stage"
 import { StyleGuideEditor } from "@/components/project/style-guide-editor"
 import { TranscriptionHintsEditor } from "@/components/project/transcription-hints"
 
@@ -42,6 +47,11 @@ import { TranscriptionHintsEditor } from "@/components/project/transcription-hin
  * The two approval gates are `run.resume()` calls, not application state
  * (idea.md §4.2), so what's on screen when the user clicks Approve is what the
  * workflow continues with.
+ *
+ * The page itself is a list of stages (`lib/stages.ts`) rather than a progress
+ * panel above a row of tabs. Each stage owns both a run of pipeline steps and
+ * the UI for what they produce, so watching a phase and acting on it are the
+ * same place, and the page opens on whichever one is asking for something.
  */
 export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   const router = useRouter()
@@ -123,6 +133,56 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
         })
         toast.add({ title: "Couldn't save", description: error.message })
       })
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Which stage is showing                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  const stages = React.useMemo(
+    () => stageStates(project, pipeline.run),
+    [project, pipeline.run]
+  )
+
+  /**
+   * `undefined` means nobody has chosen — follow the run. Anything else is the
+   * user's choice, including `null` for "I closed them all".
+   */
+  const [picked, setPicked] = React.useState<StageId | null | undefined>(
+    undefined
+  )
+
+  const gated = stages.find((stage) => stage.needsYou)?.id ?? null
+
+  /**
+   * A gate opening steals focus, once.
+   *
+   * It's the only interruption worth overriding a deliberate choice for — the
+   * run has stopped and will not continue until this screen is dealt with. It
+   * sets the pick rather than winning the comparison below, so the user can
+   * still navigate away afterwards.
+   *
+   * Adjusted during render against the gate it last saw, not in an effect: the
+   * open stage is derived from React state, and syncing derived state in an
+   * effect renders the wrong stage first and then corrects it.
+   */
+  const [seenGate, setSeenGate] = React.useState(gated)
+  if (seenGate !== gated) {
+    setSeenGate(gated)
+    if (gated) setPicked(gated)
+  }
+
+  const open = picked === undefined ? focusStage(stages, project) : picked
+
+  function jump(id: StageId) {
+    setPicked(id)
+    // After the open state has been applied, or the stage below it is still
+    // the height it was when collapsed.
+    requestAnimationFrame(() =>
+      document
+        .getElementById(`stage-${id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+    )
   }
 
   /* ---------------------------------------------------------------------- */
@@ -235,17 +295,6 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
     )
   }
 
-  /**
-   * Controlled, and seeded once.
-   *
-   * As an uncontrolled `defaultValue` this flipped the moment a run produced a
-   * transcript — which Base UI warns about, and which would yank the user off
-   * whichever tab they were reading mid-run.
-   */
-  const [tab, setTab] = React.useState(() =>
-    fromDisk.transcript.words.length === 0 ? "media" : "scenes"
-  )
-
   const counts = sceneCounts(project.scenes)
 
   /**
@@ -259,15 +308,107 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   const needsMediaAttention =
     project.transcript.words.length === 0 &&
     project.media.filter((file) => file.hasAudio && file.transcribe).length > 1
-  const pendingReview = project.scenes.filter(
-    (scene) => scene.status === "ready"
-  ).length
-  const hasRegenerations = Object.values(decisions).some(
+
+  const decided = Object.values(decisions)
+  const regenerating = decided.filter(
     (decision) => decision.action === "regenerate"
-  )
+  ).length
+  /**
+   * Either there's something new to say, or there are approved scenes that
+   * haven't been rendered yet.
+   */
+  const canSubmitReview =
+    decided.length > 0 || counts.approved > counts.exported
+
+  const body: Record<StageId, React.ReactNode> = {
+    footage: (
+      <>
+        {needsMediaAttention ? (
+          <Alert>
+            <AlertTitle>Two files are set to be transcribed</AlertTitle>
+            <AlertDescription>
+              If they&rsquo;re two recordings of the same talk, transcribing
+              both puts it in the script twice. Pick one and tell it which clip
+              it belongs to.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <MediaSettings media={project.media} onSave={saveMedia} />
+        <Separator />
+        <TranscriptionHintsEditor
+          hints={project.transcriptionHints}
+          locked={project.transcript.words.length > 0}
+          onSave={saveHints}
+        />
+      </>
+    ),
+
+    cleanup: (
+      <CleanupReview
+        project={project}
+        onToggleSpan={toggleSpan}
+        onReopen={reopenCleanup}
+      />
+    ),
+
+    look: (
+      <StyleGuideEditor
+        styleGuide={project.styleGuide}
+        onSave={saveStyleGuide}
+      />
+    ),
+
+    scenes: (
+      <SceneList
+        project={project}
+        drafts={pipeline.drafts}
+        onApprove={approveScene}
+        onReject={rejectScene}
+        onRegenerate={regenerateScene}
+      />
+    ),
+
+    deliverables: (
+      <>
+        <CopyReview copy={project.copy} />
+        <Separator />
+        <ShotlistCard project={project} />
+      </>
+    ),
+  }
+
+  /** The one thing each stage is for, hoisted into its header. */
+  const action: Partial<Record<StageId, React.ReactNode>> = {
+    cleanup: (
+      <Button
+        size="sm"
+        onClick={approveCleanup}
+        disabled={project.cleanupApprovedAt !== null}
+      >
+        <HugeiconsIcon
+          icon={Tick02Icon}
+          strokeWidth={2}
+          data-icon="inline-start"
+        />
+        {project.cleanupApprovedAt !== null ? "Approved" : "Approve cleanup"}
+      </Button>
+    ),
+
+    scenes: (
+      <Button
+        size="sm"
+        onClick={() => submitReview(regenerating === 0)}
+        disabled={!canSubmitReview}
+      >
+        {regenerating > 0
+          ? `Send ${regenerating} back`
+          : `Submit review${decided.length > 0 ? ` (${decided.length})` : ""}`}
+      </Button>
+    ),
+  }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
       <ProjectHeader
         project={project}
         run={pipeline.run}
@@ -292,78 +433,26 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
         }}
       />
 
-      <PipelineProgress run={pipeline.run} onCancel={pipeline.stop} />
+      <RunStrip
+        run={pipeline.run}
+        stages={stages}
+        onCancel={pipeline.stop}
+        onJump={jump}
+      />
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as string)}>
-        <TabsList>
-          <TabsTrigger value="media">
-            Media
-            {needsMediaAttention ? (
-              <Badge variant="secondary">check</Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="cleanup">
-            Cleanup
-            {project.spans.length > 0 && project.cleanupApprovedAt === null ? (
-              <Badge variant="secondary">needs you</Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="scenes">
-            Scenes
-            {pendingReview > 0 ? (
-              <Badge variant="secondary">{pendingReview}</Badge>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="copy">Copy</TabsTrigger>
-          <TabsTrigger value="style">Style guide</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="media" className="pt-4">
-          <div className="flex flex-col gap-6">
-            <TranscriptionHintsEditor
-              hints={project.transcriptionHints}
-              locked={project.transcript.words.length > 0}
-              onSave={saveHints}
-            />
-            <MediaSettings media={project.media} onSave={saveMedia} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="cleanup" className="pt-4">
-          <CleanupReview
-            project={project}
-            onToggleSpan={toggleSpan}
-            onApprove={approveCleanup}
-            onReopen={reopenCleanup}
-          />
-        </TabsContent>
-
-        <TabsContent value="scenes" className="pt-4">
-          <div className="flex flex-col gap-6">
-            <SceneList
-              project={project}
-              drafts={pipeline.drafts}
-              onApprove={approveScene}
-              onReject={rejectScene}
-              onRegenerate={regenerateScene}
-              onExport={() => submitReview(true)}
-              onExportAll={() => submitReview(!hasRegenerations)}
-            />
-            {counts.approved > 0 ? <ShotlistCard project={project} /> : null}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="copy" className="pt-4">
-          <CopyReview copy={project.copy} />
-        </TabsContent>
-
-        <TabsContent value="style" className="pt-4">
-          <StyleGuideEditor
-            styleGuide={project.styleGuide}
-            onSave={saveStyleGuide}
-          />
-        </TabsContent>
-      </Tabs>
+      <div className="flex flex-col gap-3">
+        {stages.map((stage) => (
+          <Stage
+            key={stage.id}
+            stage={stage}
+            open={open === stage.id}
+            onOpenChange={(next) => setPicked(next ? stage.id : null)}
+            action={action[stage.id]}
+          >
+            {body[stage.id]}
+          </Stage>
+        ))}
+      </div>
     </main>
   )
 }

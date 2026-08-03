@@ -6,7 +6,6 @@ import {
   Alert02Icon,
   Analytics01Icon,
   Cancel01Icon,
-  FileExportIcon,
   FlowIcon,
   Layers01Icon,
   PlayIcon,
@@ -67,21 +66,32 @@ interface SceneRowProps {
   draft?: SceneDraft
   /** Active scene search, highlighted in the covered line and intent. */
   query?: string
+  /** Spans the scene grid — see `SceneList`. */
+  className?: string
+  /** Back to the tile. Absent when the row isn't opened from a grid. */
+  onCollapse?: () => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onRegenerate: (id: string, note: string) => void
-  onExport: (id: string) => void
 }
 
+/**
+ * One scene, opened.
+ *
+ * Everything that needs room: the scrubber, the intent, what it measured
+ * against its window, and where it exported to. `SceneTile` is the same scene
+ * at review size — this is what it expands into.
+ */
 export function SceneRow({
   scene,
   backdrop,
   draft,
   query = "",
+  className,
+  onCollapse,
   onApprove,
   onReject,
   onRegenerate,
-  onExport,
 }: SceneRowProps) {
   const [runKey, setRunKey] = React.useState(0)
   const [mode, setMode] = React.useState<"play" | "scrub">("play")
@@ -138,7 +148,7 @@ export function SceneRow({
   }
 
   return (
-    <Card id={scene.id}>
+    <Card id={scene.id} className={className}>
       <CardHeader>
         <CardDescription className="flex flex-wrap items-center gap-2 font-mono text-xs">
           <span className="text-foreground">
@@ -166,6 +176,23 @@ export function SceneRow({
             ) : null}
             {SCENE_STATUS_LABELS[scene.status]}
           </Badge>
+          {onCollapse ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Close scene"
+                    onClick={onCollapse}
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+                  </Button>
+                }
+              />
+              <TooltipContent>Back to the grid</TooltipContent>
+            </Tooltip>
+          ) : null}
         </CardAction>
       </CardHeader>
 
@@ -355,20 +382,16 @@ export function SceneRow({
             </Button>
           }
         />
-        <Button
-          size="sm"
-          variant="secondary"
-          className="ml-auto"
-          onClick={() => onExport(scene.id)}
-          disabled={scene.status !== "approved"}
-        >
-          <HugeiconsIcon
-            icon={FileExportIcon}
-            strokeWidth={2}
-            data-icon="inline-start"
-          />
-          Export ProRes
-        </Button>
+        {/*
+         * No per-scene export button. It never exported one scene — it resumed
+         * the whole workflow, which exports everything approved. Pressing it on
+         * three scenes started three export passes at once, and they deleted
+         * each other's frames. Submitting the review, from the stage header, is
+         * the one way through the gate.
+         */}
+        <p className="ml-auto text-xs text-muted-foreground">
+          {scene.exportPath ?? "Exports when the review is submitted"}
+        </p>
       </CardFooter>
     </Card>
   )

@@ -6,14 +6,6 @@ import { durationLabel } from "@/lib/format"
 import type { MediaFile } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -24,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { StageSection } from "@/components/project/stage"
 
 function offsetText(media: MediaFile[]): Record<string, string> {
   return Object.fromEntries(
@@ -101,30 +94,48 @@ export function MediaSettings({
 
   if (media.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Media</CardTitle>
-          <CardDescription>
-            Nothing scanned yet. Run the pipeline and the folder&rsquo;s video
-            and audio files show up here.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <StageSection
+        title="Media"
+        description="Nothing scanned yet. Run the pipeline and the folder's video and audio files show up here."
+      >
+        <span />
+      </StageSection>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Media</CardTitle>
-        <CardDescription>
-          Transcribe one source per performance. If a camera and a separate mic
-          both recorded the same talk, transcribing both puts it in the script
-          twice — pick the mic, and tell it which clip it belongs to.
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-4">
+    <StageSection
+      title="Media"
+      description="Transcribe one source per performance. If a camera and a separate mic both recorded the same talk, transcribing both puts it in the script twice — pick the mic, and tell it which clip it belongs to."
+      footer={
+        <>
+          <p className="text-xs text-muted-foreground">
+            {sources.length === 0
+              ? "No transcription source — the run will stop at step 2."
+              : `${sources.length} source${sources.length === 1 ? "" : "s"} will be transcribed.`}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDraft(media)
+                setOffsets(offsetText(media))
+              }}
+              disabled={!dirty}
+            >
+              Reset
+            </Button>
+            <Button
+              onClick={() => onSave(parsed)}
+              disabled={!dirty || invalid.length > 0}
+            >
+              Save media settings
+            </Button>
+          </div>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
         {sources.length > 1 ? <ScriptOrder sources={sources} /> : null}
 
         {draft.map((file) => (
@@ -243,34 +254,8 @@ export function MediaSettings({
             ) : null}
           </div>
         ))}
-      </CardContent>
-
-      <CardFooter className="flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          {sources.length === 0
-            ? "No transcription source — the run will stop at step 2."
-            : `${sources.length} source${sources.length === 1 ? "" : "s"} will be transcribed.`}
-        </p>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setDraft(media)
-              setOffsets(offsetText(media))
-            }}
-            disabled={!dirty}
-          >
-            Reset
-          </Button>
-          <Button
-            onClick={() => onSave(parsed)}
-            disabled={!dirty || invalid.length > 0}
-          >
-            Save media settings
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
+      </div>
+    </StageSection>
   )
 }
 
