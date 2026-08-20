@@ -88,8 +88,18 @@ describe("buildFcpxml", () => {
 
     const assetA = assets.find((m) => m[0].includes("01 - a.mp4"))
     const assetB = assets.find((m) => m[0].includes("02 - b.mp4"))
+    // Asserted positively on both sides: `not.toMatch(/hasAudio="1"/)` also
+    // passes when the attribute went missing entirely.
     expect(assetA?.[0]).toMatch(/hasAudio="1"/)
-    expect(assetB?.[0]).not.toMatch(/hasAudio="1"/)
+    expect(assetB?.[0]).toMatch(/hasAudio="0"/)
+  })
+
+  test("a run whose file isn't in project.media is refused, not guessed at", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/99 - missing.mp4", sourceStart: 0, sourceEnd: 2 },
+    ]
+
+    expect(() => buildFcpxml(project(), runs)).toThrow(/project\.media/)
   })
 
   test("clip durations match the run lengths", () => {
@@ -103,7 +113,7 @@ describe("buildFcpxml", () => {
     expect(clip[0]).toContain(`duration="${secondsToRational(2, 25)}"`)
   })
 
-  test("file paths are resolved to absolute file:// URLs", () => {
+  test("file paths are resolved to absolute file:// URLs, on a media-rep child", () => {
     const runs: TimelineRun[] = [
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 1 },
     ]
@@ -113,7 +123,47 @@ describe("buildFcpxml", () => {
     // Spaces (and the rest of a filename's non-ASCII characters) are
     // percent-encoded in the URL, per the FCPXML spec — a raw space in `src`
     // is what makes some importers fail to resolve the media at all.
-    expect(xml).toContain('src="file:///projects/demo/raw/01%20-%20a.mp4"')
+    //
+    // And the URL lives on `<media-rep>`, not as an `<asset src="…">`
+    // attribute: that attribute is gone from the 1.9 DTD this document
+    // declares, so an importer reading 1.9 would find no media to relink.
+    expect(xml).toContain(
+      '<media-rep kind="original-media" src="file:///projects/demo/raw/01%20-%20a.mp4"/>'
+    )
+    expect(xml).not.toMatch(/<asset\s[^>]*\ssrc=/)
+  })
+
+  test("clip offsets tile the spine exactly, with no rounding drift", () => {
+    // Durations that don't land on a frame boundary at 25 fps: 1.05s is 26.25
+    // frames. Rounding each offset from a running float sum instead of summing
+    // the rounded durations opens a one-frame gap a few clips in.
+    const runs: TimelineRun[] = Array.from({ length: 6 }, (_, i) => ({
+      file: "raw/01 - a.mp4",
+      sourceStart: i * 2,
+      sourceEnd: i * 2 + 1.05,
+    }))
+
+    const xml = buildFcpxml(project({ fps: 25 }), runs)
+    const clips = [...xml.matchAll(/<asset-clip\b[^>]*>/g)].map((m) => m[0])
+
+    // "num/dens" back to a whole number of 25 fps frames. The generator
+    // reduces the fraction, so 50 frames comes back as "2/1s", not "50/25s".
+    const frames = (value: string) => {
+      if (value === "0s") return 0
+      const [num, den] = value.replace(/s$/, "").split("/").map(Number)
+      return (num * 25) / den
+    }
+    const attr = (clip: string, name: string) =>
+      clip.match(new RegExp(`${name}="([^"]+)"`))![1]
+
+    let expected = 0
+    for (const clip of clips) {
+      expect(frames(attr(clip, "offset"))).toBe(expected)
+      expected += frames(attr(clip, "duration"))
+    }
+
+    const sequence = xml.match(/<sequence[^>]*>/)![0]
+    expect(frames(attr(sequence, "duration"))).toBe(expected)
   })
 
   test("declares the FCPXML version DaVinci Resolve 21 parses reliably", () => {

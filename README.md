@@ -22,19 +22,24 @@ Both processes share `~/.videotool/mastra.db`, so a run started in the app is
 inspectable in Studio and vice versa.
 
 ```bash
-npm test        # segment tiling, transcript units, media roles, scene validation
+npm test        # segment tiling, transcript units, media roles, scene validation,
+                # timeline runs, FCPXML output
 npm run lint
 npm run typecheck
 ```
 
 ## How the pipeline works
 
-One Mastra workflow, ten steps, two human gates:
+One Mastra workflow, eleven steps, two human gates:
 
 ```
-scan → extract-audio → transcribe → cleanup ⏸ → scenarios
+scan → extract-audio → transcribe → cleanup ⏸ → fcpxml → scenarios
      → generate ×3 → review ⏸ → export → copy → shotlist
 ```
+
+`fcpxml` sits right after the cleanup gate on purpose: it only needs the
+approved spans, so the cut timeline lands in the project folder before the
+expensive scene generation starts (`docs/adr/0002-…`).
 
 The gates are Mastra `suspend()` calls resumed with `run.resume()`, not
 application state — so an approval can arrive days later, across a server
@@ -203,6 +208,8 @@ src/mastra/
   lib/
     project.ts                project.json read/modify/write, atomic + queued
     segments.ts               words ↔ segments ↔ spans
+    timeline.ts               kept segments → per-file runs, multi-camera guard
+    fcpxml.ts                 the cut timeline as FCPXML, for DaVinci
     media.ts                  transcription sources, pairing, sync offsets
     stt.ts                    AssemblyAI word timestamps, ms → seconds
     render.ts                 Playwright frame-stepping and measurement

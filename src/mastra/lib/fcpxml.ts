@@ -16,7 +16,8 @@
  * otherwise, and Resolve's NLE-interchange layer hasn't changed shape across
  * that range): `version="1.9"` is what parses most reliably, `1.10` also
  * works from Resolve 18 on, and `1.11`+ has documented import failures. 1.9
- * is the version this file writes.
+ * is the version this file writes — which also fixes the shape of `<asset>`:
+ * from 1.8 on the source URL is a `<media-rep>` child, not an `src` attribute.
  *
  * Every timing value FCPXML cares about — `frameDuration`, `duration`,
  * `offset`, `start` — is a rational number of seconds as `"num/den" + "s"`,
@@ -59,27 +60,46 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b)
 }
 
-/**
- * Seconds as an FCPXML rational string, snapped to the fps's frame grid.
- *
- * Snapping (rather than rationalising the float directly) is what keeps
- * every value on the same grid as `frameDuration` — a timeline built from
- * values that don't share a denominator with the format is exactly the kind
- * of file Resolve's importer has been reported to mis-time.
- */
-export function secondsToRational(seconds: number, fps: number): string {
+/** Seconds on the fps's frame grid — the unit every value below is counted in. */
+function toFrames(seconds: number, fps: number): number {
   const { num, den } = frameDuration(fps)
-  const frames = Math.round((seconds * den) / num)
+  return Math.round((seconds * den) / num)
+}
+
+/**
+ * A whole number of frames as an FCPXML rational string.
+ *
+ * Everything the spine writes goes through here, so every value shares a
+ * denominator with `frameDuration` — a timeline built from values that don't
+ * is exactly the kind of file Resolve's importer has been reported to mis-time.
+ */
+function framesToRational(frames: number, fps: number): string {
   if (frames === 0) return "0s"
 
+  const { num, den } = frameDuration(fps)
   const numerator = frames * num
   const divisor = gcd(numerator, den)
   return `${numerator / divisor}/${den / divisor}s`
 }
 
+/**
+ * Seconds as an FCPXML rational string, snapped to the fps's frame grid.
+ *
+ * Only for values that stand alone (an asset's own duration). Anything that
+ * has to add up along the spine is accumulated in frames instead — see
+ * `buildFcpxml` — because `round(a + b)` and `round(a) + round(b)` differ by a
+ * frame often enough to open a gap in a long timeline.
+ */
+export function secondsToRational(seconds: number, fps: number): string {
+  return framesToRational(toFrames(seconds, fps), fps)
+}
+
 /** XML attribute values only need `&`, `<`, `"` escaped — FCPXML has no other special chars in play here. */
 function esc(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/"/g, "&quot;")
 }
 
 function fileUrl(projectPath: string, relative: string): string {
@@ -87,44 +107,51 @@ function fileUrl(projectPath: string, relative: string): string {
   // FCPXML wants a URL, not a filesystem path — spaces and the rest of a
   // filename's non-ASCII characters have to be percent-encoded or Resolve's
   // importer fails to resolve the media at all.
-  return `file://${absolute
-    .split(path.sep)
-    .map(encodeURIComponent)
-    .join("/")}`
+  return `file://${absolute.split(path.sep).map(encodeURIComponent).join("/")}`
 }
 
 /**
  * Builds the FCPXML document for a cut timeline: one `<asset>` per distinct
  * source file, one `<asset-clip>` per kept run, in order.
  */
-export function buildFcpxml(project: StoredProject, runs: TimelineRun[]): string {
+export function buildFcpxml(
+  project: StoredProject,
+  runs: TimelineRun[]
+): string {
   const fps = project.fps
   const byPath = new Map(project.media.map((file) => [file.path, file]))
 
-  const files = dedupeInOrder(runs.map((run) => run.file))
-  const assetIds = new Map(files.map((file, index) => [file, `asset-${index + 1}`]))
+  const files = [...new Set(runs.map((run) => run.file))]
+  const assetIds = new Map(
+    files.map((file, index) => [file, `asset-${index + 1}`])
+  )
 
   const resources = files
-    .map((file) => assetXml(file, byPath.get(file), project, assetIds.get(file)!))
+    .map((file) =>
+      assetXml(file, mediaFor(byPath, file), project, assetIds.get(file)!)
+    )
     .join("\n    ")
 
-  let offset = 0
+  // Counted in frames, not seconds: each clip's offset is the exact sum of the
+  // durations before it, so the spine has no gap or overlap however long it
+  // gets. Summing floats and rounding each offset separately drifts by a frame.
+  let offsetFrames = 0
   const clips = runs
     .map((run) => {
-      const duration = secondsToRational(run.sourceEnd - run.sourceStart, fps)
+      const durationFrames = toFrames(run.sourceEnd - run.sourceStart, fps)
       const clip = clipXml({
         ref: assetIds.get(run.file)!,
         name: path.basename(run.file),
-        offset: secondsToRational(offset, fps),
+        offset: framesToRational(offsetFrames, fps),
         start: secondsToRational(run.sourceStart, fps),
-        duration,
+        duration: framesToRational(durationFrames, fps),
       })
-      offset += run.sourceEnd - run.sourceStart
+      offsetFrames += durationFrames
       return clip
     })
-    .join("\n        ")
+    .join("\n            ")
 
-  const totalDuration = secondsToRational(offset, fps)
+  const totalDuration = framesToRational(offsetFrames, fps)
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -139,7 +166,7 @@ export function buildFcpxml(project: StoredProject, runs: TimelineRun[]): string
     `      <project name="${esc(project.name)}">`,
     `        <sequence format="format-1" duration="${totalDuration}" tcStart="0s">`,
     "          <spine>",
-    `        ${clips}`,
+    `            ${clips}`,
     "          </spine>",
     "        </sequence>",
     "      </project>",
@@ -150,28 +177,50 @@ export function buildFcpxml(project: StoredProject, runs: TimelineRun[]): string
   ].join("\n")
 }
 
+/** The sequence format's own `frameDuration` — one frame, as a rational. */
 function rationalFrameDuration(fps: number): string {
-  const { num, den } = frameDuration(fps)
-  const divisor = gcd(num, den)
-  return `${num / divisor}/${den / divisor}s`
+  return framesToRational(1, fps)
+}
+
+/**
+ * The `project.media` entry a run's file came from.
+ *
+ * Missing is a hard error rather than a default. Guessing `hasAudio` and a
+ * zero duration produces an `<asset>` Resolve imports without complaint and
+ * whose media it then can't relink — the silently-wrong timeline ADR 0003
+ * refuses on the multi-camera side of this same module.
+ */
+function mediaFor(byPath: Map<string, MediaFile>, file: string): MediaFile {
+  const media = byPath.get(file)
+  if (!media) {
+    throw new Error(
+      `The timeline references ${file}, which isn't in project.media — ` +
+        "re-scan the project folder before exporting."
+    )
+  }
+  return media
 }
 
 function assetXml(
   file: string,
-  media: MediaFile | undefined,
+  media: MediaFile,
   project: StoredProject,
   id: string
 ): string {
-  const hasAudio = media?.hasAudio ?? true
-  const hasVideo = media?.hasVideo ?? true
-  const durationSec = media?.durationSec ?? 0
   const name = esc(path.basename(file))
   const src = esc(fileUrl(project.path, file))
+  const duration = secondsToRational(media.durationSec, project.fps)
 
+  // The source URL is a `<media-rep>` child, not an attribute: `src` on
+  // `<asset>` was deprecated in FCPXML 1.8 and is gone from the 1.9 DTD this
+  // document declares. Resolve reads the child; an importer given only the
+  // old attribute has nothing to relink the media from.
   return (
-    `<asset id="${id}" name="${name}" src="${src}" ` +
-    `hasAudio="${hasAudio ? "1" : "0"}" hasVideo="${hasVideo ? "1" : "0"}" ` +
-    `format="format-1" duration="${secondsToRational(durationSec, project.fps)}" start="0s"/>`
+    `<asset id="${id}" name="${name}" ` +
+    `hasAudio="${media.hasAudio ? "1" : "0"}" hasVideo="${media.hasVideo ? "1" : "0"}" ` +
+    `format="format-1" duration="${duration}" start="0s">\n` +
+    `      <media-rep kind="original-media" src="${src}"/>\n` +
+    `    </asset>`
   )
 }
 
@@ -186,8 +235,4 @@ function clipXml(clip: {
     `<asset-clip name="${esc(clip.name)}" ref="${clip.ref}" ` +
     `offset="${clip.offset}" start="${clip.start}" duration="${clip.duration}"/>`
   )
-}
-
-function dedupeInOrder(files: string[]): string[] {
-  return [...new Set(files)]
 }
