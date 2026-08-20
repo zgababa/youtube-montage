@@ -158,7 +158,7 @@ export function buildFcpxml(
     "<!DOCTYPE fcpxml>",
     '<fcpxml version="1.9">',
     "  <resources>",
-    `    <format id="format-1" frameDuration="${rationalFrameDuration(fps)}"/>`,
+    `    <format id="format-1" frameDuration="${framesToRational(1, fps)}"/>`,
     `    ${resources}`,
     "  </resources>",
     "  <library>",
@@ -175,11 +175,6 @@ export function buildFcpxml(
     "</fcpxml>",
     "",
   ].join("\n")
-}
-
-/** The sequence format's own `frameDuration` — one frame, as a rational. */
-function rationalFrameDuration(fps: number): string {
-  return framesToRational(1, fps)
 }
 
 /**
