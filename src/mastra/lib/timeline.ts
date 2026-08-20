@@ -12,7 +12,7 @@
  * them means "keep this footage".
  */
 
-import { isNumbered } from "./media"
+import { allNumbered } from "./media"
 import type { Segment } from "./segments"
 import { keptSegments } from "./segments"
 import type { MediaFile, Span } from "../schemas"
@@ -84,10 +84,11 @@ export function buildKeptRuns(
  *
  * That shape alone isn't enough to call it ambiguous, though — it's also what
  * a deliberately sequential shoot looks like: several numbered files
- * (`01 - `, `02 - `, per `isNumbered`), each with its own scratch audio and no
- * separate mic, exactly the fork's own 6-file project this feature was built
- * for. The numbering convention is the user's explicit claim that these files
- * play in that order; nothing here should second-guess it.
+ * (`01 - `, `02 - `, per `allNumbered`/`isNumbered` in `media.ts`), each with
+ * its own scratch audio and no separate mic, exactly the fork's own 6-file
+ * project this feature was built for. The numbering convention is the user's
+ * explicit claim that these files play in that order; nothing here should
+ * second-guess it.
  *
  * So the guard only fires when *not every* ambiguous file carries that claim.
  * With no numbering to lean on, file order is only the order files happened
@@ -100,7 +101,7 @@ export function assertSingleTranscriptionSource(media: MediaFile[]) {
     (file) => file.transcribe && file.voices === null
   )
   if (ambiguous.length <= 1) return
-  if (ambiguous.every((file) => isNumbered(file.path))) return
+  if (allNumbered(ambiguous)) return
 
   throw new Error(
     "Multiple camera files are marked for transcription with no identified " +

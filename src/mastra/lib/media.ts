@@ -57,6 +57,19 @@ export function isNumbered(file: string): boolean {
   return /^\d{1,3}(\D|$)/.test(path.basename(file))
 }
 
+/**
+ * Whether every one of these files carries the numbering convention.
+ *
+ * A second reading of `isNumbered`, for a caller that already has a specific
+ * set of files in hand and wants to know whether the user has explicitly
+ * claimed an order over *all* of them — as opposed to `usesNumbering` below,
+ * which asks whether the convention is in play at all for a freshly scanned
+ * folder (a mix of numbered and unnumbered sources).
+ */
+export function allNumbered(files: { path: string }[]): boolean {
+  return files.every((file) => isNumbered(file.path))
+}
+
 /** What ffprobe knows, before any of this is decided. */
 export interface ProbedFile {
   path: string
