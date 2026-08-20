@@ -40,6 +40,7 @@ export const StepIdSchema = z.enum([
   "extract-audio",
   "transcribe",
   "cleanup",
+  "fcpxml",
   "scenarios",
   "generate",
   "review",
@@ -72,6 +73,7 @@ export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
   "extract-audio": "Extract audio",
   transcribe: "Transcribe",
   cleanup: "Cleanup pass",
+  fcpxml: "Timeline export",
   scenarios: "Plan scenes",
   generate: "Generate scenes",
   review: "Review scenes",
@@ -178,6 +180,11 @@ export const pipelineDataSchemas = {
   shotlist: z.object({
     path: z.string(),
     text: z.string(),
+  }),
+
+  /** The cut timeline, written before scene generation starts (issue #1). */
+  fcpxml: z.object({
+    path: z.string(),
   }),
 
   /**

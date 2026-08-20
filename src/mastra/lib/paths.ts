@@ -62,6 +62,10 @@ export function shotlistPath(projectPath: string) {
   return path.join(projectPath, "shotlist.txt")
 }
 
+export function fcpxmlPath(projectPath: string) {
+  return path.join(projectPath, "timeline.fcpxml")
+}
+
 /** Paths stored in `project.json` are relative, so projects stay portable. */
 export function toRelative(projectPath: string, absolute: string) {
   return path.relative(projectPath, absolute)

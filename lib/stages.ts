@@ -56,7 +56,7 @@ export const STAGES: readonly StageDefinition[] = [
     label: "Transcript cleanup",
     blurb:
       "The clean script is the kept spans. Everything downstream is a rewrite of it.",
-    steps: ["cleanup"],
+    steps: ["cleanup", "fcpxml"],
   },
   {
     id: "look",
