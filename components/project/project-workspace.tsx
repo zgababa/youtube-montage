@@ -54,7 +54,14 @@ import { TranscriptionHintsEditor } from "@/components/project/transcription-hin
  * the UI for what they produce, so watching a phase and acting on it are the
  * same place, and the page opens on whichever one is asking for something.
  */
-export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
+export function ProjectWorkspace({
+  project: fromDisk,
+  activeRunId = null,
+}: {
+  project: Project
+  /** A run suspended at a gate for this project, if any (issue #3). */
+  activeRunId?: string | null
+}) {
   const router = useRouter()
 
   /** Edits made since the last server read. */
@@ -68,7 +75,7 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
     router.refresh()
   }, [router])
 
-  const pipeline = usePipeline(fromDisk.path, { onSettled })
+  const pipeline = usePipeline(fromDisk.path, { onSettled, activeRunId })
 
   /**
    * Decisions are collected locally and submitted together.

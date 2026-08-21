@@ -11,9 +11,11 @@
 
 import { handleWorkflowStream } from "@mastra/ai-sdk"
 import { createUIMessageStreamResponse } from "ai"
+import { z } from "zod"
 
 import { mastra } from "@/src/mastra"
 import type { PipelineUIMessage } from "@/src/mastra/stream/contract"
+import { workflowStateToPipelineStream } from "@/src/mastra/stream/reconnect"
 
 // ffmpeg, Playwright and `fs` all live behind this route (idea.md §9).
 export const runtime = "nodejs"
@@ -26,8 +28,41 @@ export const dynamic = "force-dynamic"
  */
 export const maxDuration = 3600
 
+/**
+ * The one body shape this route reads itself rather than handing to
+ * `handleWorkflowStream`, so it's the one that needs parsing (same reason and
+ * same shape as `PatchSchema` in `app/api/projects/[id]/route.ts`).
+ */
+const ReconnectSchema = z.object({
+  kind: z.literal("reconnect"),
+  runId: z.string().min(1),
+})
+
 export async function POST(request: Request) {
   const params = await request.json()
+
+  // Reconnecting to a suspended run reads the persisted snapshot rather than
+  // starting a fresh one — see `src/mastra/stream/reconnect.ts` for why that
+  // isn't `@mastra/ai-sdk`'s own `workflowSnapshotToStream`.
+  if (params?.kind === "reconnect") {
+    const parsed = ReconnectSchema.safeParse(params)
+    if (!parsed.success) {
+      return Response.json(
+        { error: z.prettifyError(parsed.error) },
+        { status: 400 }
+      )
+    }
+
+    const state = await mastra
+      .getWorkflow("brollWorkflow")
+      .getWorkflowRunById(parsed.data.runId)
+
+    if (!state) return new Response("Run not found", { status: 404 })
+
+    return createUIMessageStreamResponse({
+      stream: workflowStateToPipelineStream(state),
+    })
+  }
 
   const stream = await handleWorkflowStream<PipelineUIMessage>({
     mastra,

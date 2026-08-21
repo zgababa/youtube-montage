@@ -12,6 +12,7 @@ import "server-only"
  * into a build error rather than a confusing runtime one.
  */
 
+import { mastra } from "@/src/mastra"
 import { readProject, tryReadStoredProject } from "@/src/mastra/lib/project"
 import { findById, readIndex, touch } from "@/src/mastra/lib/projects-index"
 import type { Project, ProjectSummary } from "@/lib/types"
@@ -53,17 +54,74 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 export async function getProject(id: string): Promise<Project | null> {
   const entry = await findById(id)
   if (!entry) return null
+  return readProjectAt(id, entry.path)
+}
 
+/**
+ * `getProject`, plus whichever run is suspended for it — the pairing the
+ * project page actually needs.
+ *
+ * Split from `getProject` rather than folded into it because the two reads
+ * are independent once the index entry is known: `getSuspendedRunId` only
+ * needs `entry.path`, not the project itself, so it can run alongside
+ * `readProject`'s file I/O (project.json plus every scene's HTML) rather
+ * than waiting behind it.
+ */
+export async function getProjectWithActiveRun(
+  id: string
+): Promise<{ project: Project | null; activeRunId: string | null }> {
+  const entry = await findById(id)
+  if (!entry) return { project: null, activeRunId: null }
+
+  const [project, activeRunId] = await Promise.all([
+    readProjectAt(id, entry.path),
+    getSuspendedRunId(entry.path),
+  ])
+
+  return { project, activeRunId }
+}
+
+async function readProjectAt(
+  id: string,
+  path: string
+): Promise<Project | null> {
   try {
-    const project = await readProject(entry.path)
+    const project = await readProject(path)
     await touch(id)
     // The id in the index is the app's handle on the folder; the one inside
     // `project.json` came from whichever machine created it. The index wins,
     // or moving a folder between machines breaks every URL.
-    return { ...project, id, path: entry.path }
+    return { ...project, id, path }
   } catch {
     return null
   }
+}
+
+/**
+ * The most recent run left suspended at a gate for this project, if any —
+ * what lets the page reconnect to it instead of starting a new one on
+ * reload (idea.md §9, issue #3).
+ *
+ * Correlated by `resourceId`, which `usePipeline`'s "start" action sets to
+ * the project path. A project whose run predates that wiring — or that has
+ * none — simply has nothing to reconnect to.
+ */
+export async function getSuspendedRunId(
+  projectPath: string
+): Promise<string | null> {
+  const { runs } = await mastra.getWorkflow("brollWorkflow").listWorkflowRuns({
+    resourceId: projectPath,
+    status: "suspended",
+    perPage: 20,
+  })
+
+  if (runs.length === 0) return null
+
+  // The most recent, in case more than one suspended run exists for the same
+  // project — e.g. an old orphan from before this correlation existed.
+  return runs.toSorted(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+  )[0].runId
 }
 
 /**

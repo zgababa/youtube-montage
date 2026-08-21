@@ -37,6 +37,13 @@ export interface PipelineOptions {
    * for the life of the component.
    */
   onSettled?: () => void
+
+  /**
+   * A run left suspended at a gate for this project, found on the server
+   * (`getSuspendedRunId`, issue #3). Reconnects to it once on mount instead
+   * of leaving the UI showing "Idle" for work that's already been paid for.
+   */
+  activeRunId?: string | null
 }
 
 export function usePipeline(
@@ -62,7 +69,7 @@ export function usePipeline(
     []
   )
 
-  const { onSettled } = options
+  const { onSettled, activeRunId = null } = options
 
   const { messages, sendMessage, status, error, stop } =
     useChat<PipelineUIMessage>({
@@ -117,6 +124,18 @@ export function usePipeline(
     [sendMessage]
   )
 
+  // Reconnect exactly once. A ref rather than an empty dependency array: the
+  // effect has to survive StrictMode's deliberate double-invoke in dev, which
+  // an empty array does not stop, and sending two reconnects would replay the
+  // snapshot twice into the same session.
+  const reconnected = React.useRef(false)
+
+  React.useEffect(() => {
+    if (!activeRunId || reconnected.current) return
+    reconnected.current = true
+    send({ kind: "reconnect", runId: activeRunId })
+  }, [activeRunId, send])
+
   return {
     ...(messages.length === 0 ? EMPTY_PIPELINE_STATE : state),
     logs,
@@ -160,7 +179,15 @@ export function usePipeline(
 function toBody(action: PipelineAction | undefined) {
   switch (action?.kind) {
     case "start":
-      return { inputData: { projectPath: action.projectPath } }
+      return {
+        inputData: { projectPath: action.projectPath },
+        // Correlates the run to its project, so a later reload can find it
+        // again via `getSuspendedRunId` (issue #3).
+        resourceId: action.projectPath,
+      }
+
+    case "reconnect":
+      return { kind: "reconnect", runId: action.runId }
 
     case "approve-cleanup":
       return {
