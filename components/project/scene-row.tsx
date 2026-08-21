@@ -7,6 +7,7 @@ import {
   Analytics01Icon,
   Cancel01Icon,
   FlowIcon,
+  FullScreenIcon,
   Layers01Icon,
   PlayIcon,
   Refresh01Icon,
@@ -38,6 +39,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
@@ -97,6 +99,7 @@ export function SceneRow({
   const [runKey, setRunKey] = React.useState(0)
   const [mode, setMode] = React.useState<"play" | "scrub">("play")
   const [playheadMs, setPlayheadMs] = React.useState(0)
+  const [fullscreen, setFullscreen] = React.useState(false)
   const [measuredSec, setMeasuredSec] = React.useState(
     scene.measuredDurationSec ?? 0
   )
@@ -229,6 +232,21 @@ export function SceneRow({
                   />
                   <TooltipContent>Replay from the first frame</TooltipContent>
                 </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label="Fullscreen"
+                        onClick={() => setFullscreen(true)}
+                      >
+                        <HugeiconsIcon icon={FullScreenIcon} strokeWidth={2} />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Open at full size</TooltipContent>
+                </Tooltip>
                 <Slider
                   value={playheadMs}
                   min={0}
@@ -243,6 +261,18 @@ export function SceneRow({
                   {(playheadMs / 1000).toFixed(2)}s
                 </span>
               </div>
+              <Dialog open={fullscreen} onOpenChange={setFullscreen}>
+                <DialogContent className="max-w-[calc(100%-2rem)] p-2 sm:max-w-5xl">
+                  <SceneFrame
+                    key={runKey}
+                    html={scene.html}
+                    seekMs={mode === "scrub" ? playheadMs : null}
+                    backdrop={backdrop}
+                    className="rounded-3xl"
+                    title={`Preview of ${scene.id}, full size`}
+                  />
+                </DialogContent>
+              </Dialog>
             </>
           ) : scene.status === "failed" ? (
             <Alert variant="destructive">
