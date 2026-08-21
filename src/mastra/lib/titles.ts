@@ -15,7 +15,7 @@
  * `steps/titles.ts`, via `render.ts`'s existing `exportScene`.
  */
 
-import type { OverlayScene } from "./fcpxml"
+import { esc, type OverlayScene } from "./fcpxml"
 import { keptSegments, type Segment } from "./segments"
 import type { Span, StyleGuide, TitleAnnotation } from "../schemas"
 
@@ -147,14 +147,6 @@ export function decideTitleAnnotation(
 /** Used when the style guide has no palette set yet. */
 const FALLBACK_BACKGROUND = "#0a0a0a"
 const FALLBACK_FOREGROUND = "#f5f5f5"
-
-/** XML/HTML text-content escaping — enough for copy that only ever fills a `<h1>`. */
-function esc(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-}
 
 /**
  * The title screen's HTML, static and deterministic.

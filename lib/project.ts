@@ -6,10 +6,8 @@
  */
 
 import { durationLabel, timecode } from "@/lib/format"
-import { buildSegments } from "@/src/mastra/lib/segments"
-import { buildKeptRuns } from "@/src/mastra/lib/timeline"
+import { buildCompositeOverlays } from "@/src/mastra/lib/composite"
 import { placeOverlays } from "@/src/mastra/lib/fcpxml"
-import { composableTitleOverlays } from "@/src/mastra/lib/titles"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import type {
   Project,
@@ -221,27 +219,28 @@ export interface EditingDocumentTitleEntry {
 }
 
 /**
- * Which exported title annotations would actually land in `timeline.fcpxml`.
+ * Which title annotations would actually land in `timeline.fcpxml`.
  *
- * Reuses the exact placement logic the `overlay` step composites scenes
- * with (`buildKeptRuns`, `placeOverlays`) rather than re-deriving "is this
- * asset composed" from `compositeApprovedAt` or some other proxy — "composed"
- * means what ADR 0006 says it means: referenced by a build of the FCPXML,
- * which is precisely what `placeOverlays` decides.
+ * Built from the exact same overlays and runs the `overlay` step composites
+ * with (`buildCompositeOverlays`) — including the exported scenes competing
+ * for the same runs — rather than placing titles against a second, partial
+ * computation that could silently drift from what the step actually writes.
+ * "Composed" means what ADR 0006 says it means: referenced by a build of the
+ * FCPXML, which is precisely what `placeOverlays` decides.
  */
 function composedTitleIds(project: Project): Set<string> {
-  const overlays = composableTitleOverlays(project.titleAnnotations)
+  if (project.titleAnnotations.length === 0) return new Set()
+
+  const { runs, overlays } = buildCompositeOverlays(project)
   if (overlays.length === 0) return new Set()
 
-  const segments = buildSegments(project.transcript.words)
-  const runs = buildKeptRuns(
-    segments,
-    project.spans,
-    project.media,
-    project.maxSilenceSec
-  )
+  const titleIds = new Set(project.titleAnnotations.map((a) => a.id))
   const { placed } = placeOverlays(runs, overlays)
-  return new Set(placed.map((fragment) => fragment.sceneId))
+  return new Set(
+    placed
+      .map((fragment) => fragment.sceneId)
+      .filter((id) => titleIds.has(id))
+  )
 }
 
 export function buildEditingDocument(project: Project): EditingDocument {

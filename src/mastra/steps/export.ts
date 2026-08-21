@@ -9,6 +9,7 @@
 
 import { createStep } from "@mastra/core/workflows"
 
+import { MIN_SCENE_HOLD_SEC } from "../lib/composite"
 import { sceneExportPath, toRelative } from "../lib/paths"
 import { readProject, updateProject } from "../lib/project"
 import { exportScene } from "../lib/render"
@@ -16,18 +17,6 @@ import { PipelineIO, message, reporter, runStep } from "./shared"
 
 /** One progress chunk per this many frames. 210 chunks for a 7s scene is noise. */
 const PROGRESS_EVERY = 10
-
-/**
- * Floor on how long an exported scene plays, in seconds.
- *
- * A scene's own choreography routinely finishes well under its available
- * window — `animation-fill-mode: both` (`scene-agent.ts`) holds the last
- * frame once it does, so exporting past the measured animation just renders
- * more of that held frame, for free. Four seconds reads as a deliberate
- * cutaway rather than a flash; `overlay.ts` applies the same floor when it
- * places the scene in `timeline.fcpxml`, so the two stay in sync.
- */
-export const MIN_SCENE_HOLD_SEC = 4
 
 export const exportStep = createStep({
   id: "export",

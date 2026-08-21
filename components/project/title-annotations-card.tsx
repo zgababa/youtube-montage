@@ -138,9 +138,11 @@ export function TitleAnnotationsCard({
         <ul className="flex flex-col gap-2">
           {project.titleAnnotations.map((annotation) => (
             <AnnotationRow
-              // The saved copy is part of the key, so a successful save (or a
-              // refresh that brings back different text) remounts the row and
-              // its draft starts from the new value — no resync effect needed.
+              // The saved copy is part of the key rather than a resync effect
+              // (this project's lint rules flag `setState` in an effect body
+              // as a cascading-render risk — see react-hooks/set-state-in-effect):
+              // a successful save remounts the row and its draft starts fresh
+              // from the new value.
               key={`${annotation.id}:${annotation.text}`}
               annotation={annotation}
               onDecide={(decision) => decide(annotation.id, decision)}

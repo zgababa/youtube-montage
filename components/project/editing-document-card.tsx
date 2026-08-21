@@ -1,5 +1,7 @@
 "use client"
 
+import * as React from "react"
+
 import {
   plural,
   SCENE_STATUS_LABELS,
@@ -20,8 +22,14 @@ import { StageSection } from "@/components/project/stage"
  * effect shows up here until the structural analysis lands in a later issue.
  */
 export function EditingDocumentCard({ project }: { project: Project }) {
-  const editingDocument = buildEditingDocument(project)
-  const { script, entries, titles } = editingDocument
+  // Building the document now replays the overlay placement (issue #7's
+  // `composedTitleIds`), not just a string join — worth memoizing so it
+  // doesn't rerun on every render this card takes part in, only when the
+  // project actually changes.
+  const { script, entries, titles } = React.useMemo(
+    () => buildEditingDocument(project),
+    [project]
+  )
 
   return (
     <StageSection
