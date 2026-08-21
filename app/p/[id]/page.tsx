@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 
-import { getProject } from "@/lib/api"
+import { getProject, getSuspendedRunId } from "@/lib/api"
 import { ProjectWorkspace } from "@/components/project/project-workspace"
 
 /**
@@ -19,5 +19,9 @@ export default async function ProjectPage({
 
   if (!project) notFound()
 
-  return <ProjectWorkspace project={project} />
+  // A suspended run is correlated by project path (idea.md §9, issue #3), so
+  // it can only be looked up once the project itself has resolved.
+  const activeRunId = await getSuspendedRunId(project.path)
+
+  return <ProjectWorkspace project={project} activeRunId={activeRunId} />
 }

@@ -14,6 +14,7 @@ import { createUIMessageStreamResponse } from "ai"
 
 import { mastra } from "@/src/mastra"
 import type { PipelineUIMessage } from "@/src/mastra/stream/contract"
+import { workflowStateToPipelineStream } from "@/src/mastra/stream/reconnect-stream"
 
 // ffmpeg, Playwright and `fs` all live behind this route (idea.md §9).
 export const runtime = "nodejs"
@@ -28,6 +29,21 @@ export const maxDuration = 3600
 
 export async function POST(request: Request) {
   const params = await request.json()
+
+  // Reconnecting to a suspended run reads the persisted snapshot rather than
+  // starting a fresh one — see `src/mastra/stream/reconnect.ts` for why that
+  // isn't `@mastra/ai-sdk`'s own `workflowSnapshotToStream`.
+  if (params.kind === "reconnect") {
+    const state = await mastra
+      .getWorkflow("brollWorkflow")
+      .getWorkflowRunById(params.runId)
+
+    if (!state) return new Response("Run not found", { status: 404 })
+
+    return createUIMessageStreamResponse({
+      stream: workflowStateToPipelineStream(state),
+    })
+  }
 
   const stream = await handleWorkflowStream<PipelineUIMessage>({
     mastra,

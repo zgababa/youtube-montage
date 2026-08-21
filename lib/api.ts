@@ -12,6 +12,7 @@ import "server-only"
  * into a build error rather than a confusing runtime one.
  */
 
+import { mastra } from "@/src/mastra"
 import { readProject, tryReadStoredProject } from "@/src/mastra/lib/project"
 import { findById, readIndex, touch } from "@/src/mastra/lib/projects-index"
 import type { Project, ProjectSummary } from "@/lib/types"
@@ -64,6 +65,32 @@ export async function getProject(id: string): Promise<Project | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * The most recent run left suspended at a gate for this project, if any —
+ * what lets the page reconnect to it instead of starting a new one on
+ * reload (idea.md §9, issue #3).
+ *
+ * Correlated by `resourceId`, which `usePipeline`'s "start" action sets to
+ * the project path. A project whose run predates that wiring — or that has
+ * none — simply has nothing to reconnect to.
+ */
+export async function getSuspendedRunId(
+  projectPath: string
+): Promise<string | null> {
+  const { runs } = await mastra.getWorkflow("brollWorkflow").listWorkflowRuns({
+    resourceId: projectPath,
+    status: "suspended",
+    perPage: 20,
+  })
+
+  if (runs.length === 0) return null
+
+  // The most recent, in case more than one suspended run exists for the same
+  // project — e.g. an old orphan from before this correlation existed.
+  return runs.toSorted((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+    .runId
 }
 
 /**

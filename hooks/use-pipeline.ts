@@ -41,6 +41,12 @@ export interface PipelineOptions {
 
 export function usePipeline(
   projectPath: string,
+  /**
+   * A run left suspended at a gate for this project, found on the server
+   * (`getSuspendedRunId`, issue #3). Reconnects to it once on mount instead
+   * of leaving the UI showing "Idle" for work that's already been paid for.
+   */
+  activeRunId: string | null,
   options: PipelineOptions = {}
 ) {
   // Transient chunks never reach `message.parts`, so logs are accumulated here
@@ -117,6 +123,17 @@ export function usePipeline(
     [sendMessage]
   )
 
+  // Reconnect once, on mount, and only if nothing has sent a message into
+  // this `useChat` session yet — a re-render after the run is already
+  // underway (live or reconnected) must not send a second reconnect on top
+  // of it.
+  React.useEffect(() => {
+    if (activeRunId && messages.length === 0) {
+      send({ kind: "reconnect", runId: activeRunId })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return {
     ...(messages.length === 0 ? EMPTY_PIPELINE_STATE : state),
     logs,
@@ -154,7 +171,15 @@ export function usePipeline(
 function toBody(action: PipelineAction | undefined) {
   switch (action?.kind) {
     case "start":
-      return { inputData: { projectPath: action.projectPath } }
+      return {
+        inputData: { projectPath: action.projectPath },
+        // Correlates the run to its project, so a later reload can find it
+        // again via `getSuspendedRunId` (issue #3).
+        resourceId: action.projectPath,
+      }
+
+    case "reconnect":
+      return { kind: "reconnect", runId: action.runId }
 
     case "approve-cleanup":
       return {

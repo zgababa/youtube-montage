@@ -242,6 +242,7 @@ export type PipelineAction =
       /** False keeps the gate open for another round of regeneration. */
       done: boolean
     }
+  | { kind: "reconnect"; runId: string }
 
 /** The `useChat` type parameter. Both ends of the stream agree on this. */
 export type PipelineUIMessage = UIMessage<PipelineAction, PipelineDataParts>
