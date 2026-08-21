@@ -26,6 +26,7 @@ import { buildFcpxml, placeOverlays, type OverlayScene } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
 import { buildSegments } from "../lib/segments"
+import { titleToOverlayScene } from "../lib/titles"
 import { buildKeptRuns } from "../lib/timeline"
 import { ensureWhiteBacking } from "../lib/white-backing"
 import type { StoredProject } from "../schemas"
@@ -99,7 +100,7 @@ async function writeComposite(project: StoredProject) {
   // Matches the floor `export.ts` renders to — the composited duration has
   // to agree with what the .mov actually contains, or the fragment plays
   // past the end of its own asset.
-  const overlays: OverlayScene[] = exported.map((scene) => ({
+  const sceneOverlays: OverlayScene[] = exported.map((scene) => ({
     id: scene.id,
     sourceFile: scene.sourceFile,
     scriptStart: scene.scriptStart,
@@ -109,6 +110,18 @@ async function writeComposite(project: StoredProject) {
     ),
     exportPath: scene.exportPath!,
   }))
+
+  // Manual TITRE annotations composite exactly like a scene (issue #7):
+  // `titleToOverlayScene` projects a rendered, approved annotation to the
+  // same shape, so `placeOverlays`/`buildFcpxml` don't need to know titles
+  // exist at all.
+  const titleOverlays: OverlayScene[] = project.titleAnnotations
+    .filter(
+      (annotation) => annotation.status === "approved" && annotation.exportPath !== null
+    )
+    .map(titleToOverlayScene)
+
+  const overlays = [...sceneOverlays, ...titleOverlays]
 
   const { placed, skipped } = placeOverlays(runs, overlays)
 

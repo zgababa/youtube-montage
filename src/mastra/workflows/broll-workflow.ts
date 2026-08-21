@@ -24,6 +24,7 @@ import { PipelineIO, reporter } from "../steps/shared"
 import type { PipelineWriter } from "../stream/contract"
 import { shotlistStep } from "../steps/shotlist"
 import { timelineStep } from "../steps/timeline"
+import { titlesStep } from "../steps/titles"
 import { transcribeStep } from "../steps/transcribe"
 import { generateSceneWorkflow } from "./generate-scene-workflow"
 
@@ -86,6 +87,11 @@ export const brollWorkflow = createWorkflow({
   // Suspends: approve, reject, or regenerate scenes.
   .then(reviewStep)
   .then(exportStep)
+  // Renders any approved manual TITRE annotations to ProRes, same as a scene
+  // (issue #7). No dedicated gate: the composite step right after already
+  // suspends for review, and it's this step's rendered output overlay.ts
+  // composites alongside the scenes.
+  .then(titlesStep)
   // Rewrites timeline.fcpxml with every scene exported so far composited in
   // as a connected clip (idea.md §4, "a later iteration" — see fcpxml.ts).
   .then(overlayStep)

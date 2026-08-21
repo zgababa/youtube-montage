@@ -16,6 +16,7 @@ import { findById, removeFromIndex } from "@/src/mastra/lib/projects-index"
 import {
   MediaFileSchema,
   StyleGuideSchema,
+  TitleAnnotationSchema,
   TranscriptionHintsSchema,
 } from "@/src/mastra/schemas"
 import { getProject } from "@/lib/api"
@@ -36,6 +37,16 @@ const PatchSchema = z
     transcriptionHints: TranscriptionHintsSchema,
     fps: z.number().int().positive(),
     styleGuide: StyleGuideSchema,
+    /**
+     * A manual TITRE annotation is user input (issue #7), not pipeline
+     * output like `scenes` — its `text`, `status` and existence are the
+     * client's to set. Its `htmlPath`/`exportPath` are not: only the
+     * `titles` workflow step writes those, so the handler below re-attaches
+     * whatever is already on disk for a given id rather than trusting the
+     * client's copy — the same reasoning that keeps `scenes` off this list
+     * entirely, applied field-by-field instead of to the whole array.
+     */
+    titleAnnotations: z.array(TitleAnnotationSchema),
   })
   .partial()
 
@@ -92,7 +103,16 @@ export async function PATCH(
 
   if (problem) return Response.json({ error: problem }, { status: 400 })
 
-  await updateProject(entry.path, (project) => ({ ...project, ...parsed.data }))
+  await updateProject(entry.path, (project) => ({
+    ...project,
+    ...parsed.data,
+    titleAnnotations: parsed.data.titleAnnotations
+      ? reconcileRenderedFields(
+          parsed.data.titleAnnotations,
+          project.titleAnnotations
+        )
+      : project.titleAnnotations,
+  }))
 
   return Response.json(await getProject(id))
 }
@@ -130,6 +150,31 @@ function checkHints(
   }
 
   return null
+}
+
+/**
+ * Keeps `htmlPath`/`exportPath` server-authoritative on a client PATCH.
+ *
+ * The client only ever sends these back unchanged (it has no way to render
+ * a title itself), but trusting that instead of re-attaching disk state
+ * would silently erase them the instant the `titles` step writes a path the
+ * client's stale copy doesn't have yet.
+ */
+function reconcileRenderedFields(
+  incoming: z.infer<typeof TitleAnnotationSchema>[],
+  onDisk: z.infer<typeof TitleAnnotationSchema>[]
+): z.infer<typeof TitleAnnotationSchema>[] {
+  const byId = new Map(onDisk.map((annotation) => [annotation.id, annotation]))
+  return incoming.map((annotation) => {
+    const stored = byId.get(annotation.id)
+    return stored
+      ? {
+          ...annotation,
+          htmlPath: stored.htmlPath,
+          exportPath: stored.exportPath,
+        }
+      : annotation
+  })
 }
 
 function checkMedia(media: z.infer<typeof MediaFileSchema>[]): string | null {

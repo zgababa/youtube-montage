@@ -84,7 +84,7 @@ export const STAGES: readonly StageDefinition[] = [
     label: "Scenes",
     blurb:
       "Placed against the approved script, generated three at a time, exported one at a time.",
-    steps: ["scenarios", "generate", "review", "export"],
+    steps: ["scenarios", "generate", "review", "export", "titles"],
   },
   {
     id: "composite",

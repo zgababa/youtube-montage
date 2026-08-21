@@ -46,6 +46,18 @@ export function scenesDir(projectPath: string) {
   return path.join(projectPath, "scenes")
 }
 
+export function titlesDir(projectPath: string) {
+  return path.join(projectPath, "titles")
+}
+
+export function titleHtmlPath(projectPath: string, annotationId: string) {
+  return path.join(titlesDir(projectPath), `${annotationId}.html`)
+}
+
+export function titleExportPath(projectPath: string, annotationId: string) {
+  return path.join(exportsDir(projectPath), `${annotationId}.mov`)
+}
+
 export function exportsDir(projectPath: string) {
   return path.join(projectPath, "exports")
 }

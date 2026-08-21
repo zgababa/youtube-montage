@@ -6,6 +6,10 @@
  */
 
 import { durationLabel, timecode } from "@/lib/format"
+import { buildSegments } from "@/src/mastra/lib/segments"
+import { buildKeptRuns } from "@/src/mastra/lib/timeline"
+import { placeOverlays } from "@/src/mastra/lib/fcpxml"
+import { titleToOverlayScene } from "@/src/mastra/lib/titles"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import type {
   Project,
@@ -13,6 +17,8 @@ import type {
   SceneStatus,
   Span,
   SpanCategory,
+  TitleAnnotation,
+  TitleAnnotationStatus,
   Word,
 } from "@/lib/types"
 
@@ -188,19 +194,66 @@ export interface EditingDocumentEntry {
  * are. That also means a project written before this feature existed needs no
  * migration: with `cleanupApprovedAt` absent or `null`, the document is empty.
  */
+/**
+ * A manual TITRE annotation as the document shows it: the annotation itself,
+ * the title asset it produced (if rendered), and whether that asset made it
+ * into the FCPXML export — the three things ADR 0006 says the document has
+ * to link for a manual annotation to read as one flow rather than three.
+ */
+export interface EditingDocumentTitleEntry {
+  annotationId: string
+  segmentIndex: number
+  scriptStart: number
+  scriptEnd: number
+  text: string
+  status: TitleAnnotationStatus
+  htmlPath: string | null
+  exportPath: string | null
+  /** `true` only once `timeline.fcpxml` would actually place this asset. */
+  composed: boolean
+}
+
 export interface EditingDocument {
   /** `null` until the cleanup is approved — there is no approved script yet. */
   script: { text: string; keptSpanCount: number } | null
   entries: EditingDocumentEntry[]
+  titles: EditingDocumentTitleEntry[]
+}
+
+/**
+ * Which exported title annotations would actually land in `timeline.fcpxml`.
+ *
+ * Reuses the exact placement logic the `overlay` step composites scenes
+ * with (`buildKeptRuns`, `placeOverlays`) rather than re-deriving "is this
+ * asset composed" from `compositeApprovedAt` or some other proxy — "composed"
+ * means what ADR 0006 says it means: referenced by a build of the FCPXML,
+ * which is precisely what `placeOverlays` decides.
+ */
+function composedTitleIds(project: Project): Set<string> {
+  const exported = project.titleAnnotations.filter(
+    (annotation) => annotation.status === "approved" && annotation.exportPath !== null
+  )
+  if (exported.length === 0) return new Set()
+
+  const segments = buildSegments(project.transcript.words)
+  const runs = buildKeptRuns(
+    segments,
+    project.spans,
+    project.media,
+    project.maxSilenceSec
+  )
+  const { placed } = placeOverlays(runs, exported.map(titleToOverlayScene))
+  return new Set(placed.map((fragment) => fragment.sceneId))
 }
 
 export function buildEditingDocument(project: Project): EditingDocument {
   if (project.cleanupApprovedAt === null) {
-    return { script: null, entries: [] }
+    return { script: null, entries: [], titles: [] }
   }
 
   const spans = spansWithText(project.spans, project.transcript.words)
   const kept = spans.filter((span) => span.action === "keep")
+  const composed = composedTitleIds(project)
 
   return {
     script: { text: cleanScript(spans), keptSpanCount: kept.length },
@@ -215,6 +268,20 @@ export function buildEditingDocument(project: Project): EditingDocument {
         status: scene.status,
         htmlPath: scene.htmlPath,
         exportPath: scene.exportPath,
+      })),
+    titles: project.titleAnnotations
+      .slice()
+      .sort((a: TitleAnnotation, b: TitleAnnotation) => a.scriptStart - b.scriptStart)
+      .map((annotation) => ({
+        annotationId: annotation.id,
+        segmentIndex: annotation.segmentIndex,
+        scriptStart: annotation.scriptStart,
+        scriptEnd: annotation.scriptEnd,
+        text: annotation.text,
+        status: annotation.status,
+        htmlPath: annotation.htmlPath,
+        exportPath: annotation.exportPath,
+        composed: composed.has(annotation.id),
       })),
   }
 }

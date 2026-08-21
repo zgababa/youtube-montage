@@ -265,6 +265,7 @@ export function blankProject(
     compositeApprovedAt: null,
     styleGuide: DEFAULT_STYLE_GUIDE,
     scenes: [],
+    titleAnnotations: [],
     copy: null,
   }
 }
