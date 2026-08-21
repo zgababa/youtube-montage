@@ -37,16 +37,17 @@ export interface PipelineOptions {
    * for the life of the component.
    */
   onSettled?: () => void
-}
 
-export function usePipeline(
-  projectPath: string,
   /**
    * A run left suspended at a gate for this project, found on the server
    * (`getSuspendedRunId`, issue #3). Reconnects to it once on mount instead
    * of leaving the UI showing "Idle" for work that's already been paid for.
    */
-  activeRunId: string | null,
+  activeRunId?: string | null
+}
+
+export function usePipeline(
+  projectPath: string,
   options: PipelineOptions = {}
 ) {
   // Transient chunks never reach `message.parts`, so logs are accumulated here
@@ -68,7 +69,7 @@ export function usePipeline(
     []
   )
 
-  const { onSettled } = options
+  const { onSettled, activeRunId = null } = options
 
   const { messages, sendMessage, status, error, stop } =
     useChat<PipelineUIMessage>({

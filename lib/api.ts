@@ -54,14 +54,44 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 export async function getProject(id: string): Promise<Project | null> {
   const entry = await findById(id)
   if (!entry) return null
+  return readProjectAt(id, entry.path)
+}
 
+/**
+ * `getProject`, plus whichever run is suspended for it — the pairing the
+ * project page actually needs.
+ *
+ * Split from `getProject` rather than folded into it because the two reads
+ * are independent once the index entry is known: `getSuspendedRunId` only
+ * needs `entry.path`, not the project itself, so it can run alongside
+ * `readProject`'s file I/O (project.json plus every scene's HTML) rather
+ * than waiting behind it.
+ */
+export async function getProjectWithActiveRun(
+  id: string
+): Promise<{ project: Project | null; activeRunId: string | null }> {
+  const entry = await findById(id)
+  if (!entry) return { project: null, activeRunId: null }
+
+  const [project, activeRunId] = await Promise.all([
+    readProjectAt(id, entry.path),
+    getSuspendedRunId(entry.path),
+  ])
+
+  return { project, activeRunId }
+}
+
+async function readProjectAt(
+  id: string,
+  path: string
+): Promise<Project | null> {
   try {
-    const project = await readProject(entry.path)
+    const project = await readProject(path)
     await touch(id)
     // The id in the index is the app's handle on the folder; the one inside
     // `project.json` came from whichever machine created it. The index wins,
     // or moving a folder between machines breaks every URL.
-    return { ...project, id, path: entry.path }
+    return { ...project, id, path }
   } catch {
     return null
   }
@@ -89,8 +119,9 @@ export async function getSuspendedRunId(
 
   // The most recent, in case more than one suspended run exists for the same
   // project — e.g. an old orphan from before this correlation existed.
-  return runs.toSorted((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
-    .runId
+  return runs.toSorted(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+  )[0].runId
 }
 
 /**

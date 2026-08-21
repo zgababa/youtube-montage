@@ -74,7 +74,7 @@ export function ProjectWorkspace({
     router.refresh()
   }, [router])
 
-  const pipeline = usePipeline(fromDisk.path, activeRunId, { onSettled })
+  const pipeline = usePipeline(fromDisk.path, { onSettled, activeRunId })
 
   /**
    * Decisions are collected locally and submitted together.

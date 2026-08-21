@@ -24,7 +24,7 @@ function ofType(chunks: ReconnectChunk[], type: string): DataChunk[] {
 }
 
 describe("workflowStateToPipelineChunks", () => {
-  test("round-trips a run suspended at the cleanup gate", () => {
+  test("round-trips a run suspended at the cleanup gate", async () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-1",
       status: "suspended",
@@ -41,7 +41,7 @@ describe("workflowStateToPipelineChunks", () => {
       },
     }
 
-    const chunks = workflowStateToPipelineChunks(state)
+    const chunks = await workflowStateToPipelineChunks(state)
 
     expect(chunks[0]).toEqual({ type: "start" })
     expect(chunks.at(-1)).toEqual({ type: "finish" })
@@ -75,7 +75,7 @@ describe("workflowStateToPipelineChunks", () => {
     })
   })
 
-  test("skips the run chunk when neither the payload nor resourceId names a project", () => {
+  test("skips the run chunk when neither the payload nor resourceId names a project", async () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-2",
       status: "suspended",
@@ -84,12 +84,12 @@ describe("workflowStateToPipelineChunks", () => {
       steps: {},
     }
 
-    const chunks = workflowStateToPipelineChunks(state)
+    const chunks = await workflowStateToPipelineChunks(state)
 
     expect(chunks.some((chunk) => chunk.type === "data-run")).toBe(false)
   })
 
-  test("falls back to resourceId when the payload carries no projectPath", () => {
+  test("falls back to resourceId when the payload carries no projectPath", async () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-2b",
       status: "suspended",
@@ -99,14 +99,15 @@ describe("workflowStateToPipelineChunks", () => {
       steps: {},
     }
 
-    const run = ofType(workflowStateToPipelineChunks(state), "data-run").at(0)
+    const chunks = await workflowStateToPipelineChunks(state)
+    const run = ofType(chunks, "data-run").at(0)
     expect(run?.data).toMatchObject({
       runId: "run-2b",
       projectPath: "/tmp/project",
     })
   })
 
-  test("skips step ids this app's contract doesn't know about, rather than throwing", () => {
+  test("skips step ids this app's contract doesn't know about, rather than throwing", async () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-3",
       status: "suspended",
@@ -120,14 +121,13 @@ describe("workflowStateToPipelineChunks", () => {
       },
     }
 
-    expect(() => workflowStateToPipelineChunks(state)).not.toThrow()
-
-    const steps = ofType(workflowStateToPipelineChunks(state), "data-step")
+    const chunks = await workflowStateToPipelineChunks(state)
+    const steps = ofType(chunks, "data-step")
     expect(steps).toHaveLength(1)
     expect(steps[0].data.id).toBe("scan")
   })
 
-  test("resolves a foreach step recorded as an array to its last result", () => {
+  test("resolves a foreach step recorded as an array to its last result", async () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-4",
       status: "running",
@@ -138,12 +138,13 @@ describe("workflowStateToPipelineChunks", () => {
       },
     }
 
-    const steps = ofType(workflowStateToPipelineChunks(state), "data-step")
+    const chunks = await workflowStateToPipelineChunks(state)
+    const steps = ofType(chunks, "data-step")
     expect(steps).toHaveLength(1)
     expect(steps[0].data.status).toBe("success")
   })
 
-  test("has no gate when nothing is suspended", () => {
+  test("has no gate when nothing is suspended", async () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-5",
       status: "running",
@@ -152,7 +153,7 @@ describe("workflowStateToPipelineChunks", () => {
       steps: { scan: { status: "running" } },
     }
 
-    const chunks = workflowStateToPipelineChunks(state)
+    const chunks = await workflowStateToPipelineChunks(state)
     expect(chunks.some((chunk) => chunk.type === "data-gate")).toBe(false)
   })
 })

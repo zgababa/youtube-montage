@@ -26,14 +26,16 @@
  * here.
  */
 
+import type { z } from "zod"
+
 import {
+  emitter,
   GateSchema,
-  pipelineDataSchemas,
   RunStatusSchema,
   StepIdSchema,
   StepStatusSchema,
   type PipelineDataParts,
-  type PipelineDataType,
+  type PipelineWriter,
 } from "./contract"
 
 /**
@@ -76,32 +78,30 @@ export type ReconnectChunk =
     }
 
 /**
- * `emitter()`'s guarantee, on the replay side: the key picks the payload type
- * at compile time, and the same schema `emitter()` uses parses it at run time.
- * Throwing is deliberate for the same reason it is there — a malformed chunk
- * is a bug here, and finding it now beats finding it as a blank panel.
+ * Collects what `emitter()` writes rather than streaming it — reconnecting
+ * builds the whole chunk list up front, live steps stream theirs one at a
+ * time, but both go through the exact same shaping and schema validation.
+ * Two independent hand-rolled encoders would only have to drift once.
  */
-function dataChunk<K extends PipelineDataType>(
-  type: K,
-  data: PipelineDataParts[K],
-  id?: string
-): ReconnectChunk {
-  pipelineDataSchemas[type].parse(data)
-  return { type: `data-${type}`, data, ...(id ? { id } : {}) }
+function collectingWriter(chunks: ReconnectChunk[]): PipelineWriter {
+  return {
+    async custom(chunk) {
+      chunks.push(chunk as ReconnectChunk)
+    },
+  }
 }
 
 /**
  * Mastra's status vocabulary is a superset of this app's — narrow it down,
  * against the contract's own enums rather than a second copy of them.
  */
-function runStatus(status: string): PipelineDataParts["run"]["status"] {
-  const parsed = RunStatusSchema.safeParse(status)
-  return parsed.success ? parsed.data : "running"
-}
-
-function stepStatus(status: string): PipelineDataParts["step"]["status"] {
-  const parsed = StepStatusSchema.safeParse(status)
-  return parsed.success ? parsed.data : "pending"
+function narrow<Schema extends z.ZodType<string>>(
+  schema: Schema,
+  status: string,
+  fallback: z.infer<Schema>
+): z.infer<Schema> {
+  const parsed = schema.safeParse(status)
+  return parsed.success ? parsed.data : fallback
 }
 
 /** A `.foreach` step is recorded as one result per iteration — the last one wins. */
@@ -127,30 +127,31 @@ function gateFor(
 
 /**
  * Pure: a `WorkflowState`-shaped object in, the same chunk shapes a live run
- * would have streamed out. `workflowStateToPipelineStream` below wraps this in
- * the `ReadableStream` the route handler responds with.
+ * would have streamed out — built through the same `emitter()` a live step
+ * writes through, just collected into an array instead of streamed one at a
+ * time. `workflowStateToPipelineStream` below wraps the result in the
+ * `ReadableStream` the route handler responds with.
  */
-export function workflowStateToPipelineChunks(
+export async function workflowStateToPipelineChunks(
   state: WorkflowStateForReconnect
-): ReconnectChunk[] {
+): Promise<ReconnectChunk[]> {
   const chunks: ReconnectChunk[] = [{ type: "start" }]
+  const emit = emitter(collectingWriter(chunks))
 
   const fromPayload = state.payload?.projectPath
   const projectPath =
     typeof fromPayload === "string" ? fromPayload : state.resourceId
 
   if (projectPath) {
-    chunks.push(
-      dataChunk(
-        "run",
-        {
-          runId: state.runId,
-          projectPath,
-          status: runStatus(state.status),
-          startedAt: state.createdAt.toISOString(),
-        },
-        `run:${state.runId}`
-      )
+    await emit(
+      "run",
+      {
+        runId: state.runId,
+        projectPath,
+        status: narrow(RunStatusSchema, state.status, "running"),
+        startedAt: state.createdAt.toISOString(),
+      },
+      { id: `run:${state.runId}` }
     )
   }
 
@@ -163,12 +164,13 @@ export function workflowStateToPipelineChunks(
     const result = latest(raw)
     if (!result) continue
 
-    chunks.push(
-      dataChunk(
-        "step",
-        { id: parsedId.data, status: stepStatus(result.status) },
-        `step:${parsedId.data}`
-      )
+    await emit(
+      "step",
+      {
+        id: parsedId.data,
+        status: narrow(StepStatusSchema, result.status, "pending"),
+      },
+      { id: `step:${parsedId.data}` }
     )
 
     if (!gate && result.status === "suspended") {
@@ -176,7 +178,7 @@ export function workflowStateToPipelineChunks(
     }
   }
 
-  if (gate) chunks.push(dataChunk("gate", gate))
+  if (gate) await emit("gate", gate)
 
   chunks.push({ type: "finish" })
   return chunks
@@ -190,9 +192,9 @@ export function workflowStateToPipelineChunks(
 export function workflowStateToPipelineStream(
   state: WorkflowStateForReconnect
 ): ReadableStream<ReconnectChunk> {
-  const chunks = workflowStateToPipelineChunks(state)
   return new ReadableStream({
-    start(controller) {
+    async start(controller) {
+      const chunks = await workflowStateToPipelineChunks(state)
       for (const chunk of chunks) controller.enqueue(chunk)
       controller.close()
     },

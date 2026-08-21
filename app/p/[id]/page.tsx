@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 
-import { getProject, getSuspendedRunId } from "@/lib/api"
+import { getProjectWithActiveRun } from "@/lib/api"
 import { ProjectWorkspace } from "@/components/project/project-workspace"
 
 /**
@@ -15,13 +15,12 @@ export default async function ProjectPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const project = await getProject(id)
+  // A suspended run is correlated by project path (idea.md §9, issue #3), so
+  // the lookup only needs the index entry — it runs alongside `project.json`'s
+  // own read rather than waiting behind it (see `getProjectWithActiveRun`).
+  const { project, activeRunId } = await getProjectWithActiveRun(id)
 
   if (!project) notFound()
-
-  // A suspended run is correlated by project path (idea.md §9, issue #3), so
-  // it can only be looked up once the project itself has resolved.
-  const activeRunId = await getSuspendedRunId(project.path)
 
   return <ProjectWorkspace project={project} activeRunId={activeRunId} />
 }
