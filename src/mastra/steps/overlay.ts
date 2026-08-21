@@ -26,7 +26,7 @@ import { buildFcpxml, placeOverlays, type OverlayScene } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
 import { buildSegments } from "../lib/segments"
-import { titleToOverlayScene } from "../lib/titles"
+import { composableTitleOverlays } from "../lib/titles"
 import { buildKeptRuns } from "../lib/timeline"
 import { ensureWhiteBacking } from "../lib/white-backing"
 import type { StoredProject } from "../schemas"
@@ -35,7 +35,8 @@ import { PipelineIO, message, reporter } from "./shared"
 
 export const overlayStep = createStep({
   id: "overlay",
-  description: "Composite exported scenes into timeline.fcpxml, then suspend for approval",
+  description:
+    "Composite exported scenes into timeline.fcpxml, then suspend for approval",
   inputSchema: PipelineIO,
   outputSchema: PipelineIO,
   resumeSchema: z.object({
@@ -112,16 +113,13 @@ async function writeComposite(project: StoredProject) {
   }))
 
   // Manual TITRE annotations composite exactly like a scene (issue #7):
-  // `titleToOverlayScene` projects a rendered, approved annotation to the
+  // `composableTitleOverlays` projects the rendered, approved ones to the
   // same shape, so `placeOverlays`/`buildFcpxml` don't need to know titles
   // exist at all.
-  const titleOverlays: OverlayScene[] = project.titleAnnotations
-    .filter(
-      (annotation) => annotation.status === "approved" && annotation.exportPath !== null
-    )
-    .map(titleToOverlayScene)
-
-  const overlays = [...sceneOverlays, ...titleOverlays]
+  const overlays = [
+    ...sceneOverlays,
+    ...composableTitleOverlays(project.titleAnnotations),
+  ]
 
   const { placed, skipped } = placeOverlays(runs, overlays)
 

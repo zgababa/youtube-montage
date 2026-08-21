@@ -9,7 +9,7 @@ import { durationLabel, timecode } from "@/lib/format"
 import { buildSegments } from "@/src/mastra/lib/segments"
 import { buildKeptRuns } from "@/src/mastra/lib/timeline"
 import { placeOverlays } from "@/src/mastra/lib/fcpxml"
-import { titleToOverlayScene } from "@/src/mastra/lib/titles"
+import { composableTitleOverlays } from "@/src/mastra/lib/titles"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import type {
   Project,
@@ -194,6 +194,13 @@ export interface EditingDocumentEntry {
  * are. That also means a project written before this feature existed needs no
  * migration: with `cleanupApprovedAt` absent or `null`, the document is empty.
  */
+export interface EditingDocument {
+  /** `null` until the cleanup is approved — there is no approved script yet. */
+  script: { text: string; keptSpanCount: number } | null
+  entries: EditingDocumentEntry[]
+  titles: EditingDocumentTitleEntry[]
+}
+
 /**
  * A manual TITRE annotation as the document shows it: the annotation itself,
  * the title asset it produced (if rendered), and whether that asset made it
@@ -213,13 +220,6 @@ export interface EditingDocumentTitleEntry {
   composed: boolean
 }
 
-export interface EditingDocument {
-  /** `null` until the cleanup is approved — there is no approved script yet. */
-  script: { text: string; keptSpanCount: number } | null
-  entries: EditingDocumentEntry[]
-  titles: EditingDocumentTitleEntry[]
-}
-
 /**
  * Which exported title annotations would actually land in `timeline.fcpxml`.
  *
@@ -230,10 +230,8 @@ export interface EditingDocument {
  * which is precisely what `placeOverlays` decides.
  */
 function composedTitleIds(project: Project): Set<string> {
-  const exported = project.titleAnnotations.filter(
-    (annotation) => annotation.status === "approved" && annotation.exportPath !== null
-  )
-  if (exported.length === 0) return new Set()
+  const overlays = composableTitleOverlays(project.titleAnnotations)
+  if (overlays.length === 0) return new Set()
 
   const segments = buildSegments(project.transcript.words)
   const runs = buildKeptRuns(
@@ -242,7 +240,7 @@ function composedTitleIds(project: Project): Set<string> {
     project.media,
     project.maxSilenceSec
   )
-  const { placed } = placeOverlays(runs, exported.map(titleToOverlayScene))
+  const { placed } = placeOverlays(runs, overlays)
   return new Set(placed.map((fragment) => fragment.sceneId))
 }
 
@@ -271,7 +269,10 @@ export function buildEditingDocument(project: Project): EditingDocument {
       })),
     titles: project.titleAnnotations
       .slice()
-      .sort((a: TitleAnnotation, b: TitleAnnotation) => a.scriptStart - b.scriptStart)
+      .sort(
+        (a: TitleAnnotation, b: TitleAnnotation) =>
+          a.scriptStart - b.scriptStart
+      )
       .map((annotation) => ({
         annotationId: annotation.id,
         segmentIndex: annotation.segmentIndex,

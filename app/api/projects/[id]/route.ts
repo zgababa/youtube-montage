@@ -155,10 +155,16 @@ function checkHints(
 /**
  * Keeps `htmlPath`/`exportPath` server-authoritative on a client PATCH.
  *
- * The client only ever sends these back unchanged (it has no way to render
- * a title itself), but trusting that instead of re-attaching disk state
- * would silently erase them the instant the `titles` step writes a path the
- * client's stale copy doesn't have yet.
+ * The client has no way to render a title itself, so trusting the paths it
+ * sends back would silently erase them the instant the `titles` step writes
+ * a path the client's stale copy doesn't have yet. Re-attaching what's on
+ * disk avoids that.
+ *
+ * With one exception: a render belongs to the copy it was rendered from. If
+ * the incoming `text` differs from the stored one, the .mov on disk shows the
+ * old wording, so the paths are dropped rather than re-attached — which is
+ * exactly what makes the `titles` step pick the annotation up again on the
+ * next run (it renders only where `exportPath === null`).
  */
 function reconcileRenderedFields(
   incoming: z.infer<typeof TitleAnnotationSchema>[],
@@ -167,13 +173,14 @@ function reconcileRenderedFields(
   const byId = new Map(onDisk.map((annotation) => [annotation.id, annotation]))
   return incoming.map((annotation) => {
     const stored = byId.get(annotation.id)
-    return stored
-      ? {
-          ...annotation,
-          htmlPath: stored.htmlPath,
-          exportPath: stored.exportPath,
-        }
-      : annotation
+    if (!stored) return annotation
+
+    const sameCopy = stored.text === annotation.text
+    return {
+      ...annotation,
+      htmlPath: sameCopy ? stored.htmlPath : null,
+      exportPath: sameCopy ? stored.exportPath : null,
+    }
   })
 }
 

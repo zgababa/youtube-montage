@@ -45,7 +45,9 @@ describe("createTitleAnnotation", () => {
 
   test("refuses a target belonging to a cut span, without restoring it", () => {
     const segments = buildSegments(words(["um", "filler", "words"]))
-    const spans: Span[] = [{ start: 0, end: 1.5, action: "cut", category: "filler" }]
+    const spans: Span[] = [
+      { start: 0, end: 1.5, action: "cut", category: "filler" },
+    ]
 
     expect(() =>
       createTitleAnnotation({
@@ -90,19 +92,43 @@ describe("decideTitleAnnotation", () => {
     expect(decided.status).toBe("pending")
   })
 
+  test("modifying an already-rendered title drops its render", () => {
+    const rendered = {
+      ...pending,
+      status: "approved" as const,
+      htmlPath: "titles/title_1.html",
+      exportPath: "exports/title_1.mov",
+    }
+
+    const decided = decideTitleAnnotation(rendered, {
+      action: "modify",
+      text: "New wording",
+    })
+
+    // Otherwise `titlesStep` skips it (it only renders `exportPath === null`)
+    // and the composited screen keeps showing the old copy.
+    expect(decided.htmlPath).toBeNull()
+    expect(decided.exportPath).toBeNull()
+  })
+
+  test("a modify that changes nothing keeps the render", () => {
+    const rendered = {
+      ...pending,
+      exportPath: "exports/title_1.mov",
+    }
+
+    const decided = decideTitleAnnotation(rendered, {
+      action: "modify",
+      text: rendered.text,
+    })
+
+    expect(decided.exportPath).toBe("exports/title_1.mov")
+  })
+
   test("approve marks it approved", () => {
     const decided = decideTitleAnnotation(pending, { action: "approve" })
     expect(decided.status).toBe("approved")
     expect(decided.text).toBe("Draft title")
-  })
-
-  test("approve can carry a last-minute edit", () => {
-    const decided = decideTitleAnnotation(pending, {
-      action: "approve",
-      text: "Final title",
-    })
-    expect(decided.status).toBe("approved")
-    expect(decided.text).toBe("Final title")
   })
 
   test("reject marks it rejected without touching the text", () => {
@@ -144,7 +170,12 @@ describe("titleToOverlayScene", () => {
     const segments = buildSegments(words(["hello", "world"]))
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]
     const annotation = {
-      ...createTitleAnnotation({ segments, spans, segmentIndex: 0, text: "Hi" }),
+      ...createTitleAnnotation({
+        segments,
+        spans,
+        segmentIndex: 0,
+        text: "Hi",
+      }),
       status: "approved" as const,
       exportPath: "exports/title_1.mov",
     }

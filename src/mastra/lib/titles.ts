@@ -15,8 +15,6 @@
  * `steps/titles.ts`, via `render.ts`'s existing `exportScene`.
  */
 
-import { randomUUID } from "node:crypto"
-
 import type { OverlayScene } from "./fcpxml"
 import { keptSegments, type Segment } from "./segments"
 import type { Span, StyleGuide, TitleAnnotation } from "../schemas"
@@ -28,6 +26,20 @@ import type { Span, StyleGuide, TitleAnnotation } from "../schemas"
  * measure — the spec's two seconds *is* the duration.
  */
 export const TITLE_DURATION_SEC = 2
+
+/**
+ * `globalThis.crypto`, not `node:crypto`.
+ *
+ * `createTitleAnnotation` runs in the browser — the cleanup review card calls
+ * it directly — and importing `node:crypto` here made the bundler substitute
+ * `crypto-browserify` (asn1, bignum, the lot) into the client chunk, about a
+ * megabyte of polyfill to produce one id. The Web Crypto `randomUUID` is
+ * present in every browser this app targets and in Node 19+, so both callers
+ * get the same function with nothing bundled.
+ */
+function newAnnotationId(): string {
+  return `title_${globalThis.crypto.randomUUID()}`
+}
 
 /* -------------------------------------------------------------------------- */
 /* Creating an annotation                                                     */
@@ -70,7 +82,7 @@ export function createTitleAnnotation({
   }
 
   return {
-    id: `title_${randomUUID()}`,
+    id: newAnnotationId(),
     segmentIndex,
     scriptStart: segment.start,
     scriptEnd: segment.end,
@@ -87,20 +99,24 @@ export function createTitleAnnotation({
 /* Reviewing an annotation                                                     */
 /* -------------------------------------------------------------------------- */
 
-export interface TitleAnnotationDecision {
-  action: "approve" | "modify" | "reject"
-  /** Required for `modify`; optional on `approve` for a last edit-then-accept. */
-  text?: string
-}
+export type TitleAnnotationDecision =
+  | { action: "approve" }
+  | { action: "reject" }
+  | { action: "modify"; text: string }
 
 /**
  * Applies a review decision.
  *
  * `modify` only ever edits the text — it never changes `status`, so an
  * edited annotation still needs an explicit accept or reject afterwards.
- * `approve` and `reject` are the only actions that move `status`; `approve`
- * additionally accepts a `text` override so a last tweak and the acceptance
- * can happen in the same click.
+ * `approve` and `reject` are the only actions that move `status`.
+ *
+ * Changing the text drops `htmlPath`/`exportPath`. Without that, the copy on
+ * screen and the copy in the rendered .mov silently disagree forever: the
+ * `titles` step only renders annotations whose `exportPath` is still `null`
+ * (`steps/titles.ts`), so an already-rendered title edited afterwards would
+ * never be re-rendered and would composite with its old wording. Clearing the
+ * paths is what makes "generated with the chosen copy" survive an edit.
  */
 export function decideTitleAnnotation(
   annotation: TitleAnnotation,
@@ -108,17 +124,16 @@ export function decideTitleAnnotation(
 ): TitleAnnotation {
   switch (decision.action) {
     case "modify":
-      if (decision.text === undefined) {
-        throw new Error("modify requires text to apply")
-      }
-      return { ...annotation, text: decision.text }
-
-    case "approve":
+      if (decision.text === annotation.text) return annotation
       return {
         ...annotation,
-        text: decision.text ?? annotation.text,
-        status: "approved",
+        text: decision.text,
+        htmlPath: null,
+        exportPath: null,
       }
+
+    case "approve":
+      return { ...annotation, status: "approved" }
 
     case "reject":
       return { ...annotation, status: "rejected" }
@@ -215,4 +230,24 @@ export function titleToOverlayScene(annotation: TitleAnnotation): OverlayScene {
     durationSec: TITLE_DURATION_SEC,
     exportPath: annotation.exportPath,
   }
+}
+
+/**
+ * The title overlays a build of `timeline.fcpxml` would be handed.
+ *
+ * One definition of "ready to composite", shared by the `overlay` step that
+ * writes the file and by the editing document that reports whether an
+ * annotation made it in. Two copies of `approved && exportPath !== null`
+ * drifting apart is exactly how the document ends up claiming a composition
+ * the export doesn't contain.
+ */
+export function composableTitleOverlays(
+  annotations: TitleAnnotation[]
+): OverlayScene[] {
+  return annotations
+    .filter(
+      (annotation) =>
+        annotation.status === "approved" && annotation.exportPath !== null
+    )
+    .map(titleToOverlayScene)
 }

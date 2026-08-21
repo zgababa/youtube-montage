@@ -3,17 +3,30 @@
 import * as React from "react"
 
 import { timecode } from "@/lib/format"
-import { createTitleAnnotation, decideTitleAnnotation } from "@/src/mastra/lib/titles"
+import {
+  createTitleAnnotation,
+  decideTitleAnnotation,
+  type TitleAnnotationDecision,
+} from "@/src/mastra/lib/titles"
 import { buildSegments, keptSegments } from "@/src/mastra/lib/segments"
 import type { Project, TitleAnnotation } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { StageSection } from "@/components/project/stage"
 
-const STATUS_VARIANT: Record<TitleAnnotation["status"], "outline" | "default" | "destructive"> = {
+const STATUS_VARIANT: Record<
+  TitleAnnotation["status"],
+  "outline" | "default" | "destructive"
+> = {
   pending: "outline",
   approved: "default",
   rejected: "destructive",
@@ -68,10 +81,12 @@ export function TitleAnnotationsCard({
     }
   }
 
-  function decide(id: string, decision: Parameters<typeof decideTitleAnnotation>[1]) {
+  function decide(id: string, decision: TitleAnnotationDecision) {
     onChange(
       project.titleAnnotations.map((annotation) =>
-        annotation.id === id ? decideTitleAnnotation(annotation, decision) : annotation
+        annotation.id === id
+          ? decideTitleAnnotation(annotation, decision)
+          : annotation
       )
     )
   }
@@ -122,47 +137,85 @@ export function TitleAnnotationsCard({
       {project.titleAnnotations.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {project.titleAnnotations.map((annotation) => (
-            <li
-              key={annotation.id}
-              className="flex flex-col gap-2 rounded-lg border p-3 text-xs"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">
-                  {timecode(annotation.scriptStart)}
-                </span>
-                <Badge variant={STATUS_VARIANT[annotation.status]}>
-                  {annotation.status}
-                </Badge>
-              </div>
-              <Textarea
-                value={annotation.text}
-                onChange={(event) =>
-                  decide(annotation.id, { action: "modify", text: event.target.value })
-                }
-                className="text-xs"
-              />
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => decide(annotation.id, { action: "approve" })}
-                >
-                  Accept
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => decide(annotation.id, { action: "reject" })}
-                >
-                  Reject
-                </Button>
-              </div>
-            </li>
+            <AnnotationRow
+              // The saved copy is part of the key, so a successful save (or a
+              // refresh that brings back different text) remounts the row and
+              // its draft starts from the new value — no resync effect needed.
+              key={`${annotation.id}:${annotation.text}`}
+              annotation={annotation}
+              onDecide={(decision) => decide(annotation.id, decision)}
+            />
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-muted-foreground">No TITRE annotation yet.</p>
+        <p className="text-xs text-muted-foreground">
+          No TITRE annotation yet.
+        </p>
       )}
     </StageSection>
+  )
+}
+
+/**
+ * One annotation under review, editing against a local draft.
+ *
+ * The text box is deliberately *not* wired straight to `onDecide`: every
+ * decision is persisted with a PATCH, so a controlled field would fire one
+ * request and one toast per keystroke and round-trip each character through
+ * server state. Same local-draft-plus-explicit-Save shape the style guide
+ * editor uses.
+ */
+function AnnotationRow({
+  annotation,
+  onDecide,
+}: {
+  annotation: TitleAnnotation
+  onDecide: (decision: TitleAnnotationDecision) => void
+}) {
+  const [draft, setDraft] = React.useState(annotation.text)
+
+  const dirty = draft.trim() !== annotation.text && draft.trim().length > 0
+
+  return (
+    <li className="flex flex-col gap-2 rounded-lg border p-3 text-xs">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground">
+          {timecode(annotation.scriptStart)}
+        </span>
+        <Badge variant={STATUS_VARIANT[annotation.status]}>
+          {annotation.status}
+        </Badge>
+      </div>
+      <Textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        className="text-xs"
+      />
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onDecide({ action: "modify", text: draft.trim() })}
+          disabled={!dirty}
+        >
+          Save text
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onDecide({ action: "approve" })}
+          disabled={dirty}
+        >
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onDecide({ action: "reject" })}
+        >
+          Reject
+        </Button>
+      </div>
+    </li>
   )
 }
