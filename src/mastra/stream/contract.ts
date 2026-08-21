@@ -23,6 +23,7 @@ import { z } from "zod"
 import type { UIMessage } from "ai"
 
 import {
+  EditingDocumentSchema,
   HydratedSceneSchema,
   MediaFileSchema,
   ProjectCopySchema,
@@ -70,6 +71,7 @@ export const RunStatusSchema = z.enum([
 export const GateSchema = z.enum([
   "review-cleanup",
   "review-timeline",
+  "review-plan",
   "review-scenes",
   "review-composite",
 ])
@@ -142,6 +144,11 @@ export const pipelineDataSchemas = {
     spans: z.array(SpanSchema),
     cutSeconds: z.number(),
     counts: z.array(z.tuple([SpanCategorySchema, z.number()])),
+  }),
+
+  /** The persisted structural plan, before any renderer is started. */
+  document: z.object({
+    document: EditingDocumentSchema,
   }),
 
   /** Scene metadata only — placements decided, nothing generated yet. */
@@ -250,6 +257,28 @@ export const SceneDecisionSchema = z.object({
 
 export type SceneDecision = z.infer<typeof SceneDecisionSchema>
 
+export const PlanElementDecisionSchema = z.object({
+  id: z.string(),
+  action: z.enum(["approve", "reject", "modify"]),
+  titleText: z.string().optional(),
+  reason: z.string().optional(),
+  zoomPreset: z.enum(["subtle", "medium", "strong"]).optional(),
+  zoomDurationSec: z.number().positive().optional(),
+  coversLine: z.string().optional(),
+  intent: z.string().optional(),
+})
+
+export const PlanSectionDecisionSchema = z.object({
+  id: z.string(),
+  action: z.enum(["rename", "split", "merge"]),
+  name: z.string().optional(),
+  splitAtSegment: z.number().int().optional(),
+  mergeWithId: z.string().optional(),
+})
+
+export type PlanElementDecision = z.infer<typeof PlanElementDecisionSchema>
+export type PlanSectionDecision = z.infer<typeof PlanSectionDecisionSchema>
+
 /**
  * Everything the UI can send, as a closed union.
  *
@@ -267,6 +296,13 @@ export type PipelineAction =
       runId: string
       approved: boolean
       maxSilenceSec: number
+    }
+  | {
+      kind: "review-plan"
+      runId: string
+      elementDecisions: PlanElementDecision[]
+      sectionDecisions: PlanSectionDecision[]
+      done: boolean
     }
   | {
       kind: "review-scenes"

@@ -27,6 +27,12 @@ describe("StoredProjectSchema", () => {
 
     expect(parsed.maxSilenceSec).toBe(0.3)
     expect(parsed.timelineApprovedAt).toBeNull()
+    expect(parsed.editingDocument).toEqual({
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    })
     expect(parsed.titleAnnotations).toEqual([])
   })
 })

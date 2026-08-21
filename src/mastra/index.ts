@@ -18,6 +18,7 @@ import { LibSQLStore } from "@mastra/libsql"
 import { cleanupAgent } from "./agents/cleanup-agent"
 import { copyAgent } from "./agents/copy-agent"
 import { scenarioAgent } from "./agents/scenario-agent"
+import { structuralAgent } from "./agents/structural-agent"
 import { sceneAgent } from "./agents/scene-agent"
 import { APP_DIR, MASTRA_DB_URL } from "./lib/paths"
 import { brollWorkflow } from "./workflows/broll-workflow"
@@ -29,7 +30,13 @@ fs.mkdirSync(APP_DIR, { recursive: true })
 
 export const mastra = new Mastra({
   workflows: { brollWorkflow, generateSceneWorkflow },
-  agents: { cleanupAgent, scenarioAgent, sceneAgent, copyAgent },
+  agents: {
+    cleanupAgent,
+    scenarioAgent,
+    structuralAgent,
+    sceneAgent,
+    copyAgent,
+  },
 
   /**
    * Run state only — which step is executing, suspended payloads, snapshots.

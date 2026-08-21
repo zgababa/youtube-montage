@@ -265,6 +265,12 @@ export function blankProject(
     compositeApprovedAt: null,
     styleGuide: DEFAULT_STYLE_GUIDE,
     scenes: [],
+    editingDocument: {
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    },
     titleAnnotations: [],
     copy: null,
   }

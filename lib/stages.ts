@@ -226,7 +226,11 @@ function summarize(id: StageId, project: Project): string | null {
 
     case "scenes": {
       const counts = sceneCounts(project.scenes)
-      if (counts.total === 0) return null
+      const planned = project.editingDocument.elements.length
+      if (counts.total === 0 && planned === 0) return null
+      if (counts.total === 0) {
+        return `${project.editingDocument.sections.length} sections · ${planned} planned`
+      }
       const parts = [`${counts.approved} of ${counts.total} approved`]
       if (counts.exported > 0) parts.push(`${counts.exported} exported`)
       if (counts.failed > 0) parts.push(`${counts.failed} failed`)
@@ -304,7 +308,9 @@ function hasContent(id: StageId, project: Project): boolean {
     case "look":
       return false
     case "scenes":
-      return project.scenes.length > 0
+      return (
+        project.scenes.length > 0 || project.editingDocument.sections.length > 0
+      )
     case "composite":
       return project.compositeApprovedAt !== null
     case "deliverables":

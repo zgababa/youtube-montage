@@ -17,7 +17,11 @@ import type {
   TitleAnnotation,
   TranscriptionHints,
 } from "@/lib/types"
-import type { SceneDecision } from "@/src/mastra/stream/contract"
+import type {
+  PlanElementDecision,
+  PlanSectionDecision,
+  SceneDecision,
+} from "@/src/mastra/stream/contract"
 import { usePipeline } from "@/hooks/use-pipeline"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -36,6 +40,7 @@ import { Stage } from "@/components/project/stage"
 import { StyleGuideEditor } from "@/components/project/style-guide-editor"
 import { TimelineReview } from "@/components/project/timeline-review"
 import { TitleAnnotationsCard } from "@/components/project/title-annotations-card"
+import { PlanReviewCard } from "@/components/project/plan-review-card"
 import { TranscriptionHintsEditor } from "@/components/project/transcription-hints"
 
 /**
@@ -90,6 +95,12 @@ export function ProjectWorkspace({
    */
   const [decisions, setDecisions] = React.useState<
     Record<string, SceneDecision>
+  >({})
+  const [planDecisions, setPlanDecisions] = React.useState<
+    Record<string, PlanElementDecision>
+  >({})
+  const [sectionDecisions, setSectionDecisions] = React.useState<
+    Record<string, PlanSectionDecision>
   >({})
 
   /**
@@ -267,7 +278,8 @@ export function ProjectWorkspace({
     pipeline.reviewTimeline(pipeline.run.id, true, maxSilenceSec)
     toast.add({
       title: "Timeline approved",
-      description: "Run resumed — the scenario agent reads the approved script next.",
+      description:
+        "Run resumed — the scenario agent reads the approved script next.",
     })
   }
 
@@ -315,6 +327,36 @@ export function ProjectWorkspace({
     })
   }
 
+  function decidePlanElement(decision: PlanElementDecision) {
+    setPlanDecisions((current) => ({ ...current, [decision.id]: decision }))
+  }
+
+  function decidePlanSection(decision: PlanSectionDecision) {
+    setSectionDecisions((current) => ({ ...current, [decision.id]: decision }))
+  }
+
+  function submitPlanReview() {
+    if (!pipeline.run) {
+      toast.add({
+        title: "No plan to approve",
+        description: "Start a run first — plan review resumes the workflow.",
+      })
+      return
+    }
+    pipeline.reviewPlan(
+      pipeline.run.id,
+      Object.values(planDecisions),
+      Object.values(sectionDecisions),
+      true
+    )
+    setPlanDecisions({})
+    setSectionDecisions({})
+    toast.add({
+      title: "Plan approved",
+      description: "Accepted visual elements will be rendered next.",
+    })
+  }
+
   /* ---------------------------------------------------------------------- */
   /* Gate 4 — timeline composite                                             */
   /* ---------------------------------------------------------------------- */
@@ -331,7 +373,8 @@ export function ProjectWorkspace({
     pipeline.reviewComposite(pipeline.run.id, false)
     toast.add({
       title: "Regenerating",
-      description: "timeline.fcpxml recomposited with the scenes exported so far.",
+      description:
+        "timeline.fcpxml recomposited with the scenes exported so far.",
     })
   }
 
@@ -483,14 +526,25 @@ export function ProjectWorkspace({
     ),
 
     scenes: (
-      <SceneList
-        project={project}
-        drafts={pipeline.drafts}
-        decisions={decisions}
-        onApprove={approveScene}
-        onReject={rejectScene}
-        onRegenerate={regenerateScene}
-      />
+      <>
+        <PlanReviewCard
+          project={project}
+          active={pipeline.gate?.on === "review-plan"}
+          elementDecisions={Object.values(planDecisions)}
+          sectionDecisions={Object.values(sectionDecisions)}
+          onElementDecision={decidePlanElement}
+          onSectionDecision={decidePlanSection}
+        />
+        <Separator />
+        <SceneList
+          project={project}
+          drafts={pipeline.drafts}
+          decisions={decisions}
+          onApprove={approveScene}
+          onReject={rejectScene}
+          onRegenerate={regenerateScene}
+        />
+      </>
     ),
 
     composite: (
@@ -529,17 +583,26 @@ export function ProjectWorkspace({
       </Button>
     ),
 
-    scenes: (
-      <Button
-        size="sm"
-        onClick={() => submitReview(regenerating === 0)}
-        disabled={!canSubmitReview}
-      >
-        {regenerating > 0
-          ? `Send ${regenerating} back`
-          : `Submit review${decided.length > 0 ? ` (${decided.length})` : ""}`}
-      </Button>
-    ),
+    scenes:
+      pipeline.gate?.on === "review-plan" ? (
+        <Button
+          size="sm"
+          onClick={submitPlanReview}
+          disabled={pipeline.streaming}
+        >
+          Approve plan
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          onClick={() => submitReview(regenerating === 0)}
+          disabled={!canSubmitReview}
+        >
+          {regenerating > 0
+            ? `Send ${regenerating} back`
+            : `Submit review${decided.length > 0 ? ` (${decided.length})` : ""}`}
+        </Button>
+      ),
   }
 
   return (

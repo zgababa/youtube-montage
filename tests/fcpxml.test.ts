@@ -45,6 +45,12 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
     compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     scenes: [],
+    editingDocument: {
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    },
     titleAnnotations: [],
     copy: null,
     ...overrides,
