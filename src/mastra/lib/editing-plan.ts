@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 import type {
   EditingDocument,
   EditingPlanElement,
@@ -10,24 +12,30 @@ export interface EditingPlanProposal {
   elements: EditingPlanElement[]
 }
 
-export interface EditingPlanDecision {
-  id: string
-  action: "approve" | "reject" | "modify"
-  titleText?: string
-  reason?: string
-  zoomPreset?: EditingPlanElement["zoomPreset"]
-  zoomDurationSec?: number
-  coversLine?: string
-  intent?: string
-}
+export const EditingPlanDecisionSchema = z.object({
+  id: z.string(),
+  action: z.enum(["approve", "reject", "modify"]),
+  titleText: z.string().optional(),
+  reason: z.string().optional(),
+  zoomPreset: z.enum(["subtle", "medium", "strong"]).optional(),
+  zoomDurationSec: z.number().positive().optional(),
+  coversLine: z.string().optional(),
+  intent: z.string().optional(),
+})
 
-export interface EditingSectionDecision {
-  id: string
-  action: "rename" | "split" | "merge"
-  name?: string
-  splitAtSegment?: number
-  mergeWithId?: string
-}
+export type EditingPlanDecision = z.infer<typeof EditingPlanDecisionSchema>
+
+export const EditingSectionDecisionSchema = z.object({
+  id: z.string(),
+  action: z.enum(["rename", "split", "merge"]),
+  name: z.string().optional(),
+  splitAtSegment: z.number().int().optional(),
+  mergeWithId: z.string().optional(),
+})
+
+export type EditingSectionDecision = z.infer<
+  typeof EditingSectionDecisionSchema
+>
 
 export interface ExplicitTitleCommand {
   segmentIndex: number
@@ -71,32 +79,47 @@ export function mergeEditingPlan(
   const byId = new Map(
     protectedElements.map((element) => [element.id, element])
   )
-  const next: EditingPlanElement[] = [...protectedElements]
+  const explicit = dedupeById([
+    ...protectedElements.filter((element) => element.source !== "automatic"),
+    ...proposal.elements.filter((element) => element.source !== "automatic"),
+  ])
+  const next: EditingPlanElement[] = []
 
-  const candidates = proposal.elements
-    .slice()
-    .sort((a, b) => sourcePriority(a) - sourcePriority(b))
-
-  for (const candidate of candidates) {
-    const preserved = byId.get(candidate.id)
-    if (preserved) continue
-
-    const conflict = next.some(
-      (element) =>
-        element.status !== "orphaned" &&
-        element.id !== candidate.id &&
-        rangesOverlap(element, candidate)
-    )
-
-    next.push(conflict ? { ...candidate, status: "conflict" } : candidate)
+  for (const candidate of explicit) {
+    next.push(withConflict(candidate, next))
   }
+
+  const automatic = dedupeById([
+    ...protectedElements.filter((element) => element.source === "automatic"),
+    ...proposal.elements.filter((element) => element.source === "automatic"),
+  ])
+  for (const candidate of automatic) {
+    // An explicit intention owns the location, even when an older automatic
+    // suggestion had already been approved. Keep the old item visible as a
+    // conflict instead of silently stacking two identities.
+    const preserved = byId.get(candidate.id)
+    const nextCandidate = preserved ?? candidate
+    next.push(withConflict(nextCandidate, next))
+  }
+
+  const sections = sectionsAfterAnalysis(current.sections, proposal.sections)
+  const sectionIds = new Set(sections.map((section) => section.id))
+
+  const normalized: EditingPlanElement[] = next.map((element) => {
+    if (sectionIds.has(element.sectionId) || element.status === "orphaned") {
+      return element
+    }
+    return element.source === "automatic"
+      ? { ...element, status: "conflict" }
+      : { ...element, status: "orphaned" }
+  })
 
   return {
     ...current,
     // Sections are cheap model output. Manual sections are kept, while the
     // automatic outline is replaced so a new analysis can improve it.
-    sections: sectionsAfterAnalysis(current.sections, proposal.sections),
-    elements: next.sort(byAnchor),
+    sections,
+    elements: normalized.sort(byAnchor),
   }
 }
 
@@ -209,10 +232,6 @@ function isProtected(element: EditingPlanElement) {
   return element.source !== "automatic" || element.status === "approved"
 }
 
-function sourcePriority(element: EditingPlanElement) {
-  return element.source === "automatic" ? 1 : 0
-}
-
 function orphanIfNeeded(
   element: EditingPlanElement,
   keptSegmentIndexes: Set<number>
@@ -221,30 +240,47 @@ function orphanIfNeeded(
     return element
   }
 
-  const anchored = rangeIndexes(element).every((index) =>
-    keptSegmentIndexes.has(index)
-  )
+  const anchored =
+    keptSegmentIndexes.has(element.fromSegment) &&
+    keptSegmentIndexes.has(element.toSegment)
   return anchored ? element : { ...element, status: "orphaned" }
-}
-
-function rangeIndexes(
-  element: Pick<EditingPlanElement, "fromSegment" | "toSegment">
-) {
-  const indexes: number[] = []
-  for (
-    let index = Math.min(element.fromSegment, element.toSegment);
-    index <= Math.max(element.fromSegment, element.toSegment);
-    index += 1
-  ) {
-    indexes.push(index)
-  }
-  return indexes
 }
 
 function rangesOverlap(a: EditingPlanElement, b: EditingPlanElement) {
   return (
     Math.max(a.fromSegment, b.fromSegment) <= Math.min(a.toSegment, b.toSegment)
   )
+}
+
+function dedupeById(elements: EditingPlanElement[]) {
+  const seen = new Set<string>()
+  return elements.filter((element) => {
+    if (seen.has(element.id)) return false
+    seen.add(element.id)
+    return true
+  })
+}
+
+function withConflict(
+  candidate: EditingPlanElement,
+  existing: EditingPlanElement[]
+) {
+  const conflict = existing.some(
+    (element) => isActive(element) && incompatible(element, candidate)
+  )
+  return conflict ? { ...candidate, status: "conflict" as const } : candidate
+}
+
+function isActive(element: EditingPlanElement) {
+  return !["rejected", "conflict", "orphaned"].includes(element.status)
+}
+
+/** Zoom and B-roll can coexist; titles and duplicate types cannot. */
+function incompatible(a: EditingPlanElement, b: EditingPlanElement) {
+  if (!rangesOverlap(a, b)) return false
+  if (a.type === "zoom" && b.type === "scene") return false
+  if (a.type === "scene" && b.type === "zoom") return false
+  return a.type === b.type || a.type === "title" || b.type === "title"
 }
 
 function byAnchor(a: EditingPlanElement, b: EditingPlanElement) {

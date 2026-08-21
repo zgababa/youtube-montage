@@ -203,6 +203,8 @@ export const EditingPlanElementSchema = z.object({
   fromSegment: z.number().int(),
   toSegment: z.number().int(),
   reason: z.string(),
+  /** Model confidence is explanatory metadata, never a render permission. */
+  confidence: z.number().min(0).max(1).optional(),
   titleText: z.string().optional(),
   zoomPreset: ZoomPresetSchema.optional(),
   zoomDurationSec: z.number().positive().optional(),

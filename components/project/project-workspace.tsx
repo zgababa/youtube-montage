@@ -328,11 +328,29 @@ export function ProjectWorkspace({
   }
 
   function decidePlanElement(decision: PlanElementDecision) {
-    setPlanDecisions((current) => ({ ...current, [decision.id]: decision }))
+    setPlanDecisions((current) => ({
+      ...current,
+      [decision.id]: { ...current[decision.id], ...decision },
+    }))
   }
 
   function decidePlanSection(decision: PlanSectionDecision) {
-    setSectionDecisions((current) => ({ ...current, [decision.id]: decision }))
+    setSectionDecisions((current) => ({
+      ...current,
+      [decision.id]: { ...current[decision.id], ...decision },
+    }))
+  }
+
+  function acceptPlanSection(sectionId: string) {
+    for (const element of project.editingDocument.elements) {
+      if (
+        element.sectionId === sectionId &&
+        element.status !== "orphaned" &&
+        element.status !== "conflict"
+      ) {
+        decidePlanElement({ id: element.id, action: "approve" })
+      }
+    }
   }
 
   function submitPlanReview() {
@@ -343,9 +361,23 @@ export function ProjectWorkspace({
       })
       return
     }
+    const decisions = project.editingDocument.elements
+      .filter(
+        (element) =>
+          element.status !== "orphaned" && element.status !== "conflict"
+      )
+      .map((element) => {
+        const decision = planDecisions[element.id]
+        if (decision?.action === "reject") return decision
+        if (!decision && element.status === "rejected") {
+          return { id: element.id, action: "reject" as const }
+        }
+        return { ...decision, id: element.id, action: "approve" as const }
+      })
+
     pipeline.reviewPlan(
       pipeline.run.id,
-      Object.values(planDecisions),
+      decisions,
       Object.values(sectionDecisions),
       true
     )
@@ -534,6 +566,7 @@ export function ProjectWorkspace({
           sectionDecisions={Object.values(sectionDecisions)}
           onElementDecision={decidePlanElement}
           onSectionDecision={decidePlanSection}
+          onAcceptSection={acceptPlanSection}
         />
         <Separator />
         <SceneList

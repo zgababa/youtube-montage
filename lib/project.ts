@@ -192,11 +192,16 @@ export interface EditingDocumentEntry {
  * are. That also means a project written before this feature existed needs no
  * migration: with `cleanupApprovedAt` absent or `null`, the document is empty.
  */
-export interface EditingDocument {
+export interface EditingDocumentView {
   /** `null` until the cleanup is approved — there is no approved script yet. */
   script: { text: string; keptSpanCount: number } | null
   entries: EditingDocumentEntry[]
   titles: EditingDocumentTitleEntry[]
+  /** The persisted structural layer, exposed through the same document view. */
+  sections: Project["editingDocument"]["sections"]
+  elements: Project["editingDocument"]["elements"]
+  analysisAt: string | null
+  reviewedAt: string | null
 }
 
 /**
@@ -237,15 +242,18 @@ function composedTitleIds(project: Project): Set<string> {
   const titleIds = new Set(project.titleAnnotations.map((a) => a.id))
   const { placed } = placeOverlays(runs, overlays)
   return new Set(
-    placed
-      .map((fragment) => fragment.sceneId)
-      .filter((id) => titleIds.has(id))
+    placed.map((fragment) => fragment.sceneId).filter((id) => titleIds.has(id))
   )
 }
 
-export function buildEditingDocument(project: Project): EditingDocument {
+export function buildEditingDocument(project: Project): EditingDocumentView {
   if (project.cleanupApprovedAt === null) {
-    return { script: null, entries: [], titles: [] }
+    return {
+      script: null,
+      entries: [],
+      titles: [],
+      ...project.editingDocument,
+    }
   }
 
   const spans = spansWithText(project.spans, project.transcript.words)
@@ -253,6 +261,7 @@ export function buildEditingDocument(project: Project): EditingDocument {
   const composed = composedTitleIds(project)
 
   return {
+    ...project.editingDocument,
     script: { text: cleanScript(spans), keptSpanCount: kept.length },
     entries: project.scenes
       .slice()

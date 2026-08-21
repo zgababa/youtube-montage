@@ -134,6 +134,66 @@ describe("mergeEditingPlan", () => {
       })
     )
   })
+
+  test("keeps a window anchored across a cleaned-up segment gap", () => {
+    const automatic = element({
+      fromSegment: 0,
+      toSegment: 2,
+      status: "approved",
+    })
+
+    const merged = mergeEditingPlan(
+      document({ elements: [automatic] }),
+      proposal({ elements: [] }),
+      new Set([0, 2])
+    )
+
+    expect(merged.elements[0]).toMatchObject({
+      id: automatic.id,
+      status: automatic.status,
+    })
+  })
+
+  test("lets a new explicit intention displace an older approved automatic one", () => {
+    const approvedAutomatic = element({
+      id: "automatic-title",
+      status: "approved",
+    })
+    const command = element({
+      id: "command-title",
+      source: "command",
+      titleText: "Explicit title",
+    })
+
+    const merged = mergeEditingPlan(
+      document({ elements: [approvedAutomatic] }),
+      proposal({ elements: [command] }),
+      new Set([0, 1])
+    )
+
+    expect(merged.elements).toContainEqual(command)
+    expect(merged.elements).toContainEqual(
+      element({ id: "automatic-title", status: "conflict" })
+    )
+  })
+
+  test("allows a zoom and a B-roll scene to share a window", () => {
+    const merged = mergeEditingPlan(
+      document(),
+      proposal({
+        elements: [
+          element({ id: "zoom", type: "zoom" }),
+          element({ id: "scene", type: "scene" }),
+        ],
+      }),
+      new Set([0, 1])
+    )
+
+    expect(merged.elements.map((item) => item.status)).toEqual([
+      "proposed",
+      "proposed",
+    ])
+  })
 })
 
 describe("parseTitleCommands", () => {
@@ -237,5 +297,57 @@ describe("applyEditingPlanDecisions", () => {
     expect(
       merged.elements.find((item) => item.id === "second-element")?.sectionId
     ).toBe("first")
+  })
+
+  test("covers analysis, review, rerun, anchors, and explicit priority", () => {
+    const command = parseTitleCommands([
+      { index: 2, text: "TITRE Explicit title TITRE" },
+    ])[0]!
+    const explicit = element({
+      id: "command-title",
+      source: "command",
+      fromSegment: command.segmentIndex,
+      toSegment: command.segmentIndex,
+      titleText: command.text,
+    })
+    const automatic = element({
+      id: "automatic-title",
+      fromSegment: 2,
+      toSegment: 2,
+    })
+
+    const proposed = mergeEditingPlan(
+      document({ elements: [] }),
+      proposal({ elements: [explicit, automatic] }),
+      new Set([0, 2])
+    )
+    const reviewed = applyEditingPlanDecisions(
+      proposed,
+      [
+        { id: explicit.id, action: "approve" },
+        { id: automatic.id, action: "reject" },
+      ],
+      []
+    )
+    const rerun = mergeEditingPlan(
+      reviewed,
+      proposal({
+        elements: [element({ id: automatic.id, fromSegment: 2, toSegment: 2 })],
+      }),
+      new Set([0, 2])
+    )
+
+    expect(rerun.elements).toContainEqual(
+      expect.objectContaining({
+        id: explicit.id,
+        source: "command",
+        status: "approved",
+        fromSegment: 2,
+        toSegment: 2,
+      })
+    )
+    expect(rerun.elements).toContainEqual(
+      expect.objectContaining({ id: automatic.id, status: "conflict" })
+    )
   })
 })

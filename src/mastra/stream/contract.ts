@@ -23,6 +23,10 @@ import { z } from "zod"
 import type { UIMessage } from "ai"
 
 import {
+  EditingPlanDecisionSchema,
+  EditingSectionDecisionSchema,
+} from "../lib/editing-plan"
+import {
   EditingDocumentSchema,
   HydratedSceneSchema,
   MediaFileSchema,
@@ -257,24 +261,8 @@ export const SceneDecisionSchema = z.object({
 
 export type SceneDecision = z.infer<typeof SceneDecisionSchema>
 
-export const PlanElementDecisionSchema = z.object({
-  id: z.string(),
-  action: z.enum(["approve", "reject", "modify"]),
-  titleText: z.string().optional(),
-  reason: z.string().optional(),
-  zoomPreset: z.enum(["subtle", "medium", "strong"]).optional(),
-  zoomDurationSec: z.number().positive().optional(),
-  coversLine: z.string().optional(),
-  intent: z.string().optional(),
-})
-
-export const PlanSectionDecisionSchema = z.object({
-  id: z.string(),
-  action: z.enum(["rename", "split", "merge"]),
-  name: z.string().optional(),
-  splitAtSegment: z.number().int().optional(),
-  mergeWithId: z.string().optional(),
-})
+export const PlanElementDecisionSchema = EditingPlanDecisionSchema
+export const PlanSectionDecisionSchema = EditingSectionDecisionSchema
 
 export type PlanElementDecision = z.infer<typeof PlanElementDecisionSchema>
 export type PlanSectionDecision = z.infer<typeof PlanSectionDecisionSchema>

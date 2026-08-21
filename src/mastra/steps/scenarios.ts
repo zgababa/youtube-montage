@@ -12,6 +12,8 @@ import { z } from "zod"
 import { structuralAgent } from "../agents/structural-agent"
 import {
   applyEditingPlanDecisions,
+  EditingPlanDecisionSchema,
+  EditingSectionDecisionSchema,
   mergeEditingPlan,
   parseTitleCommands,
   type EditingPlanProposal,
@@ -29,6 +31,7 @@ import {
   type StoredScene,
 } from "../schemas"
 import { generateStructured } from "../lib/structured"
+import { decideTitleAnnotation } from "../lib/titles"
 import { PipelineIO, reporter } from "./shared"
 
 const AnalysisSchema = z.object({
@@ -47,6 +50,7 @@ const AnalysisSchema = z.object({
       toSegment: z.number().int(),
       type: PlanElementTypeSchema,
       reason: z.string(),
+      confidence: z.number().min(0).max(1).optional(),
       titleText: z.string().optional(),
       zoomPreset: ZoomPresetSchema.optional(),
       zoomDurationSec: z.number().positive().optional(),
@@ -57,28 +61,9 @@ const AnalysisSchema = z.object({
   ),
 })
 
-const PlanDecisionSchema = z.object({
-  id: z.string(),
-  action: z.enum(["approve", "reject", "modify"]),
-  titleText: z.string().optional(),
-  reason: z.string().optional(),
-  zoomPreset: ZoomPresetSchema.optional(),
-  zoomDurationSec: z.number().positive().optional(),
-  coversLine: z.string().optional(),
-  intent: z.string().optional(),
-})
-
-const SectionDecisionSchema = z.object({
-  id: z.string(),
-  action: z.enum(["rename", "split", "merge"]),
-  name: z.string().optional(),
-  splitAtSegment: z.number().int().optional(),
-  mergeWithId: z.string().optional(),
-})
-
 const PlanResumeSchema = z.object({
-  elementDecisions: z.array(PlanDecisionSchema),
-  sectionDecisions: z.array(SectionDecisionSchema),
+  elementDecisions: z.array(EditingPlanDecisionSchema),
+  sectionDecisions: z.array(EditingSectionDecisionSchema),
   done: z.boolean(),
 })
 
@@ -163,6 +148,10 @@ export const scenariosStep = createStep({
       await updateProject(projectPath, (current) => ({
         ...current,
         editingDocument: document,
+        titleAnnotations: syncManualTitleAnnotations(
+          current.titleAnnotations,
+          document
+        ),
         scenes: resumeData.done
           ? materializeScenes(current, document)
           : current.scenes,
@@ -240,6 +229,7 @@ async function analyse(
         fromSegment: element.fromSegment,
         toSegment: element.toSegment,
         reason: element.reason.trim(),
+        confidence: element.confidence ?? 0.5,
         ...(element.titleText ? { titleText: element.titleText.trim() } : {}),
         ...(element.zoomPreset ? { zoomPreset: element.zoomPreset } : {}),
         ...(element.zoomDurationSec
@@ -260,10 +250,9 @@ async function analyse(
 function validRange(from: number, to: number, segments: { index: number }[]) {
   if (from > to) return false
   const indexes = new Set(segments.map((segment) => segment.index))
-  for (let index = from; index <= to; index += 1) {
-    if (!indexes.has(index)) return false
-  }
-  return true
+  // Segment indexes are transcript identities, not a contiguous timeline:
+  // cleanup may remove the middle of an otherwise valid visual window.
+  return indexes.has(from) && indexes.has(to)
 }
 
 function sectionFor(
@@ -325,6 +314,38 @@ function commandElements(
         titleText: command.text,
       } satisfies EditingPlanElement,
     ]
+  })
+}
+
+function syncManualTitleAnnotations(
+  annotations: Awaited<
+    ReturnType<typeof readStoredProject>
+  >["titleAnnotations"],
+  document: EditingDocument
+) {
+  const byId = new Map(
+    document.elements
+      .filter((element) => element.id.startsWith("manual_title_"))
+      .map((element) => [element.id.slice("manual_title_".length), element])
+  )
+
+  return annotations.map((annotation) => {
+    const element = byId.get(annotation.id)
+    if (!element) return annotation
+
+    let next = annotation
+    if (element.titleText !== undefined && element.titleText !== next.text) {
+      next = decideTitleAnnotation(next, {
+        action: "modify",
+        text: element.titleText,
+      })
+    }
+    if (element.status === "approved") {
+      next = decideTitleAnnotation(next, { action: "approve" })
+    } else if (element.status === "rejected") {
+      next = decideTitleAnnotation(next, { action: "reject" })
+    }
+    return next
   })
 }
 

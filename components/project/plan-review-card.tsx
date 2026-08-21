@@ -2,6 +2,7 @@
 
 import * as React from "react"
 
+import { buildEditingDocument } from "@/lib/project"
 import { applyEditingPlanDecisions } from "@/src/mastra/lib/editing-plan"
 import type { Project } from "@/lib/types"
 import type {
@@ -20,6 +21,7 @@ export function PlanReviewCard({
   sectionDecisions,
   onElementDecision,
   onSectionDecision,
+  onAcceptSection,
 }: {
   project: Project
   active: boolean
@@ -27,16 +29,22 @@ export function PlanReviewCard({
   sectionDecisions: PlanSectionDecision[]
   onElementDecision: (decision: PlanElementDecision) => void
   onSectionDecision: (decision: PlanSectionDecision) => void
+  onAcceptSection: (sectionId: string) => void
 }) {
-  const document = React.useMemo(
-    () =>
-      applyEditingPlanDecisions(
-        project.editingDocument,
-        elementDecisions,
-        sectionDecisions
-      ),
-    [project.editingDocument, elementDecisions, sectionDecisions]
-  )
+  const document = React.useMemo(() => {
+    const view = buildEditingDocument(project)
+    const plan = applyEditingPlanDecisions(
+      {
+        sections: view.sections,
+        elements: view.elements,
+        analysisAt: view.analysisAt,
+        reviewedAt: view.reviewedAt,
+      },
+      elementDecisions,
+      sectionDecisions
+    )
+    return { ...view, ...plan }
+  }, [project, elementDecisions, sectionDecisions])
 
   return (
     <StageSection
@@ -120,6 +128,13 @@ export function PlanReviewCard({
                           Merge next
                         </Button>
                       ) : null}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onAcceptSection(section.id)}
+                      >
+                        Accept section
+                      </Button>
                     </>
                   ) : null}
                 </div>
@@ -145,6 +160,38 @@ export function PlanReviewCard({
               </section>
             )
           })}
+          {document.elements.some(
+            (element) =>
+              element.status === "orphaned" ||
+              !document.sections.some(
+                (section) => section.id === element.sectionId
+              )
+          ) ? (
+            <section className="rounded-lg border border-destructive/40 p-4">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium">Orphaned intentions</h4>
+                <Badge variant="destructive">needs repair</Badge>
+              </div>
+              <div className="mt-4 flex flex-col gap-3">
+                {document.elements
+                  .filter(
+                    (element) =>
+                      element.status === "orphaned" ||
+                      !document.sections.some(
+                        (section) => section.id === element.sectionId
+                      )
+                  )
+                  .map((element) => (
+                    <ElementRow
+                      key={element.id}
+                      element={element}
+                      active={active}
+                      onDecision={onElementDecision}
+                    />
+                  ))}
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
     </StageSection>
@@ -183,6 +230,22 @@ function ElementRow({
                   id: element.id,
                   action: "modify",
                   titleText: event.target.value,
+                })
+              : undefined
+          }
+        />
+      ) : null}
+      {element.type !== "title" ? (
+        <Input
+          defaultValue={element.intent ?? element.reason}
+          disabled={!active || element.status === "orphaned"}
+          aria-label={`Edit reason for ${element.id}`}
+          onBlur={(event) =>
+            event.target.value !== (element.intent ?? element.reason)
+              ? onDecision({
+                  id: element.id,
+                  action: "modify",
+                  intent: event.target.value,
                 })
               : undefined
           }
