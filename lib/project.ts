@@ -154,17 +154,14 @@ export function totalMediaSeconds(project: Project) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Document de montage (ADR 0006)                                             */
+/* Editing document (ADR 0006)                                                */
 /* -------------------------------------------------------------------------- */
 
 /**
  * A known element already referenced by the document — a rendered scene,
- * pointed at by id rather than carrying its HTML along. Later stages (the
- * structural analysis's proposed and approved effects) will add their own
- * kinds of entry here without touching this one.
+ * pointed at by id rather than carrying its HTML along.
  */
 export interface EditingDocumentEntry {
-  kind: "scene"
   /** Reference into `project.scenes` — the HTML and export stay where they are. */
   sceneId: string
   scriptStart: number
@@ -176,7 +173,7 @@ export interface EditingDocumentEntry {
 }
 
 /**
- * The document de montage, minimal and visible (issue #6).
+ * The editing document, minimal and visible (issue #6).
  *
  * Only the first two layers ADR 0006 describes: the approved script and the
  * elements already known before any structural analysis proposes new ones.
@@ -188,7 +185,7 @@ export interface EditingDocumentEntry {
  */
 export interface EditingDocument {
   /** `null` until the cleanup is approved — there is no approved script yet. */
-  script: { text: string; segmentCount: number } | null
+  script: { text: string; keptSpanCount: number } | null
   entries: EditingDocumentEntry[]
 }
 
@@ -201,12 +198,11 @@ export function buildEditingDocument(project: Project): EditingDocument {
   const kept = spans.filter((span) => span.action === "keep")
 
   return {
-    script: { text: cleanScript(spans), segmentCount: kept.length },
+    script: { text: cleanScript(spans), keptSpanCount: kept.length },
     entries: project.scenes
       .slice()
       .sort((a, b) => a.scriptStart - b.scriptStart)
       .map((scene) => ({
-        kind: "scene",
         sceneId: scene.id,
         scriptStart: scene.scriptStart,
         scriptEnd: scene.scriptEnd,

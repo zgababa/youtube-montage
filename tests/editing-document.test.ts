@@ -31,7 +31,9 @@ async function fixtureDir() {
 }
 
 afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })))
+  await Promise.all(
+    dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))
+  )
 })
 
 function scene(id: string, scriptStart: number): StoredScene {
@@ -83,6 +85,7 @@ describe("buildEditingDocument, read and written through project.json", () => {
     // The script is the kept spans only — "um" never appears.
     expect(document.script?.text).toBe("Hello world today")
     expect(document.script?.text).not.toContain("um")
+    expect(document.script?.keptSpanCount).toBe(2)
 
     // Known elements reference the scenes, ordered by where they land in the
     // script, without carrying their HTML along.
