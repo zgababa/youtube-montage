@@ -7,6 +7,7 @@ import {
   type OverlayScene,
 } from "../src/mastra/lib/fcpxml"
 import { composableTitleOverlays } from "../src/mastra/lib/titles"
+import type { ZoomWindow } from "../src/mastra/lib/zooms"
 import type { TimelineRun } from "../src/mastra/lib/timeline"
 import type {
   MediaFile,
@@ -192,6 +193,34 @@ describe("buildFcpxml", () => {
     ])
 
     expect(xml).toContain('<fcpxml version="1.9">')
+  })
+
+  test("splits the source clip for an approved zoom and keeps its audio asset", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+    const zoom: ZoomWindow = {
+      id: "zoom-1",
+      sourceFile: "raw/01 - a.mp4",
+      fromSegment: 2,
+      toSegment: 3,
+      scriptStart: 3,
+      scriptEnd: 5,
+      preset: "medium",
+      durationSec: 2,
+      scale: 1.15,
+    }
+
+    const xml = buildFcpxml(project(), runs, [], null, [zoom])
+    const clips = [...xml.matchAll(/<asset-clip\b[^>]*>/g)].map((m) => m[0])
+
+    expect(clips).toHaveLength(3)
+    expect(xml).toContain(
+      '<adjust-transform position="0 0" scale="1.15 1.15"/>'
+    )
+    expect(xml).not.toContain('lane="')
+    expect(xml).toContain('<asset id="asset-1"')
+    expect(xml).toContain('hasAudio="1"')
   })
 })
 

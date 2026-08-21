@@ -23,7 +23,9 @@ import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
 import { buildCompositeOverlays } from "../lib/composite"
-import { buildFcpxml, buildTimelineLayout, placeOverlays } from "../lib/fcpxml"
+import { buildFcpxml, buildTimelineLayout, placeOverlays, placeZooms } from "../lib/fcpxml"
+import { approvedZoomWindows } from "../lib/zooms"
+import { buildSegments, keptSegments } from "../lib/segments"
 import { fcpxmlPath } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
 import { ensureWhiteBacking } from "../lib/white-backing"
@@ -86,6 +88,20 @@ async function writeComposite(project: StoredProject) {
   const { runs, overlays, titleInsertions } = buildCompositeOverlays(project)
   const { placed, skipped: skippedOverlays } = placeOverlays(runs, overlays)
   const layout = buildTimelineLayout(runs, titleInsertions, project.fps)
+  const segments = keptSegments(
+    buildSegments(project.transcript.words),
+    project.spans
+  )
+  const { windows: zooms, conflicts: zoomConflicts } = approvedZoomWindows(
+    project.editingDocument.elements,
+    segments,
+    project.editingDocument.elements.filter(
+      (element) =>
+        element.status === "approved" &&
+        (element.type === "title" || element.type === "scene")
+    )
+  )
+  const { placed: placedZooms, skipped: skippedZooms } = placeZooms(runs, zooms)
 
   // Only encoded when there's actually something to back — a project with
   // scenes rejected outright never needs the clip at all.
@@ -98,45 +114,54 @@ async function writeComposite(project: StoredProject) {
         )
       : null
 
-  const xml = buildFcpxml(
-    project,
-    runs,
-    overlays,
-    whiteBacking,
-    titleInsertions
-  )
+  const xml = buildFcpxml(project, runs, overlays, whiteBacking, titleInsertions, zooms)
   const file = fcpxmlPath(project.path)
   await fs.writeFile(file, xml, "utf8")
 
   const titlePlacements = new Map(
     layout.titlePlacements.map((title) => [title.id, title])
   )
+  const composedZooms = new Set(placedZooms.map((fragment) => fragment.zoomId))
+  const failedZooms = new Set([...zoomConflicts, ...skippedZooms])
   await updateProject(project.path, (current) => ({
     ...current,
     editingDocument: {
       ...current.editingDocument,
       elements: current.editingDocument.elements.map((element) => {
         if (
-          element.type !== "title" ||
-          element.source === "manual" ||
-          element.exportPath == null
+          element.type === "title" &&
+          element.source !== "manual" &&
+          element.exportPath != null
         ) {
-          return element
-        }
-        const placement = titlePlacements.get(element.id)
-        if (!placement) {
+          const placement = titlePlacements.get(element.id)
+          if (!placement) {
+            return {
+              ...element,
+              composed: false,
+              timelineOffsetSec: null,
+            }
+          }
           return {
             ...element,
-            composed: false,
-            timelineOffsetSec: null,
+            composed: true,
+            timelineOffsetSec: placement.timelineOffsetSec,
+            timelineDurationSec: placement.durationSec,
           }
         }
-        return {
-          ...element,
-          composed: true,
-          timelineOffsetSec: placement.timelineOffsetSec,
-          timelineDurationSec: placement.durationSec,
+        if (element.type === "zoom" && element.status === "approved") {
+          if (composedZooms.has(element.id)) {
+            return { ...element, composed: true }
+          }
+          if (failedZooms.has(element.id)) {
+            return {
+              ...element,
+              status: "conflict" as const,
+              composed: false,
+              timelineOffsetSec: null,
+            }
+          }
         }
+        return element
       }),
     },
   }))
@@ -149,6 +174,6 @@ async function writeComposite(project: StoredProject) {
   return {
     path: file,
     placedCount,
-    skipped: [...skippedOverlays, ...layout.skippedTitles],
+    skipped: [...skippedOverlays, ...layout.skippedTitles, ...zoomConflicts, ...skippedZooms],
   }
 }

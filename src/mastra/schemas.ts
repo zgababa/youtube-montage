@@ -410,6 +410,7 @@ export type EditingPlanElement = z.infer<typeof EditingPlanElementSchema>
 export type EditingDocument = z.infer<typeof EditingDocumentSchema>
 export type TitleAnnotationStatus = z.infer<typeof TitleAnnotationStatusSchema>
 export type TitleAnnotation = z.infer<typeof TitleAnnotationSchema>
+export type ZoomPreset = z.infer<typeof ZoomPresetSchema>
 export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>
 export type TwitterCopy = z.infer<typeof TwitterCopySchema>
 export type ProjectCopy = z.infer<typeof ProjectCopySchema>

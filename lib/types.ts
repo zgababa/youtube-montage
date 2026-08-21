@@ -33,6 +33,7 @@ export type {
   StyleGuide,
   TitleAnnotation,
   TitleAnnotationStatus,
+  ZoomPreset,
   PlanElementSource,
   PlanElementStatus,
   PlanElementType,
