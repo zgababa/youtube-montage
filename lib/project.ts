@@ -135,13 +135,18 @@ const DECIDED_STATUS: Record<SceneDecision["action"], Scene["status"]> = {
   regenerate: "generating",
 }
 
+/** Where a scene lands in the script — the order it's shown in everywhere. */
+function byScriptStart(a: Scene, b: Scene) {
+  return a.scriptStart - b.scriptStart
+}
+
 /** The plain-text file that sits on the second monitor during the edit (§11). */
 export function shotlistText(project: Project) {
   return project.scenes
     .filter(
       (scene) => scene.status === "approved" || scene.status === "exported"
     )
-    .sort((a, b) => a.scriptStart - b.scriptStart)
+    .sort(byScriptStart)
     .map((scene) => {
       const dur = durationLabel(scene.measuredDurationSec ?? scene.windowSec)
       return `${timecode(scene.scriptStart)}  ${dur}  ${scene.id}.mov  "${scene.coversLine}"`
@@ -201,7 +206,7 @@ export function buildEditingDocument(project: Project): EditingDocument {
     script: { text: cleanScript(spans), keptSpanCount: kept.length },
     entries: project.scenes
       .slice()
-      .sort((a, b) => a.scriptStart - b.scriptStart)
+      .sort(byScriptStart)
       .map((scene) => ({
         sceneId: scene.id,
         scriptStart: scene.scriptStart,
