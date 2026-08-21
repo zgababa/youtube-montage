@@ -223,6 +223,9 @@ export const StoredProjectSchema = z.object({
   transcript: z.object({ words: z.array(WordSchema) }),
   spans: z.array(SpanSchema),
   cleanupApprovedAt: z.string().nullable(),
+  /** Longest silence the exported timeline keeps between two kept segments — see `timeline.ts`. */
+  maxSilenceSec: z.number().positive().default(0.3),
+  timelineApprovedAt: z.string().nullable(),
   styleGuide: StyleGuideSchema,
   scenes: z.array(SceneSchema),
   copy: ProjectCopySchema.nullable(),

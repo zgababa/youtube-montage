@@ -31,6 +31,7 @@ import { SceneList } from "@/components/project/scene-list"
 import { ShotlistCard } from "@/components/project/shotlist-card"
 import { Stage } from "@/components/project/stage"
 import { StyleGuideEditor } from "@/components/project/style-guide-editor"
+import { TimelineReview } from "@/components/project/timeline-review"
 import { TranscriptionHintsEditor } from "@/components/project/transcription-hints"
 
 /**
@@ -223,7 +224,43 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   }
 
   /* ---------------------------------------------------------------------- */
-  /* Gate 2 — scenes                                                         */
+  /* Gate 2 — timeline export                                                */
+  /* ---------------------------------------------------------------------- */
+
+  function regenerateTimeline(maxSilenceSec: number) {
+    if (!pipeline.run) {
+      toast.add({
+        title: "No run to update",
+        description:
+          "Timeline export resumes a suspended workflow — start a run first.",
+      })
+      return
+    }
+    pipeline.reviewTimeline(pipeline.run.id, false, maxSilenceSec)
+    toast.add({
+      title: "Regenerating",
+      description: "timeline.fcpxml rewritten with the new silence cap.",
+    })
+  }
+
+  function approveTimeline(maxSilenceSec: number) {
+    if (!pipeline.run) {
+      toast.add({
+        title: "No run to approve",
+        description:
+          "Approval resumes a suspended workflow — start a run first.",
+      })
+      return
+    }
+    pipeline.reviewTimeline(pipeline.run.id, true, maxSilenceSec)
+    toast.add({
+      title: "Timeline approved",
+      description: "Run resumed — the scenario agent reads the approved script next.",
+    })
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Gate 3 — scenes                                                         */
   /* ---------------------------------------------------------------------- */
 
   /**
@@ -354,6 +391,16 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
         project={project}
         onToggleSpan={toggleSpan}
         onReopen={reopenCleanup}
+      />
+    ),
+
+    timeline: (
+      <TimelineReview
+        project={project}
+        timeline={pipeline.timeline}
+        onRegenerate={regenerateTimeline}
+        onApprove={approveTimeline}
+        disabled={pipeline.streaming}
       />
     ),
 

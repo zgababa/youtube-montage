@@ -108,6 +108,18 @@ describe("buildKeptRuns", () => {
     expect(runs[0]).toEqual({ file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 })
   })
 
+  test("an explicit maxSilenceSec overrides the default", () => {
+    // Same 3s gap as the capping test above, but called with a 1s cap instead
+    // of the 0.3s default — locks in that the parameter is actually read.
+    const segments = [segment(0, 0, 1), segment(1, 4, 5)]
+    const spans: Span[] = [{ start: 0, end: 5, action: "keep" }]
+
+    const runs = buildKeptRuns(segments, spans, [media()], 1)
+
+    expect(runs).toHaveLength(2)
+    expect(runs[1]).toEqual({ file: "raw/a.mp4", sourceStart: 3, sourceEnd: 5 })
+  })
+
   test("throws when multiple files are transcribed with no identified mic", () => {
     const segments = [segment(0, 0, 1, "raw/a.mp4")]
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]

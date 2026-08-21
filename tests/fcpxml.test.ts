@@ -30,6 +30,8 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,
+    maxSilenceSec: 0.3,
+    timelineApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     scenes: [],
     copy: null,

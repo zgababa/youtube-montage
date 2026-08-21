@@ -36,6 +36,8 @@ function project(over: Partial<Project> = {}): Project {
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,
+    maxSilenceSec: 0.3,
+    timelineApprovedAt: null,
     scenes: [],
     copy: null,
     styleGuide: { palette: ["#000"], fontStack: "Inter, sans-serif" },
@@ -89,6 +91,7 @@ describe("the stage list", () => {
     const states = stageStates(project(), null)
 
     expect(states.map((state) => state.status)).toEqual([
+      "pending",
       "pending",
       "pending",
       "pending",
@@ -190,16 +193,61 @@ describe("what a stage says when nothing is running", () => {
   })
 })
 
+describe("the timeline export stage", () => {
+  test("says nothing until there are spans to build a timeline from", () => {
+    expect(stage("timeline", project(), null).detail).toBeNull()
+  })
+
+  test("reports the silence cap and whether it's approved", () => {
+    const notApproved = stage(
+      "timeline",
+      project({ spans: [{ start: 0, end: 1, action: "keep" }] as never }),
+      null
+    )
+    const approved = stage(
+      "timeline",
+      project({
+        spans: [{ start: 0, end: 1, action: "keep" }] as never,
+        maxSilenceSec: 0.5,
+        timelineApprovedAt: "2026-08-02T10:00:00.000Z",
+      }),
+      null
+    )
+
+    expect(notApproved.detail).toBe("0.3s silence cap · not yet approved")
+    expect(approved.detail).toBe("0.5s silence cap · approved")
+  })
+})
+
 describe("locking", () => {
-  test("holds scenes shut until the cleanup is approved", () => {
-    const gated = stage("scenes", project({ spans: [] }), null)
-    const open = stage(
+  test("holds scenes shut until the timeline export is approved", () => {
+    const gated = stage(
       "scenes",
       project({ cleanupApprovedAt: "2026-08-02T10:00:00.000Z" }),
       null
     )
+    const open = stage(
+      "scenes",
+      project({
+        cleanupApprovedAt: "2026-08-02T10:00:00.000Z",
+        timelineApprovedAt: "2026-08-02T10:05:00.000Z",
+      }),
+      null
+    )
 
-    expect(gated.locked).toContain("approve the cleanup")
+    expect(gated.locked).toContain("approve the timeline export")
+    expect(open.locked).toBeNull()
+  })
+
+  test("holds the timeline export shut until cleanup is approved", () => {
+    const gated = stage("timeline", project(), null)
+    const open = stage(
+      "timeline",
+      project({ cleanupApprovedAt: "2026-08-02T10:00:00.000Z" }),
+      null
+    )
+
+    expect(gated.locked).not.toBeNull()
     expect(open.locked).toBeNull()
   })
 
@@ -223,6 +271,7 @@ describe("locking", () => {
 describe("which stage the page opens on", () => {
   const approved = project({
     cleanupApprovedAt: "2026-08-02T10:00:00.000Z",
+    timelineApprovedAt: "2026-08-02T10:05:00.000Z",
     spans: [{ start: 0, end: 1, action: "cut" }] as never,
     media: [{ path: "01.MP4" }] as never,
     scenes: [scene("scene_01", "ready")],

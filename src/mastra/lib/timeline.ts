@@ -41,8 +41,12 @@ export interface TimelineRun {
  * `segments.ts`), so this only ever fires on pauses that were already at
  * least that long — it has no effect on the short, natural gaps between
  * words within a sentence.
+ *
+ * A default, not a fixed rule: `project.maxSilenceSec` (`schemas.ts`) is what
+ * the `fcpxml` step actually reads, adjustable at its review gate. This is
+ * only the value a brand new project starts with.
  */
-const MAX_SILENCE_SEC = 0.3
+export const DEFAULT_MAX_SILENCE_SEC = 0.3
 
 /**
  * Groups the kept segments into contiguous per-file runs.
@@ -61,7 +65,8 @@ const MAX_SILENCE_SEC = 0.3
 export function buildKeptRuns(
   segments: Segment[],
   spans: Span[],
-  media: MediaFile[]
+  media: MediaFile[],
+  maxSilenceSec: number = DEFAULT_MAX_SILENCE_SEC
 ): TimelineRun[] {
   assertSingleTranscriptionSource(media)
 
@@ -83,15 +88,15 @@ export function buildKeptRuns(
     const sameFile = current !== undefined && current.file === segment.file
     const gap = segment.start - previousEnd
 
-    if (current && adjacent && sameFile && gap <= MAX_SILENCE_SEC) {
+    if (current && adjacent && sameFile && gap <= maxSilenceSec) {
       current.sourceEnd = segment.end
     } else if (current && adjacent && sameFile) {
       // A cut never separated these two — cleanup left the pause between
       // them alone — but it's long enough to trim at export time. Only its
-      // last MAX_SILENCE_SEC survives, as a short lead-in to what follows.
+      // last maxSilenceSec survives, as a short lead-in to what follows.
       runs.push({
         file: segment.file,
-        sourceStart: segment.start - MAX_SILENCE_SEC,
+        sourceStart: segment.start - maxSilenceSec,
         sourceEnd: segment.end,
       })
     } else {
