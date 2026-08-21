@@ -211,6 +211,16 @@ export const EditingPlanElementSchema = z.object({
   coversLine: z.string().optional(),
   intent: z.string().optional(),
   sceneType: SceneTypeSchema.optional(),
+  /** Project-relative title template, once the approved title was rendered. */
+  htmlPath: z.string().nullable().optional(),
+  /** Project-relative title movie, once the approved title was rendered. */
+  exportPath: z.string().nullable().optional(),
+  /** True only while this title is referenced by the composed FCPXML. */
+  composed: z.boolean().optional(),
+  /** Sequence offset at the last deterministic composite pass. */
+  timelineOffsetSec: z.number().nonnegative().nullable().optional(),
+  /** The inserted title duration on the output frame grid. */
+  timelineDurationSec: z.number().positive().optional(),
 })
 
 /** The persisted plan: simple current state, not an event log. */
