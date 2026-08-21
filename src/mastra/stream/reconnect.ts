@@ -29,8 +29,11 @@
 import {
   GateSchema,
   pipelineDataSchemas,
+  RunStatusSchema,
   StepIdSchema,
+  StepStatusSchema,
   type PipelineDataParts,
+  type PipelineDataType,
 } from "./contract"
 
 /**
@@ -43,6 +46,14 @@ export interface WorkflowStateForReconnect {
   runId: string
   status: string
   createdAt: Date
+  /**
+   * The project path the run was started against — the same value `usePipeline`
+   * passes as `resourceId`, which is how `getSuspendedRunId` found this run in
+   * the first place. Used as the fallback when the snapshot's payload has no
+   * `projectPath`, since without one there is no `data-run` and the UI stays
+   * "Idle" — the exact failure this module exists to remove (issue #3).
+   */
+  resourceId?: string
   payload?: Record<string, unknown> | null
   steps?: Record<
     string,
@@ -64,32 +75,33 @@ export type ReconnectChunk =
       id?: string
     }
 
-const RUN_STATUSES = new Set<PipelineDataParts["run"]["status"]>([
-  "running",
-  "suspended",
-  "success",
-  "failed",
-])
+/**
+ * `emitter()`'s guarantee, on the replay side: the key picks the payload type
+ * at compile time, and the same schema `emitter()` uses parses it at run time.
+ * Throwing is deliberate for the same reason it is there — a malformed chunk
+ * is a bug here, and finding it now beats finding it as a blank panel.
+ */
+function dataChunk<K extends PipelineDataType>(
+  type: K,
+  data: PipelineDataParts[K],
+  id?: string
+): ReconnectChunk {
+  pipelineDataSchemas[type].parse(data)
+  return { type: `data-${type}`, data, ...(id ? { id } : {}) }
+}
 
-const STEP_STATUSES = new Set<PipelineDataParts["step"]["status"]>([
-  "pending",
-  "running",
-  "suspended",
-  "success",
-  "failed",
-])
-
-/** Mastra's status vocabulary is a superset of this app's — narrow it down. */
+/**
+ * Mastra's status vocabulary is a superset of this app's — narrow it down,
+ * against the contract's own enums rather than a second copy of them.
+ */
 function runStatus(status: string): PipelineDataParts["run"]["status"] {
-  return RUN_STATUSES.has(status as PipelineDataParts["run"]["status"])
-    ? (status as PipelineDataParts["run"]["status"])
-    : "running"
+  const parsed = RunStatusSchema.safeParse(status)
+  return parsed.success ? parsed.data : "running"
 }
 
 function stepStatus(status: string): PipelineDataParts["step"]["status"] {
-  return STEP_STATUSES.has(status as PipelineDataParts["step"]["status"])
-    ? (status as PipelineDataParts["step"]["status"])
-    : "pending"
+  const parsed = StepStatusSchema.safeParse(status)
+  return parsed.success ? parsed.data : "pending"
 }
 
 /** A `.foreach` step is recorded as one result per iteration — the last one wins. */
@@ -115,24 +127,31 @@ function gateFor(
 
 /**
  * Pure: a `WorkflowState`-shaped object in, the same chunk shapes a live run
- * would have streamed out. `src/mastra/stream/reconnect-stream.ts` wraps this
- * in a `ReadableStream` for the route handler.
+ * would have streamed out. `workflowStateToPipelineStream` below wraps this in
+ * the `ReadableStream` the route handler responds with.
  */
 export function workflowStateToPipelineChunks(
   state: WorkflowStateForReconnect
 ): ReconnectChunk[] {
   const chunks: ReconnectChunk[] = [{ type: "start" }]
 
-  const projectPath = state.payload?.projectPath
-  if (typeof projectPath === "string") {
-    const run: PipelineDataParts["run"] = {
-      runId: state.runId,
-      projectPath,
-      status: runStatus(state.status),
-      startedAt: state.createdAt.toISOString(),
-    }
-    pipelineDataSchemas.run.parse(run)
-    chunks.push({ type: "data-run", id: `run:${state.runId}`, data: run })
+  const fromPayload = state.payload?.projectPath
+  const projectPath =
+    typeof fromPayload === "string" ? fromPayload : state.resourceId
+
+  if (projectPath) {
+    chunks.push(
+      dataChunk(
+        "run",
+        {
+          runId: state.runId,
+          projectPath,
+          status: runStatus(state.status),
+          startedAt: state.createdAt.toISOString(),
+        },
+        `run:${state.runId}`
+      )
+    )
   }
 
   let gate: PipelineDataParts["gate"] | null = null
@@ -144,27 +163,38 @@ export function workflowStateToPipelineChunks(
     const result = latest(raw)
     if (!result) continue
 
-    const step: PipelineDataParts["step"] = {
-      id: parsedId.data,
-      status: stepStatus(result.status),
-    }
-    pipelineDataSchemas.step.parse(step)
-    chunks.push({
-      type: "data-step",
-      id: `step:${parsedId.data}`,
-      data: step,
-    })
+    chunks.push(
+      dataChunk(
+        "step",
+        { id: parsedId.data, status: stepStatus(result.status) },
+        `step:${parsedId.data}`
+      )
+    )
 
     if (!gate && result.status === "suspended") {
       gate = gateFor(parsedId.data, state.runId, result.suspendPayload)
     }
   }
 
-  if (gate) {
-    pipelineDataSchemas.gate.parse(gate)
-    chunks.push({ type: "data-gate", data: gate })
-  }
+  if (gate) chunks.push(dataChunk("gate", gate))
 
   chunks.push({ type: "finish" })
   return chunks
+}
+
+/**
+ * The route's half: the same contract `handleWorkflowStream` hands
+ * `createUIMessageStreamResponse` for a live run, so `useChat` can't tell a
+ * replayed run from a live one.
+ */
+export function workflowStateToPipelineStream(
+  state: WorkflowStateForReconnect
+): ReadableStream<ReconnectChunk> {
+  const chunks = workflowStateToPipelineChunks(state)
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk)
+      controller.close()
+    },
+  })
 }

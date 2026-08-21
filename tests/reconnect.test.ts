@@ -75,7 +75,7 @@ describe("workflowStateToPipelineChunks", () => {
     })
   })
 
-  test("skips the run chunk when the payload carries no projectPath", () => {
+  test("skips the run chunk when neither the payload nor resourceId names a project", () => {
     const state: WorkflowStateForReconnect = {
       runId: "run-2",
       status: "suspended",
@@ -87,6 +87,23 @@ describe("workflowStateToPipelineChunks", () => {
     const chunks = workflowStateToPipelineChunks(state)
 
     expect(chunks.some((chunk) => chunk.type === "data-run")).toBe(false)
+  })
+
+  test("falls back to resourceId when the payload carries no projectPath", () => {
+    const state: WorkflowStateForReconnect = {
+      runId: "run-2b",
+      status: "suspended",
+      createdAt,
+      resourceId: "/tmp/project",
+      payload: {},
+      steps: {},
+    }
+
+    const run = ofType(workflowStateToPipelineChunks(state), "data-run").at(0)
+    expect(run?.data).toMatchObject({
+      runId: "run-2b",
+      projectPath: "/tmp/project",
+    })
   })
 
   test("skips step ids this app's contract doesn't know about, rather than throwing", () => {

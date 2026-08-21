@@ -123,16 +123,17 @@ export function usePipeline(
     [sendMessage]
   )
 
-  // Reconnect once, on mount, and only if nothing has sent a message into
-  // this `useChat` session yet — a re-render after the run is already
-  // underway (live or reconnected) must not send a second reconnect on top
-  // of it.
+  // Reconnect exactly once. A ref rather than an empty dependency array: the
+  // effect has to survive StrictMode's deliberate double-invoke in dev, which
+  // an empty array does not stop, and sending two reconnects would replay the
+  // snapshot twice into the same session.
+  const reconnected = React.useRef(false)
+
   React.useEffect(() => {
-    if (activeRunId && messages.length === 0) {
-      send({ kind: "reconnect", runId: activeRunId })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!activeRunId || reconnected.current) return
+    reconnected.current = true
+    send({ kind: "reconnect", runId: activeRunId })
+  }, [activeRunId, send])
 
   return {
     ...(messages.length === 0 ? EMPTY_PIPELINE_STATE : state),
