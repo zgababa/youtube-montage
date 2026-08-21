@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/toast"
 import { CleanupReview } from "@/components/project/cleanup-review"
 import { CompositeReview } from "@/components/project/composite-review"
+import { EditingDocumentCard } from "@/components/project/editing-document-card"
 import { CopyReview } from "@/components/project/copy-review"
 import { MediaSettings } from "@/components/project/media-settings"
 import { ProjectHeader } from "@/components/project/project-header"
@@ -432,11 +433,15 @@ export function ProjectWorkspace({
     ),
 
     cleanup: (
-      <CleanupReview
-        project={project}
-        onToggleSpan={toggleSpan}
-        onReopen={reopenCleanup}
-      />
+      <>
+        <CleanupReview
+          project={project}
+          onToggleSpan={toggleSpan}
+          onReopen={reopenCleanup}
+        />
+        <Separator />
+        <EditingDocumentCard project={project} />
+      </>
     ),
 
     timeline: (

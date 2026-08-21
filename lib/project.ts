@@ -7,7 +7,14 @@
 
 import { durationLabel, timecode } from "@/lib/format"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
-import type { Project, Scene, Span, SpanCategory, Word } from "@/lib/types"
+import type {
+  Project,
+  Scene,
+  SceneStatus,
+  Span,
+  SpanCategory,
+  Word,
+} from "@/lib/types"
 
 export interface SpanText extends Span {
   text: string
@@ -144,4 +151,69 @@ export function shotlistText(project: Project) {
 
 export function totalMediaSeconds(project: Project) {
   return project.media.reduce((total, file) => total + file.durationSec, 0)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Document de montage (ADR 0006)                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A known element already referenced by the document — a rendered scene,
+ * pointed at by id rather than carrying its HTML along. Later stages (the
+ * structural analysis's proposed and approved effects) will add their own
+ * kinds of entry here without touching this one.
+ */
+export interface EditingDocumentEntry {
+  kind: "scene"
+  /** Reference into `project.scenes` — the HTML and export stay where they are. */
+  sceneId: string
+  scriptStart: number
+  scriptEnd: number
+  reason: string
+  status: SceneStatus
+  htmlPath: string | null
+  exportPath: string | null
+}
+
+/**
+ * The document de montage, minimal and visible (issue #6).
+ *
+ * Only the first two layers ADR 0006 describes: the approved script and the
+ * elements already known before any structural analysis proposes new ones.
+ * Nothing here is stored under its own key in `project.json` — every field it
+ * reads (`spans`, `scenes`, `cleanupApprovedAt`) is already persisted there, so
+ * this is derived at read time the same way `cleanScript` and `shotlistText`
+ * are. That also means a project written before this feature existed needs no
+ * migration: with `cleanupApprovedAt` absent or `null`, the document is empty.
+ */
+export interface EditingDocument {
+  /** `null` until the cleanup is approved — there is no approved script yet. */
+  script: { text: string; segmentCount: number } | null
+  entries: EditingDocumentEntry[]
+}
+
+export function buildEditingDocument(project: Project): EditingDocument {
+  if (project.cleanupApprovedAt === null) {
+    return { script: null, entries: [] }
+  }
+
+  const spans = spansWithText(project.spans, project.transcript.words)
+  const kept = spans.filter((span) => span.action === "keep")
+
+  return {
+    script: { text: cleanScript(spans), segmentCount: kept.length },
+    entries: project.scenes
+      .slice()
+      .sort((a, b) => a.scriptStart - b.scriptStart)
+      .map((scene) => ({
+        kind: "scene",
+        sceneId: scene.id,
+        scriptStart: scene.scriptStart,
+        scriptEnd: scene.scriptEnd,
+        reason: scene.intent,
+        status: scene.status,
+        htmlPath: scene.htmlPath,
+        exportPath: scene.exportPath,
+      })),
+  }
 }
