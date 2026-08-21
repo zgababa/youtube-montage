@@ -75,7 +75,7 @@ export interface Run {
   startedAt: string
   steps: RunStep[]
   /** Which `suspend()` the workflow is parked on, if any. */
-  suspendedOn: "review-cleanup" | "review-scenes" | null
+  suspendedOn: "review-cleanup" | "review-timeline" | "review-scenes" | null
 }
 
 /* -------------------------------------------------------------------------- */

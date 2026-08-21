@@ -115,11 +115,11 @@ the spans not to tile the transcript.
 
 ## 3. The shape of the system
 
-One [Mastra](https://mastra.ai) workflow, ten steps, two places it stops and
+One [Mastra](https://mastra.ai) workflow, eleven steps, two places it stops and
 waits for a human:
 
 ```
-scan → extract-audio → transcribe → cleanup ⏸ → scenarios
+scan → extract-audio → transcribe → cleanup ⏸ → fcpxml → scenarios
      → generate ×3 → review ⏸ → export → copy → shotlist
 ```
 
@@ -678,7 +678,9 @@ A short list of things that only showed up on real footage:
 
 All reasonable, none needed to find out whether the idea works:
 
-FCPXML/OTIO/EDL export to drop scenes onto a timeline automatically · cut
+Dropping **scenes** onto a timeline automatically — the cut timeline itself now
+exports as FCPXML (step `fcpxml`, `docs/adr/0001-…`), but scenes as connected
+clips on `lane="1"` are a later iteration · cut
 suggestions as a user-facing feature · multi-take clustering · coverage-gap
 detection ("as you can see here", with no matching footage) · short-form clip
 extraction · captions · terminology consistency checking · hook analysis of the
@@ -690,7 +692,7 @@ first 30 seconds · a native app wrapper.
 
 |                              |                                     |
 | ---------------------------- | ----------------------------------- |
-| Pipeline                     | 10 steps, 2 human gates, 1 workflow |
+| Pipeline                     | 11 steps, 2 human gates, 1 workflow |
 | Scene concurrency            | 3                                   |
 | Export concurrency           | 1                                   |
 | Attempts per scene           | 3 (generate + 2 repairs)            |

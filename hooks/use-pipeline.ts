@@ -136,6 +136,12 @@ export function usePipeline(
       [send]
     ),
 
+    reviewTimeline: React.useCallback(
+      (runId: string, approved: boolean, maxSilenceSec: number) =>
+        send({ kind: "review-timeline", runId, approved, maxSilenceSec }),
+      [send]
+    ),
+
     submitReview: React.useCallback(
       (runId: string, decisions: SceneDecision[], done: boolean) =>
         send({ kind: "review-scenes", runId, decisions, done }),
@@ -161,6 +167,16 @@ function toBody(action: PipelineAction | undefined) {
         runId: action.runId,
         step: "cleanup",
         resumeData: { approved: true, spans: action.spans },
+      }
+
+    case "review-timeline":
+      return {
+        runId: action.runId,
+        step: "fcpxml",
+        resumeData: {
+          approved: action.approved,
+          maxSilenceSec: action.maxSilenceSec,
+        },
       }
 
     case "review-scenes":

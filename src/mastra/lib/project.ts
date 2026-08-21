@@ -260,6 +260,8 @@ export function blankProject(
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,
+    maxSilenceSec: 0.3,
+    timelineApprovedAt: null,
     styleGuide: DEFAULT_STYLE_GUIDE,
     scenes: [],
     copy: null,

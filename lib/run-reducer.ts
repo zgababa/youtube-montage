@@ -28,12 +28,21 @@ export interface PipelineState {
   patch: Partial<Project>
   /** Set while the workflow is parked at a gate, with what's needed to resume. */
   gate: PipelineDataParts["gate"] | null
+  /**
+   * The last `fcpxml` event, for the timeline review gate.
+   *
+   * Display stats (`runsCount`, `totalDurationSec`) — not part of `Project`,
+   * so they don't belong in `patch`. `maxSilenceSec` and `timelineApprovedAt`
+   * are: those are read back from disk once the run settles.
+   */
+  timeline: PipelineDataParts["fcpxml"] | null
 }
 
 export const EMPTY_PIPELINE_STATE: PipelineState = {
   run: null,
   patch: {},
   gate: null,
+  timeline: null,
 }
 
 export interface ReduceOptions {
@@ -51,6 +60,7 @@ export function reduceParts(
 
   let head: PipelineDataParts["run"] | null = null
   let gate: PipelineDataParts["gate"] | null = null
+  let timeline: PipelineDataParts["fcpxml"] | null = null
 
   const steps = new Map<string, PipelineDataParts["step"]>()
   const scenes = new Map<string, Scene>()
@@ -68,6 +78,10 @@ export function reduceParts(
 
       case "data-gate":
         gate = part.data
+        break
+
+      case "data-fcpxml":
+        timeline = part.data
         break
 
       case "data-media":
@@ -121,12 +135,23 @@ export function reduceParts(
     patch.cleanupApprovedAt = new Date().toISOString()
   }
 
+  // Same reasoning, for the timeline gate: only `fcpxml` reporting success —
+  // not merely suspended, which also happens on a "regenerate" resume — means
+  // it was actually approved.
+  if (
+    steps.get("fcpxml")?.status === "success" &&
+    patch.timelineApprovedAt !== null
+  ) {
+    patch.timelineApprovedAt = new Date().toISOString()
+  }
+
   return {
     run: head
       ? toRun(head, steps, gate, logs, streaming, patch.scenes ?? [])
       : null,
     patch,
     gate,
+    timeline,
   }
 }
 

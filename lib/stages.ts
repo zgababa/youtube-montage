@@ -20,7 +20,13 @@ import { cutSeconds, sceneCounts } from "@/lib/project"
 import { STEP_LABELS } from "@/src/mastra/stream/contract"
 import type { Project, Run, RunStep, StepId, StepStatus } from "@/lib/types"
 
-export type StageId = "footage" | "cleanup" | "look" | "scenes" | "deliverables"
+export type StageId =
+  | "footage"
+  | "cleanup"
+  | "timeline"
+  | "look"
+  | "scenes"
+  | "deliverables"
 
 export interface StageDefinition {
   id: StageId
@@ -57,6 +63,13 @@ export const STAGES: readonly StageDefinition[] = [
     blurb:
       "The clean script is the kept spans. Everything downstream is a rewrite of it.",
     steps: ["cleanup"],
+  },
+  {
+    id: "timeline",
+    label: "Timeline export",
+    blurb:
+      "The cut, exported as FCPXML for DaVinci. Tune the silence cap and regenerate before approving.",
+    steps: ["fcpxml"],
   },
   {
     id: "look",
@@ -192,6 +205,14 @@ function summarize(id: StageId, project: Project): string | null {
         : `${removed} removed · approved`
     }
 
+    case "timeline": {
+      if (project.spans.length === 0) return null
+      const cap = `${project.maxSilenceSec}s silence cap`
+      return project.timelineApprovedAt === null
+        ? `${cap} · not yet approved`
+        : `${cap} · approved`
+    }
+
     case "look":
       return `${project.styleGuide.palette.length} colours · ${project.styleGuide.fontStack.split(",")[0]}`
 
@@ -225,9 +246,14 @@ function lockReason(id: StageId, project: Project): string | null {
         ? "Opens once there's a transcript to clean up."
         : null
 
-    case "scenes":
+    case "timeline":
       return project.cleanupApprovedAt === null
-        ? "The scenario agent reads the approved script — approve the cleanup first."
+        ? "Opens once cleanup is approved."
+        : null
+
+    case "scenes":
+      return project.timelineApprovedAt === null
+        ? "The scenario agent reads the approved script — approve the timeline export first."
         : null
 
     case "deliverables":
@@ -253,6 +279,8 @@ function hasContent(id: StageId, project: Project): boolean {
       return project.media.length > 0
     case "cleanup":
       return project.spans.length > 0
+    case "timeline":
+      return project.timelineApprovedAt !== null
     case "look":
       return false
     case "scenes":

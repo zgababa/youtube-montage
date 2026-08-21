@@ -40,6 +40,7 @@ export const StepIdSchema = z.enum([
   "extract-audio",
   "transcribe",
   "cleanup",
+  "fcpxml",
   "scenarios",
   "generate",
   "review",
@@ -63,8 +64,12 @@ export const RunStatusSchema = z.enum([
   "failed",
 ])
 
-/** The two places the workflow parks and waits for a human (idea.md §4.2). */
-export const GateSchema = z.enum(["review-cleanup", "review-scenes"])
+/** The places the workflow parks and waits for a human (idea.md §4.2). */
+export const GateSchema = z.enum([
+  "review-cleanup",
+  "review-timeline",
+  "review-scenes",
+])
 
 /** Human-readable labels, so a step id never reaches the UI raw. */
 export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
@@ -72,6 +77,7 @@ export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
   "extract-audio": "Extract audio",
   transcribe: "Transcribe",
   cleanup: "Cleanup pass",
+  fcpxml: "Timeline export",
   scenarios: "Plan scenes",
   generate: "Generate scenes",
   review: "Review scenes",
@@ -180,6 +186,14 @@ export const pipelineDataSchemas = {
     text: z.string(),
   }),
 
+  /** The cut timeline, written before scene generation starts (issue #1). */
+  fcpxml: z.object({
+    path: z.string(),
+    runsCount: z.number(),
+    totalDurationSec: z.number(),
+    maxSilenceSec: z.number(),
+  }),
+
   /**
    * The workflow has suspended and is waiting on a human. Carries what the
    * client needs to resume: which run, which step, which gate.
@@ -235,6 +249,12 @@ export type SceneDecision = z.infer<typeof SceneDecisionSchema>
 export type PipelineAction =
   | { kind: "start"; projectPath: string }
   | { kind: "approve-cleanup"; runId: string; spans: Span[] }
+  | {
+      kind: "review-timeline"
+      runId: string
+      approved: boolean
+      maxSilenceSec: number
+    }
   | {
       kind: "review-scenes"
       runId: string
