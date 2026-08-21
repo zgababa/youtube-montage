@@ -82,6 +82,32 @@ describe("buildKeptRuns", () => {
     expect(runs[0]).toEqual({ file: "raw/a.mp4", sourceStart: 0, sourceEnd: 3 })
   })
 
+  test("a long natural pause inside one file is capped to a short lead-in", () => {
+    // No cut anywhere — both segments are kept — but 3s of silence separates
+    // them, well past MAX_SILENCE_SEC. Nothing in `cleanup` flagged this gap,
+    // so `buildKeptRuns` is the only place left to shorten it.
+    const segments = [segment(0, 0, 1), segment(1, 4, 5)]
+    const spans: Span[] = [{ start: 0, end: 5, action: "keep" }]
+
+    const runs = buildKeptRuns(segments, spans, [media()])
+
+    expect(runs).toHaveLength(2)
+    expect(runs[0]).toEqual({ file: "raw/a.mp4", sourceStart: 0, sourceEnd: 1 })
+    // Only the last 0.3s of the 3s gap survives, right before segment 1.
+    expect(runs[1]).toEqual({ file: "raw/a.mp4", sourceStart: 3.7, sourceEnd: 5 })
+  })
+
+  test("a short natural pause inside one file is left untouched", () => {
+    // 0.2s between segments — well under MAX_SILENCE_SEC — stays as one run.
+    const segments = [segment(0, 0, 1), segment(1, 1.2, 2)]
+    const spans: Span[] = [{ start: 0, end: 2, action: "keep" }]
+
+    const runs = buildKeptRuns(segments, spans, [media()])
+
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toEqual({ file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 })
+  })
+
   test("throws when multiple files are transcribed with no identified mic", () => {
     const segments = [segment(0, 0, 1, "raw/a.mp4")]
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]

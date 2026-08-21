@@ -26,6 +26,25 @@ export interface TimelineRun {
 }
 
 /**
+ * Longest silence the exported timeline keeps between two kept segments of
+ * the same file.
+ *
+ * `cleanup` only ever decides what to cut based on content (filler,
+ * redundant, …) — a natural pause between two kept sentences is never itself
+ * a cut, so it survives into `spans` at full length. Left alone, that's every
+ * breath and thinking-pause in the recording, playing back exactly as long as
+ * it was in the room. This trims it at export time only: `spans` and the
+ * script scenes read from are untouched, only the timeline handed to DaVinci
+ * gets tighter.
+ *
+ * Segments never break on a gap shorter than `PAUSE_SEC` (0.6s, see
+ * `segments.ts`), so this only ever fires on pauses that were already at
+ * least that long — it has no effect on the short, natural gaps between
+ * words within a sentence.
+ */
+const MAX_SILENCE_SEC = 0.3
+
+/**
  * Groups the kept segments into contiguous per-file runs.
  *
  * Two segments merge into one run only when they are adjacent in the kept
@@ -53,13 +72,28 @@ export function buildKeptRuns(
   // share a file", which same-file alone can't distinguish once a cut has
   // removed the segments between them.
   let lastIndex = -Infinity
+  // The raw end of the previously kept segment, before any silence capping —
+  // the gap check needs the true pause, not a run boundary already shortened
+  // by a previous cap.
+  let previousEnd = -Infinity
 
   for (const segment of kept) {
     const current = runs[runs.length - 1]
     const adjacent = segment.index === lastIndex + 1
+    const sameFile = current !== undefined && current.file === segment.file
+    const gap = segment.start - previousEnd
 
-    if (current && adjacent && current.file === segment.file) {
+    if (current && adjacent && sameFile && gap <= MAX_SILENCE_SEC) {
       current.sourceEnd = segment.end
+    } else if (current && adjacent && sameFile) {
+      // A cut never separated these two — cleanup left the pause between
+      // them alone — but it's long enough to trim at export time. Only its
+      // last MAX_SILENCE_SEC survives, as a short lead-in to what follows.
+      runs.push({
+        file: segment.file,
+        sourceStart: segment.start - MAX_SILENCE_SEC,
+        sourceEnd: segment.end,
+      })
     } else {
       runs.push({
         file: segment.file,
@@ -68,6 +102,7 @@ export function buildKeptRuns(
       })
     }
     lastIndex = segment.index
+    previousEnd = segment.end
   }
 
   return runs
