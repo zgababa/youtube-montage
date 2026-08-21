@@ -1,5 +1,5 @@
 /**
- * Eleven pipeline steps, as the five things a person actually does.
+ * Twelve pipeline steps, as the five things a person actually does.
  *
  * The page used to show progress and the work in two separate places: a panel
  * listing every step, and a row of tabs listing the same phases again under
@@ -26,6 +26,7 @@ export type StageId =
   | "timeline"
   | "look"
   | "scenes"
+  | "composite"
   | "deliverables"
 
 export interface StageDefinition {
@@ -84,6 +85,13 @@ export const STAGES: readonly StageDefinition[] = [
     blurb:
       "Placed against the approved script, generated three at a time, exported one at a time.",
     steps: ["scenarios", "generate", "review", "export"],
+  },
+  {
+    id: "composite",
+    label: "Timeline composite",
+    blurb:
+      "The same timeline.fcpxml, rewritten with every exported scene laid in as a connected clip on lane 1. Regenerate to pick up scenes exported since the last pass.",
+    steps: ["overlay"],
   },
   {
     id: "deliverables",
@@ -225,6 +233,13 @@ function summarize(id: StageId, project: Project): string | null {
       return parts.join(" · ")
     }
 
+    case "composite": {
+      if (sceneCounts(project.scenes).exported === 0) return null
+      return project.compositeApprovedAt === null
+        ? "Composited · not yet approved"
+        : "Composited · approved"
+    }
+
     case "deliverables":
       return project.copy === null ? null : "YouTube and Twitter copy written"
   }
@@ -256,6 +271,11 @@ function lockReason(id: StageId, project: Project): string | null {
         ? "The scenario agent reads the approved script — approve the timeline export first."
         : null
 
+    case "composite":
+      return sceneCounts(project.scenes).exported === 0
+        ? "Opens once at least one scene has been exported."
+        : null
+
     case "deliverables":
       return project.copy === null && sceneCounts(project.scenes).approved === 0
         ? "Written once scenes have been approved."
@@ -285,6 +305,8 @@ function hasContent(id: StageId, project: Project): boolean {
       return false
     case "scenes":
       return project.scenes.length > 0
+    case "composite":
+      return project.compositeApprovedAt !== null
     case "deliverables":
       return project.copy !== null
   }

@@ -45,6 +45,7 @@ export const StepIdSchema = z.enum([
   "generate",
   "review",
   "export",
+  "overlay",
   "copy",
   "shotlist",
 ])
@@ -69,6 +70,7 @@ export const GateSchema = z.enum([
   "review-cleanup",
   "review-timeline",
   "review-scenes",
+  "review-composite",
 ])
 
 /** Human-readable labels, so a step id never reaches the UI raw. */
@@ -82,6 +84,7 @@ export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
   generate: "Generate scenes",
   review: "Review scenes",
   export: "Export ProRes",
+  overlay: "Composite timeline",
   copy: "Write copy",
   shotlist: "Shot list",
 }
@@ -194,6 +197,14 @@ export const pipelineDataSchemas = {
     maxSilenceSec: z.number(),
   }),
 
+  /** The cut timeline, rewritten with exported scenes composited in (`overlay.ts`). */
+  composite: z.object({
+    path: z.string(),
+    placedCount: z.number(),
+    /** Scene ids whose `scriptStart` didn't land inside any kept run. */
+    skipped: z.array(z.string()),
+  }),
+
   /**
    * The workflow has suspended and is waiting on a human. Carries what the
    * client needs to resume: which run, which step, which gate.
@@ -262,6 +273,7 @@ export type PipelineAction =
       /** False keeps the gate open for another round of regeneration. */
       done: boolean
     }
+  | { kind: "review-composite"; runId: string; approved: boolean }
   | { kind: "reconnect"; runId: string }
 
 /** The `useChat` type parameter. Both ends of the stream agree on this. */

@@ -36,6 +36,8 @@ export interface PipelineState {
    * are: those are read back from disk once the run settles.
    */
   timeline: PipelineDataParts["fcpxml"] | null
+  /** The last `composite` event, for the post-export composite gate. */
+  composite: PipelineDataParts["composite"] | null
 }
 
 export const EMPTY_PIPELINE_STATE: PipelineState = {
@@ -43,6 +45,7 @@ export const EMPTY_PIPELINE_STATE: PipelineState = {
   patch: {},
   gate: null,
   timeline: null,
+  composite: null,
 }
 
 export interface ReduceOptions {
@@ -61,6 +64,7 @@ export function reduceParts(
   let head: PipelineDataParts["run"] | null = null
   let gate: PipelineDataParts["gate"] | null = null
   let timeline: PipelineDataParts["fcpxml"] | null = null
+  let composite: PipelineDataParts["composite"] | null = null
 
   const steps = new Map<string, PipelineDataParts["step"]>()
   const scenes = new Map<string, Scene>()
@@ -82,6 +86,10 @@ export function reduceParts(
 
       case "data-fcpxml":
         timeline = part.data
+        break
+
+      case "data-composite":
+        composite = part.data
         break
 
       case "data-media":
@@ -145,6 +153,16 @@ export function reduceParts(
     patch.timelineApprovedAt = new Date().toISOString()
   }
 
+  // Same reasoning, for the composite gate: `overlay` reports success only on
+  // the approved resume, never on the "regenerate" one, which reports
+  // suspended again instead.
+  if (
+    steps.get("overlay")?.status === "success" &&
+    patch.compositeApprovedAt !== null
+  ) {
+    patch.compositeApprovedAt = new Date().toISOString()
+  }
+
   return {
     run: head
       ? toRun(head, steps, gate, logs, streaming, patch.scenes ?? [])
@@ -152,6 +170,7 @@ export function reduceParts(
     patch,
     gate,
     timeline,
+    composite,
   }
 }
 
@@ -239,7 +258,27 @@ function runStatus(
   return steps.get("shotlist")?.status === "success" ? "success" : "failed"
 }
 
-/** Merges a live patch onto the project read from disk. */
+/**
+ * Merges a live patch onto the project read from disk.
+ *
+ * `patch.scenes` is special-cased: it's only the scenes this browser session
+ * has actually seen a `data-scene` event for, not necessarily all of them. A
+ * fresh page load reconnects to a suspended run without replaying the
+ * original fan-out (`reconnect.ts` — that data is already in `project.json`),
+ * so approving or regenerating one scene right after a reload used to produce
+ * a one-element patch that clobbered the other eleven read from disk. Merging
+ * by id keeps every scene the disk already knew about and only overlays the
+ * ones the patch actually reports on.
+ */
 export function applyPatch(project: Project, patch: Partial<Project>): Project {
-  return { ...project, ...patch }
+  if (!patch.scenes) return { ...project, ...patch }
+
+  const byId = new Map(project.scenes.map((scene) => [scene.id, scene]))
+  for (const scene of patch.scenes) byId.set(scene.id, scene)
+
+  return {
+    ...project,
+    ...patch,
+    scenes: [...byId.values()].sort((a, b) => a.scriptStart - b.scriptStart),
+  }
 }

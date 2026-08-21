@@ -1,4 +1,5 @@
 import type { SceneStatus, SpanCategory, StepStatus } from "@/lib/types"
+import type { SceneDecision } from "@/src/mastra/stream/contract"
 
 /** `04:12` — the form used in the shot list and scene rows. */
 export function timecode(seconds: number) {
@@ -41,6 +42,17 @@ export const CATEGORY_LABELS: Record<SpanCategory, string> = {
   bad_take: "bad take",
   tangent: "tangent",
   false_start: "false start",
+}
+
+/**
+ * A decision queued in the review gate but not yet sent — `scene.status`
+ * doesn't move until "Send back" is clicked, so this is what tells the tile
+ * and row a regenerate/approve/reject is waiting rather than lost.
+ */
+export const SCENE_DECISION_LABELS: Record<SceneDecision["action"], string> = {
+  approve: "Approve queued",
+  reject: "Reject queued",
+  regenerate: "Regenerate queued",
 }
 
 export const SCENE_STATUS_LABELS: Record<SceneStatus, string> = {

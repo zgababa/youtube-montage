@@ -166,6 +166,12 @@ export function usePipeline(
         send({ kind: "review-scenes", runId, decisions, done }),
       [send]
     ),
+
+    reviewComposite: React.useCallback(
+      (runId: string, approved: boolean) =>
+        send({ kind: "review-composite", runId, approved }),
+      [send]
+    ),
   }
 }
 
@@ -211,6 +217,13 @@ function toBody(action: PipelineAction | undefined) {
         runId: action.runId,
         step: "review",
         resumeData: { decisions: action.decisions, done: action.done },
+      }
+
+    case "review-composite":
+      return {
+        runId: action.runId,
+        step: "overlay",
+        resumeData: { approved: action.approved },
       }
 
     default:

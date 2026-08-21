@@ -6,6 +6,7 @@ import {
   Alert02Icon,
   Analytics01Icon,
   Cancel01Icon,
+  Clock01Icon,
   FlowIcon,
   FullScreenIcon,
   Layers01Icon,
@@ -17,6 +18,7 @@ import {
 } from "@hugeicons/core-free-icons"
 
 import {
+  SCENE_DECISION_LABELS,
   SCENE_STATUS_LABELS,
   durationLabel,
   sceneStatusVariant,
@@ -26,6 +28,7 @@ import { overrunsWindow } from "@/lib/project"
 import { useInView } from "@/hooks/use-in-view"
 import type { Scene, SceneDraft, SceneType } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import type { SceneDecision } from "@/src/mastra/stream/contract"
 import { modelLabel } from "@/src/mastra/models"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -67,6 +70,12 @@ interface SceneRowProps {
   backdrop: SceneBackdrop
   /** Set only while this scene is being written, and only during a live run. */
   draft?: SceneDraft
+  /**
+   * A decision made but not yet sent. `scene.status` doesn't change until
+   * "Send back" is clicked, so this is the only thing that tells the row a
+   * regenerate/approve/reject is queued rather than dropped.
+   */
+  decision?: SceneDecision
   /** Active scene search, highlighted in the covered line and intent. */
   query?: string
   /** Spans the scene grid — see `SceneList`. */
@@ -89,6 +98,7 @@ export function SceneRow({
   scene,
   backdrop,
   draft,
+  decision,
   query = "",
   className,
   onCollapse,
@@ -180,6 +190,12 @@ export function SceneRow({
             ) : null}
             {SCENE_STATUS_LABELS[scene.status]}
           </Badge>
+          {decision ? (
+            <Badge variant="secondary">
+              <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} />
+              {SCENE_DECISION_LABELS[decision.action]}
+            </Badge>
+          ) : null}
           {onCollapse ? (
             <Tooltip>
               <TooltipTrigger

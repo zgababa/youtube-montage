@@ -12,7 +12,7 @@
  * types, which never leave the app.
  */
 
-import type { StepId, StepStatus } from "@/src/mastra/stream/contract"
+import type { Gate, StepId, StepStatus } from "@/src/mastra/stream/contract"
 
 export type {
   MediaFile,
@@ -75,7 +75,7 @@ export interface Run {
   startedAt: string
   steps: RunStep[]
   /** Which `suspend()` the workflow is parked on, if any. */
-  suspendedOn: "review-cleanup" | "review-timeline" | "review-scenes" | null
+  suspendedOn: Gate | null
 }
 
 /* -------------------------------------------------------------------------- */

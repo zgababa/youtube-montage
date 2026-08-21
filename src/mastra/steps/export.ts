@@ -17,6 +17,18 @@ import { PipelineIO, message, reporter, runStep } from "./shared"
 /** One progress chunk per this many frames. 210 chunks for a 7s scene is noise. */
 const PROGRESS_EVERY = 10
 
+/**
+ * Floor on how long an exported scene plays, in seconds.
+ *
+ * A scene's own choreography routinely finishes well under its available
+ * window — `animation-fill-mode: both` (`scene-agent.ts`) holds the last
+ * frame once it does, so exporting past the measured animation just renders
+ * more of that held frame, for free. Four seconds reads as a deliberate
+ * cutaway rather than a flash; `overlay.ts` applies the same floor when it
+ * places the scene in `timeline.fcpxml`, so the two stay in sync.
+ */
+export const MIN_SCENE_HOLD_SEC = 4
+
 export const exportStep = createStep({
   id: "export",
   description: "Render approved scenes to ProRes 4444 with alpha",
@@ -46,7 +58,10 @@ export const exportStep = createStep({
         )
 
         const output = sceneExportPath(projectPath, scene.id)
-        const durationSec = scene.measuredDurationSec ?? scene.windowSec
+        const durationSec = Math.max(
+          scene.measuredDurationSec ?? scene.windowSec,
+          MIN_SCENE_HOLD_SEC
+        )
 
         try {
           await exportScene(scene.html!, {

@@ -262,6 +262,7 @@ export function blankProject(
     cleanupApprovedAt: null,
     maxSilenceSec: 0.3,
     timelineApprovedAt: null,
+    compositeApprovedAt: null,
     styleGuide: DEFAULT_STYLE_GUIDE,
     scenes: [],
     copy: null,

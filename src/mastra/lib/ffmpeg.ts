@@ -3,7 +3,8 @@
  *
  * Both are expected on PATH (idea.md §14). Nothing here transcodes video —
  * source footage is read-only input, and the only video this pipeline ever
- * writes is the ProRes render of a generated scene.
+ * writes is a scene's ProRes render or the solid-colour clip it backs onto
+ * (`white-backing.ts`).
  */
 
 import { spawn } from "node:child_process"
@@ -151,6 +152,45 @@ export async function encodeProRes(
     "4444",
     "-pix_fmt",
     "yuva444p10le",
+    "-loglevel",
+    "error",
+    output,
+  ])
+}
+
+/**
+ * A plain solid-colour ProRes clip, synthesized directly by ffmpeg's `color`
+ * source — no Chromium, no frame-stepping (`white-backing.ts`).
+ *
+ * Opaque, so plain 422 HQ rather than 4444: nothing here needs a channel to
+ * carry, unlike a scene overlay.
+ */
+export async function encodeSolidColor(
+  output: string,
+  options: {
+    width: number
+    height: number
+    fps: number
+    durationSec: number
+    /** Any ffmpeg `color` source name or `0xRRGGBB` — see the `color` filter docs. */
+    color: string
+  }
+): Promise<void> {
+  const { width, height, fps, durationSec, color } = options
+  await fs.mkdir(path.dirname(output), { recursive: true })
+  await run("ffmpeg", [
+    "-nostdin",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=${color}:s=${width}x${height}:r=${fps}:d=${durationSec}`,
+    "-c:v",
+    "prores_ks",
+    "-profile:v",
+    "3",
+    "-pix_fmt",
+    "yuv422p10le",
     "-loglevel",
     "error",
     output,

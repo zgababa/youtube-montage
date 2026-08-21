@@ -82,11 +82,11 @@ export function sceneCounts(scenes: Scene[]) {
 /**
  * The project as it looks with this round's decisions on it.
  *
- * Applied *after* the live run's patch, which is the whole point. A run patch
- * carries the entire scenes array, and a shallow merge replaces the array
- * wholesale — so a decision held anywhere earlier in the chain is overwritten
- * by the same streamed scenes on the next render, and clicking Approve does
- * visibly nothing.
+ * Applied *after* the live run's patch, which is the whole point. `applyPatch`
+ * (`lib/run-reducer.ts`) merges the run's scenes by id, but for any scene the
+ * run has reported on, its version wins — so a decision held anywhere earlier
+ * in the chain is overwritten by the same streamed scene on the next render,
+ * and clicking Approve does visibly nothing.
  *
  * The precedence is right as well as necessary. A decision is the user telling
  * the workflow what to do with a scene it has already reported on; until they

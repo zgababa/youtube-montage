@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 
-import { reduceParts } from "../lib/run-reducer"
+import { applyPatch, reduceParts } from "../lib/run-reducer"
 import type { PipelineUIMessage } from "../src/mastra/stream/contract"
-import type { Scene, SceneStatus } from "../lib/types"
+import type { Project, Scene, SceneStatus } from "../lib/types"
 
 type Part = PipelineUIMessage["parts"][number]
 
@@ -165,5 +165,60 @@ describe("a scene's document", () => {
     const { patch } = reduceParts(run(failed))
 
     expect(patch.scenes![0].html).toBeNull()
+  })
+})
+
+function project(scenes: Scene[]): Project {
+  return {
+    version: 1,
+    id: "p1",
+    path: "/tmp/p",
+    name: "p",
+    createdAt: "2026-08-02T10:00:00.000Z",
+    fps: 30,
+    media: [],
+    transcriptionHints: { prompt: "", keyterms: [] },
+    transcript: { words: [] },
+    spans: [],
+    cleanupApprovedAt: null,
+    maxSilenceSec: 0.3,
+    timelineApprovedAt: null,
+    compositeApprovedAt: null,
+    styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
+    scenes,
+    copy: null,
+  }
+}
+
+describe("applyPatch", () => {
+  test("merges a partial scenes patch instead of replacing the array", () => {
+    // The shape a reconnect + one regenerate produces: the client only ever
+    // saw scene_02's `data-scene` event, but the disk copy has all three.
+    const onDisk = project([
+      scene("scene_01", "ready", 0),
+      scene("scene_02", "ready", 20),
+      scene("scene_03", "ready", 40),
+    ])
+
+    const merged = applyPatch(onDisk, {
+      scenes: [scene("scene_02", "generating", 20)],
+    })
+
+    expect(merged.scenes.map((s) => s.id)).toEqual([
+      "scene_01",
+      "scene_02",
+      "scene_03",
+    ])
+    expect(merged.scenes.find((s) => s.id === "scene_02")?.status).toBe(
+      "generating"
+    )
+  })
+
+  test("still overlays non-scene fields wholesale", () => {
+    const onDisk = project([scene("scene_01", "ready", 0)])
+    const merged = applyPatch(onDisk, { cleanupApprovedAt: "2026-08-02T00:00:00.000Z" })
+
+    expect(merged.cleanupApprovedAt).toBe("2026-08-02T00:00:00.000Z")
+    expect(merged.scenes).toEqual(onDisk.scenes)
   })
 })

@@ -10,6 +10,7 @@ import {
 
 import { sceneCounts } from "@/lib/project"
 import type { Project, SceneDraft } from "@/lib/types"
+import type { SceneDecision } from "@/src/mastra/stream/contract"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -41,6 +42,12 @@ interface SceneListProps {
   project: Project
   /** Documents still being written, keyed by scene id. Empty outside a run. */
   drafts?: Record<string, SceneDraft>
+  /**
+   * Decisions made but not yet sent — keyed by scene id. A scene with an
+   * entry here looks unchanged on disk until "Send back" is clicked; the tile
+   * and row need this to show that a decision is queued rather than lost.
+   */
+  decisions?: Record<string, SceneDecision>
   onApprove: (id: string) => void
   onReject: (id: string) => void
   onRegenerate: (id: string, note: string, model: string) => void
@@ -53,6 +60,7 @@ interface SceneListProps {
 export function SceneList({
   project,
   drafts = {},
+  decisions = {},
   onApprove,
   onReject,
   onRegenerate,
@@ -208,6 +216,7 @@ export function SceneList({
                 scene={scene}
                 backdrop={backdrop}
                 draft={drafts[scene.id]}
+                decision={decisions[scene.id]}
                 query={query}
                 onCollapse={() => setExpanded(null)}
                 onApprove={onApprove}
@@ -220,6 +229,7 @@ export function SceneList({
                 scene={scene}
                 backdrop={backdrop}
                 draft={drafts[scene.id]}
+                decision={decisions[scene.id]}
                 query={query}
                 onApprove={onApprove}
                 onReject={onReject}

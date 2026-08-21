@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/toast"
 import { CleanupReview } from "@/components/project/cleanup-review"
+import { CompositeReview } from "@/components/project/composite-review"
 import { CopyReview } from "@/components/project/copy-review"
 import { MediaSettings } from "@/components/project/media-settings"
 import { ProjectHeader } from "@/components/project/project-header"
@@ -96,10 +97,11 @@ export function ProjectWorkspace({
    * confirmation is the thing worth showing. It also means local edits retire
    * themselves as the run reports, with nothing to clear.
    *
-   * Scene decisions are the exception, and have to come last. The run's patch
-   * carries the whole scenes array, so anything merged before it is replaced by
-   * those scenes on the next render — which is exactly what made Approve and
-   * Reject look like dead buttons.
+   * Scene decisions are the exception, and have to come last. `applyPatch`
+   * merges the run's scenes by id and, for any scene the run has reported on,
+   * its version wins — so anything merged before it is replaced by those
+   * scenes on the next render, which is exactly what made Approve and Reject
+   * look like dead buttons.
    */
   const project = React.useMemo(
     () =>
@@ -310,6 +312,42 @@ export function ProjectWorkspace({
     })
   }
 
+  /* ---------------------------------------------------------------------- */
+  /* Gate 4 — timeline composite                                             */
+  /* ---------------------------------------------------------------------- */
+
+  function regenerateComposite() {
+    if (!pipeline.run) {
+      toast.add({
+        title: "No run to update",
+        description:
+          "The composite gate resumes a suspended workflow — start a run first.",
+      })
+      return
+    }
+    pipeline.reviewComposite(pipeline.run.id, false)
+    toast.add({
+      title: "Regenerating",
+      description: "timeline.fcpxml recomposited with the scenes exported so far.",
+    })
+  }
+
+  function approveComposite() {
+    if (!pipeline.run) {
+      toast.add({
+        title: "No run to approve",
+        description:
+          "Approval resumes a suspended workflow — start a run first.",
+      })
+      return
+    }
+    pipeline.reviewComposite(pipeline.run.id, true)
+    toast.add({
+      title: "Composite approved",
+      description: "Run resumed — copy and the shot list are written next.",
+    })
+  }
+
   function saveStyleGuide(styleGuide: StyleGuide) {
     persist(
       { styleGuide },
@@ -422,9 +460,20 @@ export function ProjectWorkspace({
       <SceneList
         project={project}
         drafts={pipeline.drafts}
+        decisions={decisions}
         onApprove={approveScene}
         onReject={rejectScene}
         onRegenerate={regenerateScene}
+      />
+    ),
+
+    composite: (
+      <CompositeReview
+        project={project}
+        composite={pipeline.composite}
+        onRegenerate={regenerateComposite}
+        onApprove={approveComposite}
+        disabled={pipeline.streaming}
       />
     ),
 

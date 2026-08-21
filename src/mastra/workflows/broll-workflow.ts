@@ -16,6 +16,7 @@ import { cleanupStep } from "../steps/cleanup"
 import { exportStep } from "../steps/export"
 import { extractAudioStep } from "../steps/extract-audio"
 import { SceneJobSchema } from "../steps/generate-scene"
+import { overlayStep } from "../steps/overlay"
 import { reviewStep } from "../steps/review"
 import { scanStep } from "../steps/scan"
 import { scenariosStep } from "../steps/scenarios"
@@ -85,6 +86,9 @@ export const brollWorkflow = createWorkflow({
   // Suspends: approve, reject, or regenerate scenes.
   .then(reviewStep)
   .then(exportStep)
+  // Rewrites timeline.fcpxml with every scene exported so far composited in
+  // as a connected clip (idea.md §4, "a later iteration" — see fcpxml.ts).
+  .then(overlayStep)
   .then(copyStep)
   .then(shotlistStep)
   .commit()
