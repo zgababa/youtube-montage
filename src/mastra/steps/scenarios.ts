@@ -31,7 +31,7 @@ import {
   type StoredScene,
 } from "../schemas"
 import { generateStructured } from "../lib/structured"
-import { decideTitleAnnotation } from "../lib/titles"
+import { decideTitleAnnotation, shortTitleText } from "../lib/titles"
 import { PipelineIO, reporter } from "./shared"
 
 const AnalysisSchema = z.object({
@@ -230,7 +230,9 @@ async function analyse(
         toSegment: element.toSegment,
         reason: element.reason.trim(),
         confidence: element.confidence ?? 0.5,
-        ...(element.titleText ? { titleText: element.titleText.trim() } : {}),
+        ...(element.titleText
+          ? { titleText: shortTitleText(element.titleText) }
+          : {}),
         ...(element.zoomPreset ? { zoomPreset: element.zoomPreset } : {}),
         ...(element.zoomDurationSec
           ? { zoomDurationSec: element.zoomDurationSec }

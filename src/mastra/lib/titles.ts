@@ -27,6 +27,18 @@ import type { Span, StyleGuide, TitleAnnotation } from "../schemas"
  */
 export const TITLE_DURATION_SEC = 2
 
+/** Automatic title copy stays a label, not a second sentence on screen. */
+export const TITLE_MAX_CHARS = 80
+
+export function shortTitleText(value: string): string {
+  const text = value.trim().replace(/\s+/g, " ")
+  if (text.length <= TITLE_MAX_CHARS) return text
+
+  const shortened = text.slice(0, TITLE_MAX_CHARS + 1)
+  const boundary = shortened.lastIndexOf(" ")
+  return shortened.slice(0, boundary > 0 ? boundary : TITLE_MAX_CHARS).trim()
+}
+
 /**
  * `globalThis.crypto`, not `node:crypto`.
  *

@@ -93,6 +93,11 @@ function framesToRational(frames: number, fps: number): string {
   return `${numerator / divisor}/${den / divisor}s`
 }
 
+function framesToSeconds(frames: number, fps: number): number {
+  const { num, den } = frameDuration(fps)
+  return (frames * num) / den
+}
+
 /**
  * Seconds as an FCPXML rational string, snapped to the fps's frame grid.
  *
@@ -137,6 +142,142 @@ export interface OverlayScene {
   durationSec: number
   /** Project-relative, as stored in `scene.exportPath`. */
   exportPath: string
+}
+
+/** A rendered automatic title that is inserted into the primary storyline. */
+export interface TimelineTitleInsertion {
+  id: string
+  sourceFile: string
+  /** Raw source timecode of the section's first approved segment. */
+  scriptStart: number
+  durationSec: number
+  /** Project-relative, as stored on the plan element. */
+  exportPath: string
+}
+
+interface LocatedTitleInsertion extends TimelineTitleInsertion {
+  runIndex: number
+}
+
+export interface TimelineTitlePlacement extends TimelineTitleInsertion {
+  runIndex: number
+  /** Sequence offset after earlier source clips and title insertions. */
+  timelineOffsetSec: number
+}
+
+export type TimelineLayoutItem =
+  | { kind: "source"; run: TimelineRun; sourceIndex: number }
+  | { kind: "title"; title: TimelineTitlePlacement }
+
+export interface TimelineLayout {
+  items: TimelineLayoutItem[]
+  sourceRuns: TimelineRun[]
+  titlePlacements: TimelineTitlePlacement[]
+  skippedTitles: string[]
+  sourceDurationSec: number
+  timelineDurationSec: number
+}
+
+/** Finds the one kept run that contains each title's source anchor. */
+export function placeTitleInsertions(
+  runs: TimelineRun[],
+  titles: TimelineTitleInsertion[]
+): { placed: LocatedTitleInsertion[]; skipped: string[] } {
+  const placed: LocatedTitleInsertion[] = []
+  const skipped: string[] = []
+
+  for (const title of titles) {
+    const runIndex = runs.findIndex(
+      (run) =>
+        run.file === title.sourceFile &&
+        title.scriptStart >= run.sourceStart &&
+        title.scriptStart < run.sourceEnd
+    )
+    if (runIndex === -1) {
+      skipped.push(title.id)
+      continue
+    }
+    placed.push({ ...title, runIndex })
+  }
+
+  return { placed, skipped }
+}
+
+/**
+ * Splits only the source clips that need an inserted title and calculates the
+ * output offsets once, in frame units. The source duration is deliberately
+ * preserved; the two-second title is an extra primary-storyline clip.
+ */
+export function buildTimelineLayout(
+  runs: TimelineRun[],
+  titles: TimelineTitleInsertion[],
+  fps: number
+): TimelineLayout {
+  const { placed, skipped } = placeTitleInsertions(runs, titles)
+  const titlesByRun = new Map<number, LocatedTitleInsertion[]>()
+  for (const title of placed) {
+    const current = titlesByRun.get(title.runIndex) ?? []
+    current.push(title)
+    titlesByRun.set(title.runIndex, current)
+  }
+  for (const current of titlesByRun.values()) {
+    current.sort(
+      (a, b) => a.scriptStart - b.scriptStart || a.id.localeCompare(b.id)
+    )
+  }
+
+  const items: TimelineLayoutItem[] = []
+  const sourceRuns: TimelineRun[] = []
+  const titlePlacements: TimelineTitlePlacement[] = []
+  let offsetFrames = 0
+
+  for (const [runIndex, run] of runs.entries()) {
+    let sourceStart = run.sourceStart
+    for (const title of titlesByRun.get(runIndex) ?? []) {
+      if (title.scriptStart > sourceStart) {
+        const source = {
+          file: run.file,
+          sourceStart,
+          sourceEnd: title.scriptStart,
+        }
+        const sourceIndex = sourceRuns.push(source) - 1
+        items.push({ kind: "source", run: source, sourceIndex })
+        offsetFrames += toFrames(source.sourceEnd - source.sourceStart, fps)
+      }
+
+      const placement: TimelineTitlePlacement = {
+        ...title,
+        timelineOffsetSec: framesToSeconds(offsetFrames, fps),
+      }
+      titlePlacements.push(placement)
+      items.push({ kind: "title", title: placement })
+      offsetFrames += toFrames(title.durationSec, fps)
+      sourceStart = Math.max(sourceStart, title.scriptStart)
+    }
+
+    if (sourceStart < run.sourceEnd) {
+      const source = {
+        file: run.file,
+        sourceStart,
+        sourceEnd: run.sourceEnd,
+      }
+      const sourceIndex = sourceRuns.push(source) - 1
+      items.push({ kind: "source", run: source, sourceIndex })
+      offsetFrames += toFrames(source.sourceEnd - source.sourceStart, fps)
+    }
+  }
+
+  return {
+    items,
+    sourceRuns,
+    titlePlacements,
+    skippedTitles: skipped,
+    sourceDurationSec: runs.reduce(
+      (total, run) => total + (run.sourceEnd - run.sourceStart),
+      0
+    ),
+    timelineDurationSec: framesToSeconds(offsetFrames, fps),
+  }
 }
 
 /**
@@ -203,9 +344,14 @@ export function placeOverlays(
     let remaining = scene.durationSec
     let sourceOffset = 0
 
-    for (let runIndex = startIndex; runIndex < runs.length && remaining > 0; runIndex++) {
+    for (
+      let runIndex = startIndex;
+      runIndex < runs.length && remaining > 0;
+      runIndex++
+    ) {
       const run = runs[runIndex]
-      const runOffset = runIndex === startIndex ? scene.scriptStart : run.sourceStart
+      const runOffset =
+        runIndex === startIndex ? scene.scriptStart : run.sourceStart
       const available = run.sourceEnd - runOffset
       if (available <= 0) continue
 
@@ -254,17 +400,19 @@ export function buildFcpxml(
   project: StoredProject,
   runs: TimelineRun[],
   scenes: OverlayScene[] = [],
-  whiteBacking: WhiteBacking | null = null
+  whiteBacking: WhiteBacking | null = null,
+  titleInsertions: TimelineTitleInsertion[] = []
 ): string {
   const fps = project.fps
+  const layout = buildTimelineLayout(runs, titleInsertions, fps)
   const byPath = new Map(project.media.map((file) => [file.path, file]))
 
-  const files = [...new Set(runs.map((run) => run.file))]
+  const files = [...new Set(layout.sourceRuns.map((run) => run.file))]
   const assetIds = new Map(
     files.map((file, index) => [file, `asset-${index + 1}`])
   )
 
-  const { placed } = placeOverlays(runs, scenes)
+  const { placed } = placeOverlays(layout.sourceRuns, scenes)
   const overlaysByRun = new Map<number, OverlayFragment[]>()
   for (const fragment of placed) {
     const forRun = overlaysByRun.get(fragment.runIndex) ?? []
@@ -276,6 +424,9 @@ export function buildFcpxml(
   const placedScenes = scenes.filter((scene) => placedSceneIds.has(scene.id))
   const overlayAssetIds = new Map(
     placedScenes.map((scene) => [scene.id, `scene-asset-${scene.id}`])
+  )
+  const titleAssetIds = new Map(
+    layout.titlePlacements.map((title) => [title.id, `title-asset-${title.id}`])
   )
 
   // Only worth an <asset> if there's at least one fragment to back.
@@ -289,6 +440,9 @@ export function buildFcpxml(
     ...placedScenes.map((scene) =>
       sceneAssetXml(scene, project, overlayAssetIds.get(scene.id)!)
     ),
+    ...layout.titlePlacements.map((title) =>
+      titleAssetXml(title, project, titleAssetIds.get(title.id)!)
+    ),
     ...(backing ? [whiteBackingAssetXml(backing, project)] : []),
   ].join("\n    ")
 
@@ -301,14 +455,29 @@ export function buildFcpxml(
   // durations before it, so the spine has no gap or overlap however long it
   // gets. Summing floats and rounding each offset separately drifts by a frame.
   let offsetFrames = 0
-  const clips = runs
-    .map((run, index) => {
+  const clips = layout.items
+    .map((item) => {
+      if (item.kind === "title") {
+        const durationFrames = toFrames(item.title.durationSec, fps)
+        const clip = clipXml({
+          ref: titleAssetIds.get(item.title.id)!,
+          name: item.title.id,
+          offset: framesToRational(offsetFrames, fps),
+          start: "0s",
+          duration: framesToRational(durationFrames, fps),
+        })
+        offsetFrames += durationFrames
+        return clip
+      }
+
+      const run = item.run
       const durationFrames = toFrames(run.sourceEnd - run.sourceStart, fps)
-      const children = (overlaysByRun.get(index) ?? [])
+      const children = (overlaysByRun.get(item.sourceIndex) ?? [])
         .flatMap((fragment) => {
           const part = (partNumber.get(fragment.sceneId) ?? 0) + 1
           partNumber.set(fragment.sceneId, part)
-          const name = part === 1 ? fragment.sceneId : `${fragment.sceneId} (${part})`
+          const name =
+            part === 1 ? fragment.sceneId : `${fragment.sceneId} (${part})`
           const offset = secondsToRational(fragment.runOffset, fps)
           const duration = secondsToRational(fragment.durationSec, fps)
 
@@ -434,6 +603,25 @@ function sceneAssetXml(
   const name = esc(`${overlay.id} overlay`)
   const src = esc(fileUrl(project.path, overlay.exportPath))
   const duration = secondsToRational(overlay.durationSec, project.fps)
+
+  return (
+    `<asset id="${id}" name="${name}" ` +
+    `hasAudio="0" hasVideo="1" ` +
+    `format="format-1" duration="${duration}" start="0s">\n` +
+    `      <media-rep kind="original-media" src="${src}"/>\n` +
+    `    </asset>`
+  )
+}
+
+/** The rendered title card is a primary-storyline, video-only asset. */
+function titleAssetXml(
+  title: TimelineTitleInsertion,
+  project: StoredProject,
+  id: string
+): string {
+  const name = esc(`${title.id} title`)
+  const src = esc(fileUrl(project.path, title.exportPath))
+  const duration = secondsToRational(title.durationSec, project.fps)
 
   return (
     `<asset id="${id}" name="${name}" ` +

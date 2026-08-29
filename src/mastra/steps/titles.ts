@@ -20,6 +20,8 @@ import {
   exportsDir,
   titleExportPath,
   titleHtmlPath,
+  titleElementExportPath,
+  titleElementHtmlPath,
   titlesDir,
   toRelative,
 } from "../lib/paths"
@@ -40,16 +42,78 @@ export const titlesStep = createStep({
     return runStep(report, async () => {
       const project = await readStoredProject(projectPath)
       const pending = project.titleAnnotations.filter(
-        (annotation) => annotation.status === "approved" && annotation.exportPath === null
+        (annotation) =>
+          annotation.status === "approved" && annotation.exportPath === null
+      )
+      const pendingPlanTitles = project.editingDocument.elements.filter(
+        (element) =>
+          element.type === "title" &&
+          element.source === "automatic" &&
+          element.status === "approved" &&
+          element.titleText &&
+          element.exportPath == null
       )
 
-      if (pending.length === 0) {
+      if (pending.length === 0 && pendingPlanTitles.length === 0) {
         await report.log("No approved title annotations to render")
         return { projectPath }
       }
 
       await fs.mkdir(titlesDir(projectPath), { recursive: true })
       await fs.mkdir(exportsDir(projectPath), { recursive: true })
+
+      for (const [index, element] of pendingPlanTitles.entries()) {
+        await report.progress(
+          (pending.length + index) /
+            Math.max(1, pending.length + pendingPlanTitles.length),
+          element.id
+        )
+
+        const html = renderTitleHtml(element.titleText!, project.styleGuide)
+        const htmlOutput = titleElementHtmlPath(projectPath, element.id)
+        const exportOutput = titleElementExportPath(projectPath, element.id)
+
+        try {
+          await fs.writeFile(htmlOutput, html, "utf8")
+          await exportScene(html, {
+            fps: project.fps,
+            durationSec: TITLE_DURATION_SEC,
+            outputPath: exportOutput,
+          })
+
+          const htmlPath = toRelative(projectPath, htmlOutput)
+          const exportPath = toRelative(projectPath, exportOutput)
+          await updateProject(projectPath, (current) => ({
+            ...current,
+            editingDocument: {
+              ...current.editingDocument,
+              elements: current.editingDocument.elements.map((candidate) =>
+                candidate.id === element.id &&
+                candidate.status === "approved" &&
+                candidate.titleText === element.titleText
+                  ? {
+                      ...candidate,
+                      htmlPath,
+                      exportPath,
+                      composed: false,
+                      timelineOffsetSec: null,
+                      timelineDurationSec: TITLE_DURATION_SEC,
+                    }
+                  : candidate
+              ),
+            },
+          }))
+
+          await report.log(`${element.id} → ${exportPath}`)
+        } catch (error) {
+          const reason = message(error)
+          await report.emit("failure", {
+            step: "titles",
+            message: `${element.id}: ${reason}`,
+            fatal: false,
+          })
+        }
+      }
 
       for (const [index, annotation] of pending.entries()) {
         await report.progress(index / pending.length, annotation.id)

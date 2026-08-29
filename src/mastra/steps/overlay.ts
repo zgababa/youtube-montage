@@ -23,7 +23,7 @@ import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
 import { buildCompositeOverlays } from "../lib/composite"
-import { buildFcpxml, placeOverlays } from "../lib/fcpxml"
+import { buildFcpxml, buildTimelineLayout, placeOverlays } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
 import { ensureWhiteBacking } from "../lib/white-backing"
@@ -83,8 +83,9 @@ export const overlayStep = createStep({
 
 /** Rebuilds the runs, recomposits the exported scenes and titles, and rewrites `timeline.fcpxml`. */
 async function writeComposite(project: StoredProject) {
-  const { runs, overlays } = buildCompositeOverlays(project)
-  const { placed, skipped } = placeOverlays(runs, overlays)
+  const { runs, overlays, titleInsertions } = buildCompositeOverlays(project)
+  const { placed, skipped: skippedOverlays } = placeOverlays(runs, overlays)
+  const layout = buildTimelineLayout(runs, titleInsertions, project.fps)
 
   // Only encoded when there's actually something to back — a project with
   // scenes rejected outright never needs the clip at all.
@@ -97,14 +98,57 @@ async function writeComposite(project: StoredProject) {
         )
       : null
 
-  const xml = buildFcpxml(project, runs, overlays, whiteBacking)
+  const xml = buildFcpxml(
+    project,
+    runs,
+    overlays,
+    whiteBacking,
+    titleInsertions
+  )
   const file = fcpxmlPath(project.path)
   await fs.writeFile(file, xml, "utf8")
+
+  const titlePlacements = new Map(
+    layout.titlePlacements.map((title) => [title.id, title])
+  )
+  await updateProject(project.path, (current) => ({
+    ...current,
+    editingDocument: {
+      ...current.editingDocument,
+      elements: current.editingDocument.elements.map((element) => {
+        if (
+          element.type !== "title" ||
+          element.source === "manual" ||
+          element.exportPath == null
+        ) {
+          return element
+        }
+        const placement = titlePlacements.get(element.id)
+        if (!placement) {
+          return {
+            ...element,
+            composed: false,
+            timelineOffsetSec: null,
+          }
+        }
+        return {
+          ...element,
+          composed: true,
+          timelineOffsetSec: placement.timelineOffsetSec,
+          timelineDurationSec: placement.durationSec,
+        }
+      }),
+    },
+  }))
 
   // A scene split across a run boundary produces more than one fragment —
   // count distinct scenes, not fragments, so the UI reports "10 scenes"
   // rather than however many pieces they happened to break into.
   const placedCount = new Set(placed.map((fragment) => fragment.sceneId)).size
 
-  return { path: file, placedCount, skipped }
+  return {
+    path: file,
+    placedCount,
+    skipped: [...skippedOverlays, ...layout.skippedTitles],
+  }
 }

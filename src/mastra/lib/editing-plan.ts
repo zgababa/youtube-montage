@@ -1,5 +1,6 @@
 import { z } from "zod"
 
+import { shortTitleText } from "./titles"
 import type {
   EditingDocument,
   EditingPlanElement,
@@ -150,7 +151,11 @@ export function applyEditingPlanDecisions(
 
     const next = { ...element }
     if (decision.action === "approve") next.status = "approved"
-    if (decision.action === "reject") next.status = "rejected"
+    if (decision.action === "reject") {
+      next.status = "rejected"
+      clearTitleRender(next)
+    }
+    let titleChanged = false
     for (const key of [
       "titleText",
       "reason",
@@ -160,8 +165,16 @@ export function applyEditingPlanDecisions(
       "intent",
     ] as const) {
       const value = decision[key]
-      if (value !== undefined) next[key] = value as never
+      if (value !== undefined) {
+        next[key] = (
+          key === "titleText" && element.source === "automatic"
+            ? shortTitleText(value as string)
+            : value
+        ) as never
+        titleChanged = titleChanged || key === "titleText"
+      }
     }
+    if (titleChanged && element.type === "title") clearTitleRender(next)
     return next
   })
 
@@ -226,6 +239,24 @@ export function applyEditingPlanDecisions(
   }
 
   return { ...current, sections, elements: attached }
+}
+
+function clearTitleRender(element: EditingPlanElement) {
+  if (element.type !== "title") return
+  if (
+    element.htmlPath === undefined &&
+    element.exportPath === undefined &&
+    element.composed === undefined &&
+    element.timelineOffsetSec === undefined &&
+    element.timelineDurationSec === undefined
+  ) {
+    return
+  }
+  element.htmlPath = null
+  element.exportPath = null
+  element.composed = false
+  element.timelineOffsetSec = null
+  delete element.timelineDurationSec
 }
 
 function isProtected(element: EditingPlanElement) {
