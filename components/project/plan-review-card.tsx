@@ -256,53 +256,6 @@ function ElementRow({
           }
         />
       ) : null}
-      {element.type === "zoom" ? (
-        <div className="flex flex-wrap gap-2">
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            Preset
-            <select
-              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
-              defaultValue={element.zoomPreset ?? "medium"}
-              disabled={!active || element.status === "orphaned"}
-              aria-label={`Zoom preset for ${element.id}`}
-              onChange={(event) =>
-                onDecision({
-                  id: element.id,
-                  action: "modify",
-                  zoomPreset: event.target.value as
-                    "subtle" | "medium" | "strong",
-                })
-              }
-            >
-              <option value="subtle">Subtle</option>
-              <option value="medium">Medium</option>
-              <option value="strong">Strong</option>
-            </select>
-          </label>
-          <Input
-            className="w-28"
-            type="number"
-            min={0.5}
-            max={4}
-            step={0.1}
-            defaultValue={element.zoomDurationSec ?? 2}
-            disabled={!active || element.status === "orphaned"}
-            aria-label={`Zoom duration for ${element.id}`}
-            onBlur={(event) => {
-              const raw = Number(event.target.value)
-              if (!Number.isFinite(raw)) return
-              const value = Math.min(4, Math.max(0.5, raw))
-              if (value !== element.zoomDurationSec) {
-                onDecision({
-                  id: element.id,
-                  action: "modify",
-                  zoomDurationSec: value,
-                })
-              }
-            }}
-          />
-        </div>
-      ) : null}
       {element.type === "scene" && element.intent ? (
         <p className="text-xs text-muted-foreground">{element.intent}</p>
       ) : null}

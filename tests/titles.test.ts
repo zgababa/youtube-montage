@@ -152,17 +152,19 @@ describe("renderTitleHtml", () => {
     notes: "",
   }
 
-  test("is a static template carrying the chosen copy, verbatim", () => {
+  test("is a dynamic template carrying the chosen copy, verbatim", () => {
     const html = renderTitleHtml("The agents", styleGuide)
 
     expect(html).toContain("The agents")
     expect(html).toContain(styleGuide.fontStack)
-    expect(html).toContain(styleGuide.palette[0])
+    expect(html).toContain("transparent")
   })
 
-  test("has no animation — a title screen holds, it doesn't move", () => {
-    const html = renderTitleHtml("Static", styleGuide)
-    expect(html).not.toMatch(/@keyframes|animation\s*:/i)
+  test("has CSS animations for entrance — fade-in and slide-up", () => {
+    const html = renderTitleHtml("Animated", styleGuide)
+    expect(html).toMatch(/@keyframes/)
+    expect(html).toMatch(/animation\s*:/)
+    expect(html).toContain("cubic-bezier")
   })
 
   test("escapes the copy so a stray '<' can't break the template", () => {

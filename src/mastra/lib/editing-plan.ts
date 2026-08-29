@@ -2,7 +2,6 @@ import { z } from "zod"
 
 import type { Segment } from "./segments"
 import { keptSegments } from "./segments"
-import { shortTitleText } from "./titles"
 import type {
   EditingDocument,
   EditingPlanElement,
@@ -12,6 +11,7 @@ import type {
   SceneType,
   Span,
   StoredScene,
+  TransitionType,
   ZoomPreset,
 } from "../schemas"
 
@@ -28,8 +28,27 @@ export const EditingPlanDecisionSchema = z.object({
   reason: z.string().optional(),
   zoomPreset: z.enum(["subtle", "medium", "strong"]).optional(),
   zoomDurationSec: z.number().positive().optional(),
+  zoomPosition: z
+    .enum([
+      "center",
+      "top",
+      "bottom",
+      "left",
+      "right",
+      "top-left",
+      "top-right",
+      "bottom-left",
+      "bottom-right",
+    ])
+    .optional(),
   coversLine: z.string().optional(),
   intent: z.string().optional(),
+  transitionType: z
+    .enum(["crossfade", "zoom-punch", "dip-to-black"])
+    .optional(),
+  lowerThirdName: z.string().optional(),
+  lowerThirdRole: z.string().optional(),
+  titlePosition: z.enum(["center", "lower-third"]).optional(),
 })
 
 export type EditingPlanDecision = z.infer<typeof EditingPlanDecisionSchema>
@@ -217,6 +236,33 @@ export function createScenePlanElement(
     ...basePlanElement("scene", input),
     sceneType: input.sceneType,
     intent: input.intent,
+  }
+}
+
+export function createTransitionPlanElement(
+  input: CreatePlanElementInput & {
+    transitionType: TransitionType
+  }
+): EditingPlanElement {
+  return {
+    ...basePlanElement("transition", input),
+    transitionType: input.transitionType,
+  }
+}
+
+export function createLowerThirdPlanElement(
+  input: CreatePlanElementInput & {
+    lowerThirdName: string
+    lowerThirdRole?: string
+  }
+): EditingPlanElement {
+  return {
+    ...basePlanElement("lower-third", input),
+    lowerThirdName: input.lowerThirdName,
+    lowerThirdRole: input.lowerThirdRole,
+    titleText: input.lowerThirdRole
+      ? `${input.lowerThirdName} | ${input.lowerThirdRole}`
+      : input.lowerThirdName,
   }
 }
 
@@ -458,30 +504,23 @@ export function applyEditingPlanDecisions(
 
     const next = { ...element }
     if (decision.action === "approve") next.status = "approved"
-    if (decision.action === "reject") {
-      next.status = "rejected"
-      clearTitleRender(next)
-    }
-    let titleChanged = false
+    if (decision.action === "reject") next.status = "rejected"
     for (const key of [
       "titleText",
       "reason",
       "zoomPreset",
       "zoomDurationSec",
+      "zoomPosition",
       "coversLine",
       "intent",
+      "transitionType",
+      "lowerThirdName",
+      "lowerThirdRole",
+      "titlePosition",
     ] as const) {
       const value = decision[key]
-      if (value !== undefined) {
-        next[key] = (
-          key === "titleText" && element.source === "automatic"
-            ? shortTitleText(value as string)
-            : value
-        ) as never
-        titleChanged = titleChanged || key === "titleText"
-      }
+      if (value !== undefined) next[key] = value as never
     }
-    if (titleChanged && element.type === "title") clearTitleRender(next)
     return next
   })
 
@@ -548,24 +587,6 @@ export function applyEditingPlanDecisions(
   return { ...current, sections, elements: attached }
 }
 
-function clearTitleRender(element: EditingPlanElement) {
-  if (element.type !== "title") return
-  if (
-    element.htmlPath === undefined &&
-    element.exportPath === undefined &&
-    element.composed === undefined &&
-    element.timelineOffsetSec === undefined &&
-    element.timelineDurationSec === undefined
-  ) {
-    return
-  }
-  element.htmlPath = null
-  element.exportPath = null
-  element.composed = false
-  element.timelineOffsetSec = null
-  delete element.timelineDurationSec
-}
-
 function isProtected(element: EditingPlanElement) {
   return element.source !== "automatic" || element.status === "approved"
 }
@@ -574,9 +595,7 @@ function orphanIfNeeded(
   element: EditingPlanElement,
   keptSegmentIndexes: Set<number>
 ): EditingPlanElement {
-  if (element.status === "orphaned") return element
-
-  if (element.source === "automatic" && element.status !== "approved") {
+  if (element.source === "automatic" || element.status === "orphaned") {
     return element
   }
 
@@ -615,12 +634,19 @@ function isActive(element: EditingPlanElement) {
   return !["rejected", "conflict", "orphaned"].includes(element.status)
 }
 
-/** Zoom and B-roll can coexist; titles and duplicate types cannot. */
+/** Zoom and B-roll can coexist; titles, lower-thirds, and duplicate types cannot. */
 function incompatible(a: EditingPlanElement, b: EditingPlanElement) {
   if (!rangesOverlap(a, b)) return false
   if (a.type === "zoom" && b.type === "scene") return false
   if (a.type === "scene" && b.type === "zoom") return false
-  return a.type === b.type || a.type === "title" || b.type === "title"
+  if (a.type === "transition" || b.type === "transition") return false
+  return (
+    a.type === b.type ||
+    a.type === "title" ||
+    b.type === "title" ||
+    a.type === "lower-third" ||
+    b.type === "lower-third"
+  )
 }
 
 function byAnchor(a: EditingPlanElement, b: EditingPlanElement) {

@@ -21,17 +21,18 @@ import {
   exportsDir,
   titleExportPath,
   titleHtmlPath,
-  titleElementExportPath,
-  titleElementHtmlPath,
   titlesDir,
   toRelative,
 } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
 import { exportScene } from "../lib/render"
-import { TITLE_DURATION_SEC, renderTitleHtml } from "../lib/titles"
+import {
+  TITLE_DURATION_SEC,
+  renderTitleHtml,
+  type TitlePosition,
+} from "../lib/titles"
 import type { PipelineWriter } from "../stream/contract"
 import { message, reporter, runStep } from "./shared"
-
 export async function exportApprovedTitles(
   projectPath: string,
   writer: PipelineWriter | undefined
@@ -42,13 +43,13 @@ export async function exportApprovedTitles(
     const project = await readStoredProject(projectPath)
     const pending = project.editingDocument.elements.filter(
       (element) =>
-        element.type === "title" &&
+        (element.type === "title" || element.type === "lower-third") &&
         element.status === "approved" &&
         element.exportPath == null
     )
 
     if (pending.length === 0) {
-      await report.log("No approved TITRE elements to render")
+      await report.log("No approved TITRE/LOWER-THIRD elements to render")
       return { projectPath }
     }
 
@@ -58,15 +59,26 @@ export async function exportApprovedTitles(
     for (const [index, element] of pending.entries()) {
       await report.progress(index / pending.length, element.id)
 
-      const html = renderTitleHtml(element.titleText ?? "", project.styleGuide)
-      const htmlOutput = titleElementHtmlPath(projectPath, element.id)
-      const exportOutput = titleElementExportPath(projectPath, element.id)
+      const position: TitlePosition =
+        element.type === "lower-third"
+          ? "lower-third"
+          : element.titlePosition ?? "center"
+      const durationSec =
+        element.type === "lower-third" ? 4 : TITLE_DURATION_SEC
+
+      const html = renderTitleHtml(
+        element.titleText ?? "",
+        project.styleGuide,
+        position
+      )
+      const htmlOutput = titleHtmlPath(projectPath, element.id)
+      const exportOutput = titleExportPath(projectPath, element.id)
 
       try {
         await fs.writeFile(htmlOutput, html, "utf8")
         await exportScene(html, {
           fps: project.fps,
-          durationSec: TITLE_DURATION_SEC,
+          durationSec,
           outputPath: exportOutput,
         })
 

@@ -11,9 +11,9 @@
  * doesn't contain.
  */
 
-import { type OverlayScene, type TimelineTitleInsertion } from "./fcpxml"
-import { buildSegments, keptSegments } from "./segments"
-import { composableTitleOverlays, TITLE_DURATION_SEC } from "./titles"
+import type { OverlayScene } from "./fcpxml"
+import { buildSegments } from "./segments"
+import { composableTitleOverlays } from "./titles"
 import { buildKeptRuns, type TimelineRun } from "./timeline"
 import type { StoredProject } from "../schemas"
 
@@ -33,7 +33,6 @@ export const MIN_SCENE_HOLD_SEC = 4
 export interface CompositeOverlays {
   runs: TimelineRun[]
   overlays: OverlayScene[]
-  titleInsertions: TimelineTitleInsertion[]
 }
 
 /** The kept runs, plus every scene and TITRE annotation ready to composite. */
@@ -41,7 +40,6 @@ export function buildCompositeOverlays(
   project: StoredProject
 ): CompositeOverlays {
   const segments = buildSegments(project.transcript.words)
-  const kept = keptSegments(segments, project.spans)
   const runs = buildKeptRuns(
     segments,
     project.spans,
@@ -69,32 +67,5 @@ export function buildCompositeOverlays(
     ...composableTitleOverlays(project.editingDocument.elements, segments),
   ]
 
-  const bySegmentIndex = new Map(
-    kept.map((segment) => [segment.index, segment])
-  )
-  const titleInsertions = project.editingDocument.elements.flatMap(
-    (element) => {
-      if (
-        element.type !== "title" ||
-        element.source === "manual" ||
-        element.status !== "approved" ||
-        !element.exportPath
-      ) {
-        return []
-      }
-      const anchor = bySegmentIndex.get(element.fromSegment)
-      if (!anchor) return []
-      return [
-        {
-          id: element.id,
-          sourceFile: anchor.file,
-          scriptStart: anchor.start,
-          durationSec: TITLE_DURATION_SEC,
-          exportPath: element.exportPath,
-        },
-      ]
-    }
-  )
-
-  return { runs, overlays, titleInsertions }
+  return { runs, overlays }
 }

@@ -17,16 +17,19 @@ describe("normalizeZoomSettings", () => {
       preset: "subtle",
       durationSec: 1.5,
       scale: 1.08,
+      position: "center",
     })
     expect(normalizeZoomSettings("medium", 2)).toEqual({
       preset: "medium",
       durationSec: 2,
       scale: 1.15,
+      position: "center",
     })
     expect(normalizeZoomSettings("strong", 3)).toEqual({
       preset: "strong",
       durationSec: 3,
       scale: 1.25,
+      position: "center",
     })
   })
 
@@ -130,6 +133,7 @@ describe("placeZooms", () => {
         preset: "medium",
         durationSec: 8,
         scale: 1.15,
+        position: "center",
       },
     ])
 

@@ -47,14 +47,12 @@ export function EditingDocumentCard({
   onSaveEditingDocument,
   timeline,
   composite,
-  disabled,
   onUpdateTimeline,
 }: {
   project: Project
   onSaveEditingDocument: (editingDocument: EditingDocument) => void
   timeline: PipelineDataParts["fcpxml"] | null
   composite: PipelineDataParts["composite"] | null
-  disabled: boolean
   onUpdateTimeline: (maxSilenceSec: number) => Promise<void>
 }) {
   const document = React.useMemo(() => buildEditingDocument(project), [
@@ -106,7 +104,6 @@ export function EditingDocumentCard({
             project={project}
             timeline={timeline}
             composite={composite}
-            disabled={disabled}
             onUpdate={onUpdateTimeline}
           />
           {picker.picking ? (

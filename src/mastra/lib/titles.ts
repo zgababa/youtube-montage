@@ -18,8 +18,7 @@
 
 import { esc, type OverlayScene } from "./fcpxml"
 import type { Segment } from "./segments"
-import { keptSegments } from "./segments"
-import type { EditingPlanElement, Span, StyleGuide, TitleAnnotation } from "../schemas"
+import type { EditingPlanElement, StyleGuide } from "../schemas"
 
 /**
  * Standard title screen duration (issue #7's acceptance criteria). Fixed
@@ -29,153 +28,37 @@ import type { EditingPlanElement, Span, StyleGuide, TitleAnnotation } from "../s
  */
 export const TITLE_DURATION_SEC = 2
 
-/** Automatic title copy stays a label, not a second sentence on screen. */
-export const TITLE_MAX_CHARS = 80
-
-export function shortTitleText(value: string): string {
-  const text = value.trim().replace(/\s+/g, " ")
-  if (text.length <= TITLE_MAX_CHARS) return text
-
-  const shortened = text.slice(0, TITLE_MAX_CHARS + 1)
-  const boundary = shortened.lastIndexOf(" ")
-  return shortened.slice(0, boundary > 0 ? boundary : TITLE_MAX_CHARS).trim()
-}
-
-/**
- * `globalThis.crypto`, not `node:crypto`.
- *
- * `createTitleAnnotation` runs in the browser — the cleanup review card calls
- * it directly — and importing `node:crypto` here made the bundler substitute
- * `crypto-browserify` (asn1, bignum, the lot) into the client chunk, about a
- * megabyte of polyfill to produce one id. The Web Crypto `randomUUID` is
- * present in every browser this app targets and in Node 19+, so both callers
- * get the same function with nothing bundled.
- */
-function newAnnotationId(): string {
-  return `title_${globalThis.crypto.randomUUID()}`
-}
-
-/* -------------------------------------------------------------------------- */
-/* Creating an annotation                                                     */
-/* -------------------------------------------------------------------------- */
-
-export interface CreateTitleAnnotationInput {
-  segments: Segment[]
-  spans: Span[]
-  segmentIndex: number
-  text: string
-}
-
-/**
- * Anchors a new `TITRE` annotation to a segment of the approved script.
- *
- * Refuses two ways, and refuses without mutating anything: a segment index
- * that doesn't exist, and — the acceptance criterion this exists to
- * enforce — a segment that belongs to a cut span. The refusal never
- * restores that span; it just declines to anchor on top of it.
- */
-export function createTitleAnnotation({
-  segments,
-  spans,
-  segmentIndex,
-  text,
-}: CreateTitleAnnotationInput): TitleAnnotation {
-  const segment = segments.find((candidate) => candidate.index === segmentIndex)
-  if (!segment) {
-    throw new Error(
-      `No segment at index ${segmentIndex} — nothing to anchor the annotation to.`
-    )
-  }
-
-  const kept = keptSegments(segments, spans)
-  if (!kept.some((candidate) => candidate.index === segmentIndex)) {
-    throw new Error(
-      `Segment ${segmentIndex} belongs to a cut span. Restore the span before ` +
-        "annotating it, or pick a target from the approved script."
-    )
-  }
-
-  return {
-    id: newAnnotationId(),
-    segmentIndex,
-    scriptStart: segment.start,
-    scriptEnd: segment.end,
-    sourceFile: segment.file,
-    text,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-    htmlPath: null,
-    exportPath: null,
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/* Reviewing an annotation                                                     */
-/* -------------------------------------------------------------------------- */
-
-export type TitleAnnotationDecision =
-  | { action: "approve" }
-  | { action: "reject" }
-  | { action: "modify"; text: string }
-
-/**
- * Applies a review decision.
- *
- * `modify` only ever edits the text — it never changes `status`, so an
- * edited annotation still needs an explicit accept or reject afterwards.
- * `approve` and `reject` are the only actions that move `status`.
- *
- * Changing the text drops `htmlPath`/`exportPath`. Without that, the copy on
- * screen and the copy in the rendered .mov silently disagree forever: the
- * `titles` step only renders annotations whose `exportPath` is still `null`
- * (`steps/titles.ts`), so an already-rendered title edited afterwards would
- * never be re-rendered and would composite with its old wording. Clearing the
- * paths is what makes "generated with the chosen copy" survive an edit.
- */
-export function decideTitleAnnotation(
-  annotation: TitleAnnotation,
-  decision: TitleAnnotationDecision
-): TitleAnnotation {
-  switch (decision.action) {
-    case "modify":
-      if (decision.text === annotation.text) return annotation
-      return {
-        ...annotation,
-        text: decision.text,
-        htmlPath: null,
-        exportPath: null,
-      }
-
-    case "approve":
-      return { ...annotation, status: "approved" }
-
-    case "reject":
-      return { ...annotation, status: "rejected" }
-  }
-}
-
 /* -------------------------------------------------------------------------- */
 /* Rendering — a deterministic template, not a generated scene                */
 /* -------------------------------------------------------------------------- */
 
 /** Used when the style guide has no palette set yet. */
-const FALLBACK_BACKGROUND = "#0a0a0a"
 const FALLBACK_FOREGROUND = "#f5f5f5"
 
+export type TitlePosition = "center" | "lower-third"
+
 /**
- * The title screen's HTML, static and deterministic.
+ * The title screen's HTML, with CSS animations for dynamic entrance/exit.
  *
- * Unlike a generated B-roll scene, this has no animation and no transparent
- * background: idea.md §5's "no background, no `setTimeout`" rules are for
- * scenes meant to overlay a transparent cutaway, but a title screen is
- * itself the full frame for its two seconds, so it paints an opaque
- * background from the style guide's palette. Authored at the same
- * 1920×1080 viewport `render.ts` expects everything else to be.
+ * Animations use `animation-fill-mode: both` so the frame-stepping exporter
+ * sees the correct state at t=0 and at the last frame. All motion is
+ * CSS-only (no JS timing) — compatible with the Playwright frame-stepper.
+ *
+ * @param position - "center" (default full-screen title) or "lower-third"
+ *   (persistent name/role overlay at bottom-left)
  */
-export function renderTitleHtml(text: string, styleGuide: StyleGuide): string {
-  const background = styleGuide.palette[0] ?? FALLBACK_BACKGROUND
+export function renderTitleHtml(
+  text: string,
+  styleGuide: StyleGuide,
+  position: TitlePosition = "center"
+): string {
   const foreground = styleGuide.palette[1] ?? FALLBACK_FOREGROUND
+  const accent = styleGuide.palette[2] ?? "#FF6B5A"
   const fontStack = styleGuide.fontStack || "system-ui, sans-serif"
+
+  if (position === "lower-third") {
+    return renderLowerThirdHtml(text, styleGuide)
+  }
 
   return `<!doctype html>
 <html>
@@ -186,12 +69,26 @@ export function renderTitleHtml(text: string, styleGuide: StyleGuide): string {
         margin: 0;
         width: 1920px;
         height: 1080px;
-        background: ${background};
+        background: transparent;
       }
       body {
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+      .title-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        animation: containerIn 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .accent-bar {
+        width: 80px;
+        height: 4px;
+        background: ${accent};
+        border-radius: 2px;
+        animation: barIn 500ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
       }
       h1 {
         margin: 0;
@@ -201,11 +98,126 @@ export function renderTitleHtml(text: string, styleGuide: StyleGuide): string {
         font-weight: 700;
         color: ${foreground};
         text-align: center;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
+        text-shadow: 0 2px 40px rgba(0, 0, 0, 0.3);
+        animation: titleIn 600ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
+      }
+      .subtitle {
+        font-family: ${fontStack};
+        font-size: 28px;
+        font-weight: 400;
+        color: ${foreground};
+        opacity: 0.6;
+        text-align: center;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        animation: subtitleIn 500ms cubic-bezier(0.16, 1, 0.3, 1) 400ms both;
+      }
+
+      @keyframes containerIn {
+        from { opacity: 0; transform: translateY(40px) scale(0.96); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes barIn {
+        from { opacity: 0; transform: scaleX(0); }
+        to   { opacity: 1; transform: scaleX(1); }
+      }
+      @keyframes titleIn {
+        from { opacity: 0; transform: translateY(30px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes subtitleIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to   { opacity: 0.6; transform: translateY(0); }
       }
     </style>
   </head>
   <body>
-    <h1>${esc(text)}</h1>
+    <div class="title-container">
+      <div class="accent-bar"></div>
+      <h1>${esc(text)}</h1>
+    </div>
+  </body>
+</html>
+`
+}
+
+/**
+ * Lower-third overlay: a compact name/role card anchored to bottom-left.
+ *
+ * Semi-transparent background with backdrop-filter blur, so the camera
+ * footage shows through. Designed for 3–5s persistent display.
+ */
+function renderLowerThirdHtml(
+  text: string,
+  styleGuide: StyleGuide
+): string {
+  const foreground = styleGuide.palette[1] ?? FALLBACK_FOREGROUND
+  const accent = styleGuide.palette[2] ?? "#FF6B5A"
+  const fontStack = styleGuide.fontStack || "system-ui, sans-serif"
+
+  const parts = text.split("|").map((s) => s.trim())
+  const name = parts[0] ?? text
+  const role = parts[1] ?? ""
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        background: transparent;
+      }
+      body {
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-start;
+        padding: 0 0 120px 100px;
+      }
+      .lower-third {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 20px 32px;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-left: 4px solid ${accent};
+        border-radius: 0 8px 8px 0;
+        animation: slideIn 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .name {
+        font-family: ${fontStack};
+        font-size: 36px;
+        font-weight: 700;
+        color: ${foreground};
+        letter-spacing: -0.01em;
+        line-height: 1.2;
+      }
+      .role {
+        font-family: ${fontStack};
+        font-size: 20px;
+        font-weight: 400;
+        color: ${foreground};
+        opacity: 0.7;
+        letter-spacing: 0.02em;
+      }
+
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateX(-40px); }
+        to   { opacity: 1; transform: translateX(0); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lower-third">
+      <div class="name">${esc(name)}</div>
+      ${role ? `<div class="role">${esc(role)}</div>` : ""}
+    </div>
   </body>
 </html>
 `
@@ -242,12 +254,15 @@ export function titleElementToOverlayScene(
     )
   }
 
+  const isLowerThird = element.type === "lower-third"
+  const durationSec = isLowerThird ? 4 : TITLE_DURATION_SEC
+
   return {
     id: element.id,
     planElementId: element.id,
     sourceFile: segment.file,
     scriptStart: segment.start,
-    durationSec: TITLE_DURATION_SEC,
+    durationSec,
     exportPath: element.exportPath,
   }
 }
@@ -268,7 +283,7 @@ export function composableTitleOverlays(
   return elements
     .filter(
       (element) =>
-        element.type === "title" &&
+        (element.type === "title" || element.type === "lower-third") &&
         element.status === "approved" &&
         element.exportPath != null
     )
