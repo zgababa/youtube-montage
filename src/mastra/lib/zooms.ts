@@ -78,7 +78,8 @@ export function approvedZoomWindows(
       element.zoomDurationSec
     )
     const scriptStart = from.start
-    const scriptEnd = Math.min(to.end, scriptStart + settings.durationSec)
+    const desiredEnd = scriptStart + settings.durationSec
+    const scriptEnd = Math.min(to.end, desiredEnd)
     if (scriptEnd <= scriptStart) {
       conflicts.add(element.id)
       continue
@@ -92,6 +93,7 @@ export function approvedZoomWindows(
       scriptStart,
       scriptEnd,
       ...settings,
+      durationSec: scriptEnd - scriptStart,
     }
 
     if (

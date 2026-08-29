@@ -284,8 +284,10 @@ function ElementRow({
             disabled={!active || element.status === "orphaned"}
             aria-label={`Zoom duration for ${element.id}`}
             onBlur={(event) => {
-              const value = Number(event.target.value)
-              if (Number.isFinite(value) && value !== element.zoomDurationSec) {
+              const raw = Number(event.target.value)
+              if (!Number.isFinite(raw)) return
+              const value = Math.min(4, Math.max(0.5, raw))
+              if (value !== element.zoomDurationSec) {
                 onDecision({
                   id: element.id,
                   action: "modify",
