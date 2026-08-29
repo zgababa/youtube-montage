@@ -54,7 +54,12 @@ export function SceneFrame({
 
   const srcDoc = React.useMemo(() => withSceneController(html), [html])
 
-  React.useEffect(() => {
+  // Layout, not passive: a plain effect measures after the browser has
+  // already painted, so a tile that mounts full-width (expanding into
+  // `SceneRow`) can catch a stale pre-reflow width and sit hidden until
+  // some later render happens to re-measure it — which is what made the
+  // preview need a couple of extra clicks before it appeared.
+  React.useLayoutEffect(() => {
     const container = containerRef.current
     if (!container) return
 
@@ -104,10 +109,13 @@ export function SceneFrame({
       )}
     >
       {/*
-       * `zoom` rather than `transform: scale()`. Both fit a 1920x1080 document
-       * into the card, but a scaled iframe is composited at its pre-transform
-       * size — several 1920x1080 layers at once is enough to stall the
-       * compositor. `zoom` rasterizes at the displayed size instead.
+       * `transform: scale()`, not `zoom`. `zoom` rasterizes an iframe at its
+       * displayed size instead of compositing a pre-transform layer, which is
+       * cheaper — but its scaling origin on a replaced, absolutely-positioned
+       * element isn't consistent across engines, and that inconsistency is
+       * what let a preview crop or shift instead of showing the whole canvas.
+       * `transform-origin: top left` pins the origin explicitly, so what's
+       * fitted is always the whole 1920x1080 document.
        */}
       <iframe
         ref={frameRef}
@@ -119,7 +127,8 @@ export function SceneFrame({
         scrolling="no"
         className="absolute top-0 left-0 border-0"
         style={{
-          zoom: scale,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
           visibility: scale > 0 ? "visible" : "hidden",
           backgroundColor: "transparent",
         }}

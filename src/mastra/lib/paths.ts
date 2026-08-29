@@ -58,6 +58,16 @@ export function sceneExportPath(projectPath: string, sceneId: string) {
   return path.join(exportsDir(projectPath), `${sceneId}.mov`)
 }
 
+/**
+ * A plain white clip the composite gate backs scene overlays with
+ * (`white-backing.ts`) — one file, sliced to whatever length each fragment
+ * needs. Underscore-prefixed so it never collides with a `scene_NN.mov` and
+ * reads as generated rather than as a scene.
+ */
+export function whiteBackingPath(projectPath: string) {
+  return path.join(exportsDir(projectPath), "_white-backing.mov")
+}
+
 export function shotlistPath(projectPath: string) {
   return path.join(projectPath, "shotlist.txt")
 }

@@ -227,6 +227,8 @@ export const StoredProjectSchema = z.object({
   maxSilenceSec: z.number().positive().default(0.3),
   /** Nullable *and* defaulted: a project.json from before this field existed has neither. */
   timelineApprovedAt: z.string().nullable().default(null),
+  /** Same reasoning as `timelineApprovedAt`, for the composite gate (`overlay.ts`). */
+  compositeApprovedAt: z.string().nullable().default(null),
   styleGuide: StyleGuideSchema,
   scenes: z.array(SceneSchema),
   copy: ProjectCopySchema.nullable(),

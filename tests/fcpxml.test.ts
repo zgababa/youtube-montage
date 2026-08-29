@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 
-import { buildFcpxml, secondsToRational } from "../src/mastra/lib/fcpxml"
+import {
+  buildFcpxml,
+  placeOverlays,
+  secondsToRational,
+  type OverlayScene,
+} from "../src/mastra/lib/fcpxml"
 import type { TimelineRun } from "../src/mastra/lib/timeline"
 import type { MediaFile, StoredProject } from "../src/mastra/schemas"
 
@@ -32,6 +37,7 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
     cleanupApprovedAt: null,
     maxSilenceSec: 0.3,
     timelineApprovedAt: null,
+    compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     scenes: [],
     copy: null,
@@ -174,5 +180,286 @@ describe("buildFcpxml", () => {
     ])
 
     expect(xml).toContain('<fcpxml version="1.9">')
+  })
+})
+
+function overlay(overrides: Partial<OverlayScene> = {}): OverlayScene {
+  return {
+    id: "scene_01",
+    sourceFile: "raw/01 - a.mp4",
+    scriptStart: 3,
+    durationSec: 2,
+    exportPath: "exports/scene_01.mov",
+    ...overrides,
+  }
+}
+
+describe("placeOverlays", () => {
+  test("places a scene in the run whose source range contains its scriptStart", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/01 - a.mp4", sourceStart: 5, sourceEnd: 10 },
+    ]
+
+    const { placed, skipped } = placeOverlays(runs, [overlay({ scriptStart: 6 })])
+
+    expect(skipped).toEqual([])
+    expect(placed).toHaveLength(1)
+    expect(placed[0].runIndex).toBe(1)
+  })
+
+  test("skips a scene whose scriptStart falls outside every run — content that ended up cut", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
+    ]
+
+    const { placed, skipped } = placeOverlays(runs, [overlay({ scriptStart: 50 })])
+
+    expect(placed).toEqual([])
+    expect(skipped).toEqual(["scene_01"])
+  })
+
+  test("skips a scene on a different source file even if the timecodes overlap", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const { placed, skipped } = placeOverlays(runs, [
+      overlay({ sourceFile: "raw/02 - b.mp4", scriptStart: 3 }),
+    ])
+
+    expect(placed).toEqual([])
+    expect(skipped).toEqual(["scene_01"])
+  })
+
+  test("carries a scene into the next run instead of clipping it at the run boundary", () => {
+    // The exact shape a trimmed natural pause produces: two runs of the same
+    // file, spine-adjacent, that aren't one run only because the gap between
+    // them was long enough to trim (buildKeptRuns). A scene generated to fill
+    // a 6s window here must not lose its last 3s just because the pause in
+    // the middle became a run boundary.
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 10, sourceEnd: 15 },
+    ]
+
+    const { placed, skipped } = placeOverlays(runs, [
+      overlay({ scriptStart: 4, durationSec: 6 }),
+    ])
+
+    expect(skipped).toEqual([])
+    expect(placed).toHaveLength(2)
+
+    // First fragment: 1s left in run 0 past scriptStart=4, from the start of
+    // the overlay's own clip.
+    expect(placed[0]).toMatchObject({
+      runIndex: 0,
+      runOffset: 4,
+      sourceOffset: 0,
+      durationSec: 1,
+    })
+    // Second fragment: the remaining 5s, continuing from 1s into the
+    // overlay's own clip, at the very start of run 1.
+    expect(placed[1]).toMatchObject({
+      runIndex: 1,
+      runOffset: 10,
+      sourceOffset: 1,
+      durationSec: 5,
+    })
+  })
+
+  test("truncates the last fragment rather than dropping the scene when the kept footage runs out", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+    ]
+
+    const { placed } = placeOverlays(runs, [
+      overlay({ scriptStart: 4, durationSec: 10 }),
+    ])
+
+    expect(placed).toHaveLength(1)
+    // Only 1s left in the only run past scriptStart=4.
+    expect(placed[0].durationSec).toBe(1)
+  })
+})
+
+describe("buildFcpxml with scene overlays", () => {
+  test("nests a connected clip inside the run it was placed in, on lane 1", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/01 - a.mp4", sourceStart: 5, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [overlay({ scriptStart: 6 })])
+
+    // The connected clip's offset is scriptStart itself, in the same
+    // coordinate system as the parent's own `start` — not translated. Its
+    // own `start` is 0s: this is the scene's first (and only) fragment.
+    const connected = xml.match(/<asset-clip[^>]*lane="1"[^>]*\/>/)
+    expect(connected?.[0]).toContain(`offset="${secondsToRational(6, 30)}"`)
+    expect(connected?.[0]).toContain('start="0s"')
+
+    // Nested inside the second run's clip (start=5s), not the first.
+    const secondRunClip = xml.match(
+      new RegExp(
+        `<asset-clip[^>]*start="${secondsToRational(5, 30).replace(/\//g, "\\/")}"[^>]*>[\\s\\S]*?<\\/asset-clip>`
+      )
+    )
+    expect(secondRunClip?.[0]).toContain('lane="1"')
+  })
+
+  test("writes a video-only asset for the overlay, referencing its exportPath", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(
+      project({ path: "/projects/demo" }),
+      runs,
+      [overlay({ scriptStart: 3, exportPath: "exports/scene_01.mov" })]
+    )
+
+    expect(xml).toContain(
+      '<media-rep kind="original-media" src="file:///projects/demo/exports/scene_01.mov"/>'
+    )
+    const sceneAsset = xml.match(/<asset id="scene-asset-scene_01"[^>]*>/)
+    expect(sceneAsset?.[0]).toContain('hasAudio="0"')
+    expect(sceneAsset?.[0]).toContain('hasVideo="1"')
+  })
+
+  test("a scene split across a run boundary becomes two connected clips, seamlessly continuing", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 10, sourceEnd: 15 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [
+      overlay({ scriptStart: 4, durationSec: 6 }),
+    ])
+
+    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="1"[^>]*\/>/g)].map(
+      (m) => m[0]
+    )
+    expect(connected).toHaveLength(2)
+
+    // Same asset, same scene — just two windows into it.
+    expect(connected[0]).toContain('ref="scene-asset-scene_01"')
+    expect(connected[1]).toContain('ref="scene-asset-scene_01"')
+
+    expect(connected[0]).toContain(`offset="${secondsToRational(4, 30)}"`)
+    expect(connected[0]).toContain('start="0s"')
+    expect(connected[0]).toContain(`duration="${secondsToRational(1, 30)}"`)
+
+    expect(connected[1]).toContain(`offset="${secondsToRational(10, 30)}"`)
+    // Picks up exactly where the first fragment left off.
+    expect(connected[1]).toContain(`start="${secondsToRational(1, 30)}"`)
+    expect(connected[1]).toContain(`duration="${secondsToRational(5, 30)}"`)
+
+    // One asset for the whole scene, not one per fragment.
+    expect(
+      [...xml.matchAll(/<asset id="scene-asset-scene_01"/g)]
+    ).toHaveLength(1)
+  })
+
+  test("a scene that can't be placed doesn't appear in the spine at all", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [overlay({ scriptStart: 50 })])
+
+    expect(xml).not.toContain("lane=")
+    expect(xml).not.toContain("scene-asset-scene_01")
+  })
+})
+
+const WHITE_ASSET_REF = 'ref="asset-white-backing"'
+
+describe("buildFcpxml with a white backing", () => {
+  const backing = { exportPath: "exports/_white-backing.mov", durationSec: 30 }
+
+  test("adds a lane-1 backing clip under the scene, which moves to lane 2", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(
+      project(),
+      runs,
+      [overlay({ scriptStart: 3, durationSec: 4 })],
+      backing
+    )
+
+    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g)].map(
+      (m) => m[0]
+    )
+    expect(connected).toHaveLength(2)
+
+    const white = connected.find((c) => c.includes(WHITE_ASSET_REF))!
+    const scene = connected.find((c) => c.includes('ref="scene-asset-scene_01"'))!
+
+    expect(white).toContain('lane="1"')
+    expect(scene).toContain('lane="2"')
+
+    // Same offset and duration, so the white clip exactly backs the scene.
+    const offset = `offset="${secondsToRational(3, 30)}"`
+    const duration = `duration="${secondsToRational(4, 30)}"`
+    expect(white).toContain(offset)
+    expect(white).toContain(duration)
+    expect(scene).toContain(offset)
+    expect(scene).toContain(duration)
+
+    // The backing clip always plays from its own start — any slice of a
+    // solid colour looks like any other.
+    expect(white).toContain('start="0s"')
+  })
+
+  test("without a backing, the scene alone sits on lane 1 — unchanged from before", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [overlay({ scriptStart: 3 })], null)
+
+    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g)]
+    expect(connected).toHaveLength(1)
+    expect(connected[0][0]).toContain('lane="1"')
+  })
+
+  test("one white clip backs every fragment of a scene split across a run boundary", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 10, sourceEnd: 15 },
+    ]
+
+    const xml = buildFcpxml(
+      project(),
+      runs,
+      [overlay({ scriptStart: 4, durationSec: 6 })],
+      backing
+    )
+
+    expect(
+      [...xml.matchAll(new RegExp(WHITE_ASSET_REF, "g"))]
+    ).toHaveLength(2)
+    // Still exactly one <asset> for the backing clip, referenced twice.
+    expect(
+      [...xml.matchAll(/<asset id="asset-white-backing"/g)]
+    ).toHaveLength(1)
+  })
+
+  test("skips the backing entirely when nothing gets placed", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
+    ]
+
+    const xml = buildFcpxml(
+      project(),
+      runs,
+      [overlay({ scriptStart: 50 })],
+      backing
+    )
+
+    expect(xml).not.toContain("white-backing")
   })
 })

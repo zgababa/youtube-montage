@@ -4,13 +4,20 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Alert02Icon,
   Cancel01Icon,
+  Clock01Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons"
 
-import { SCENE_STATUS_LABELS, sceneStatusVariant, timecode } from "@/lib/format"
+import {
+  SCENE_DECISION_LABELS,
+  SCENE_STATUS_LABELS,
+  sceneStatusVariant,
+  timecode,
+} from "@/lib/format"
 import { overrunsWindow } from "@/lib/project"
 import { useInView } from "@/hooks/use-in-view"
 import type { Scene, SceneDraft } from "@/lib/types"
+import type { SceneDecision } from "@/src/mastra/stream/contract"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,6 +37,12 @@ interface SceneTileProps {
   backdrop: SceneBackdrop
   /** Set only while this scene is being written, and only during a live run. */
   draft?: SceneDraft
+  /**
+   * A decision made but not yet sent. `scene.status` doesn't change until
+   * "Send back" is clicked, so this is the only thing that tells the tile a
+   * regenerate/approve/reject is queued rather than dropped.
+   */
+  decision?: SceneDecision
   query?: string
   onApprove: (id: string) => void
   onReject: (id: string) => void
@@ -52,6 +65,7 @@ export function SceneTile({
   scene,
   backdrop,
   draft,
+  decision,
   query = "",
   onApprove,
   onReject,
@@ -102,6 +116,16 @@ export function SceneTile({
           ) : null}
           {SCENE_STATUS_LABELS[scene.status]}
         </Badge>
+
+        {decision ? (
+          <Badge
+            variant="secondary"
+            className="pointer-events-none absolute top-2 left-2"
+          >
+            <HugeiconsIcon icon={Clock01Icon} strokeWidth={2} />
+            {SCENE_DECISION_LABELS[decision.action]}
+          </Badge>
+        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-3">

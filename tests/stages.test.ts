@@ -38,6 +38,7 @@ function project(over: Partial<Project> = {}): Project {
     cleanupApprovedAt: null,
     maxSilenceSec: 0.3,
     timelineApprovedAt: null,
+    compositeApprovedAt: null,
     scenes: [],
     copy: null,
     styleGuide: { palette: ["#000"], fontStack: "Inter, sans-serif" },
@@ -91,6 +92,7 @@ describe("the stage list", () => {
     const states = stageStates(project(), null)
 
     expect(states.map((state) => state.status)).toEqual([
+      "pending",
       "pending",
       "pending",
       "pending",
