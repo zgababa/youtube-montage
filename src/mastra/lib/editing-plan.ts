@@ -236,7 +236,9 @@ function orphanIfNeeded(
   element: EditingPlanElement,
   keptSegmentIndexes: Set<number>
 ): EditingPlanElement {
-  if (element.source === "automatic" || element.status === "orphaned") {
+  if (element.status === "orphaned") return element
+
+  if (element.source === "automatic" && element.status !== "approved") {
     return element
   }
 

@@ -364,7 +364,8 @@ export function ProjectWorkspace({
     const decisions = project.editingDocument.elements
       .filter(
         (element) =>
-          element.status !== "orphaned" && element.status !== "conflict"
+          element.status !== "orphaned" &&
+          (element.status !== "conflict" || planDecisions[element.id])
       )
       .map((element) => {
         const decision = planDecisions[element.id]
