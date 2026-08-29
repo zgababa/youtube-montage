@@ -7,47 +7,41 @@
  */
 
 import fs from "node:fs/promises"
-import { createStep } from "@mastra/core/workflows"
-import { z } from "zod"
 
 import { shotlistPath } from "../lib/paths"
 import { readStoredProject } from "../lib/project"
 import type { StoredScene } from "../schemas"
-import { PipelineIO, reporter, runStep } from "./shared"
+import type { PipelineWriter } from "../stream/contract"
+import { reporter, runStep } from "./shared"
 
-export const shotlistStep = createStep({
-  id: "shotlist",
-  description: "Write shotlist.txt for the exported scenes",
-  inputSchema: PipelineIO,
-  outputSchema: z.object({
-    exported: z.array(z.string()),
-  }),
-  execute: async ({ inputData, writer }) => {
-    const report = reporter("shotlist", writer)
-    const { projectPath } = inputData
+/** `app/api/pipeline/route.ts` calls this for the "Write shot list" action. */
+export async function writeShotlist(
+  projectPath: string,
+  writer: PipelineWriter | undefined
+) {
+  const report = reporter("shotlist", writer)
 
-    return runStep(report, async () => {
-      const project = await readStoredProject(projectPath)
+  return runStep(report, async () => {
+    const project = await readStoredProject(projectPath)
 
-      const exported = project.scenes
-        .filter((scene) => scene.status === "exported")
-        .sort((a, b) => a.scriptStart - b.scriptStart)
+    const exported = project.scenes
+      .filter((scene) => scene.status === "exported")
+      .sort((a, b) => a.scriptStart - b.scriptStart)
 
-      const text = exported.map(line).join("\n")
-      const file = shotlistPath(projectPath)
-      await fs.writeFile(file, text ? `${text}\n` : "", "utf8")
+    const text = exported.map(line).join("\n")
+    const file = shotlistPath(projectPath)
+    await fs.writeFile(file, text ? `${text}\n` : "", "utf8")
 
-      await report.emit("shotlist", { path: file, text })
-      await report.log(`${exported.length} scenes in the shot list`)
+    await report.emit("shotlist", { path: file, text })
+    await report.log(`${exported.length} scenes in the shot list`)
 
-      return {
-        exported: exported
-          .map((scene) => scene.exportPath)
-          .filter((path): path is string => path !== null),
-      }
-    })
-  },
-})
+    return {
+      exported: exported
+        .map((scene) => scene.exportPath)
+        .filter((path): path is string => path !== null),
+    }
+  })
+}
 
 function line(scene: StoredScene) {
   const duration = (scene.measuredDurationSec ?? scene.windowSec).toFixed(1)

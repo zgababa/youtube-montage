@@ -41,6 +41,36 @@ export interface TranscribeOptions {
   onProgress?: (fraction: number, phase: string) => void
 }
 
+/** AssemblyAI's documented ceiling on `keyterms_prompt`, counted the way they count it. */
+const MAX_KEYTERM_WORDS = 1000
+const MAX_WORDS_PER_PHRASE = 6
+
+/**
+ * Refused at save time rather than at the provider.
+ *
+ * An over-long keyterm list doesn't fail loudly at AssemblyAI — capacity is
+ * documented as approximate and terms past the limit simply stop having an
+ * effect. Saying so when the user saves them is the only place they find out.
+ */
+export function checkTranscriptionHints(hints: TranscriptionHints): string | null {
+  const tooLong = hints.keyterms.find(
+    (term) => term.trim().split(/\s+/).length > MAX_WORDS_PER_PHRASE
+  )
+  if (tooLong) {
+    return `"${tooLong}" is longer than ${MAX_WORDS_PER_PHRASE} words. Keyterms are names and phrases, not sentences — put the context in the description instead.`
+  }
+
+  const words = hints.keyterms.reduce(
+    (total, term) => total + term.trim().split(/\s+/).length,
+    0
+  )
+  if (words > MAX_KEYTERM_WORDS) {
+    return `${words} words across the keyterms, over the ${MAX_KEYTERM_WORDS} limit. Terms past it stop having any effect.`
+  }
+
+  return null
+}
+
 let client: AssemblyAI | undefined
 
 function assembly() {

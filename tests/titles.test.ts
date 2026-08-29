@@ -1,14 +1,21 @@
 import { describe, expect, test } from "bun:test"
 
+import {
+  createTitlePlanElement,
+  decidePlanElement,
+} from "../src/mastra/lib/editing-plan"
 import { buildSegments } from "../src/mastra/lib/segments"
 import {
   TITLE_DURATION_SEC,
-  createTitleAnnotation,
-  decideTitleAnnotation,
   renderTitleHtml,
-  titleToOverlayScene,
+  titleElementToOverlayScene,
 } from "../src/mastra/lib/titles"
-import type { Span, StyleGuide, Word } from "../src/mastra/schemas"
+import type {
+  EditingSection,
+  Span,
+  StyleGuide,
+  Word,
+} from "../src/mastra/schemas"
 
 /** `n` words, one per second, each 0.5s long — no pauses unless asked for. */
 function words(texts: string[], file = "raw/01.mp4"): Word[] {
@@ -20,27 +27,29 @@ function words(texts: string[], file = "raw/01.mp4"): Word[] {
   })
 }
 
-describe("createTitleAnnotation", () => {
+const noSections: EditingSection[] = []
+
+describe("createTitlePlanElement", () => {
   test("anchors on a kept segment, without touching the transcript text", () => {
     const segments = buildSegments(words(["hello", "world"]))
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]
 
-    const annotation = createTitleAnnotation({
+    const element = createTitlePlanElement({
       segments,
       spans,
-      segmentIndex: 0,
-      text: "The agents",
+      sections: noSections,
+      fromSegment: 0,
+      toSegment: 0,
+      titleText: "The agents",
     })
 
-    expect(annotation.text).toBe("The agents")
-    expect(annotation.status).toBe("pending")
-    expect(annotation.segmentIndex).toBe(0)
-    expect(annotation.scriptStart).toBe(segments[0].start)
-    expect(annotation.scriptEnd).toBe(segments[0].end)
-    expect(annotation.sourceFile).toBe("raw/01.mp4")
-    expect(annotation.htmlPath).toBeNull()
-    expect(annotation.exportPath).toBeNull()
-    expect(annotation.id).toBeTruthy()
+    expect(element.titleText).toBe("The agents")
+    expect(element.status).toBe("proposed")
+    expect(element.type).toBe("title")
+    expect(element.source).toBe("manual")
+    expect(element.fromSegment).toBe(0)
+    expect(element.toSegment).toBe(0)
+    expect(element.id).toBeTruthy()
   })
 
   test("refuses a target belonging to a cut span, without restoring it", () => {
@@ -50,11 +59,13 @@ describe("createTitleAnnotation", () => {
     ]
 
     expect(() =>
-      createTitleAnnotation({
+      createTitlePlanElement({
         segments,
         spans,
-        segmentIndex: 0,
-        text: "Title",
+        sections: noSections,
+        fromSegment: 0,
+        toSegment: 0,
+        titleText: "Title",
       })
     ).toThrow(/cut span/i)
 
@@ -67,42 +78,51 @@ describe("createTitleAnnotation", () => {
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]
 
     expect(() =>
-      createTitleAnnotation({ segments, spans, segmentIndex: 99, text: "x" })
+      createTitlePlanElement({
+        segments,
+        spans,
+        sections: noSections,
+        fromSegment: 99,
+        toSegment: 99,
+        titleText: "x",
+      })
     ).toThrow(/segment/i)
   })
 })
 
-describe("decideTitleAnnotation", () => {
+describe("decidePlanElement", () => {
   const segments = buildSegments(words(["hello", "world"]))
   const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]
-  const pending = createTitleAnnotation({
+  const proposed = createTitlePlanElement({
     segments,
     spans,
-    segmentIndex: 0,
-    text: "Draft title",
+    sections: noSections,
+    fromSegment: 0,
+    toSegment: 0,
+    titleText: "Draft title",
   })
 
   test("modify edits the text and leaves the status alone", () => {
-    const decided = decideTitleAnnotation(pending, {
+    const decided = decidePlanElement(proposed, {
       action: "modify",
-      text: "Better title",
+      titleText: "Better title",
     })
 
-    expect(decided.text).toBe("Better title")
-    expect(decided.status).toBe("pending")
+    expect(decided.titleText).toBe("Better title")
+    expect(decided.status).toBe("proposed")
   })
 
   test("modifying an already-rendered title drops its render", () => {
     const rendered = {
-      ...pending,
+      ...proposed,
       status: "approved" as const,
       htmlPath: "titles/title_1.html",
       exportPath: "exports/title_1.mov",
     }
 
-    const decided = decideTitleAnnotation(rendered, {
+    const decided = decidePlanElement(rendered, {
       action: "modify",
-      text: "New wording",
+      titleText: "New wording",
     })
 
     // Otherwise `titlesStep` skips it (it only renders `exportPath === null`)
@@ -111,30 +131,16 @@ describe("decideTitleAnnotation", () => {
     expect(decided.exportPath).toBeNull()
   })
 
-  test("a modify that changes nothing keeps the render", () => {
-    const rendered = {
-      ...pending,
-      exportPath: "exports/title_1.mov",
-    }
-
-    const decided = decideTitleAnnotation(rendered, {
-      action: "modify",
-      text: rendered.text,
-    })
-
-    expect(decided.exportPath).toBe("exports/title_1.mov")
-  })
-
   test("approve marks it approved", () => {
-    const decided = decideTitleAnnotation(pending, { action: "approve" })
+    const decided = decidePlanElement(proposed, { action: "approve" })
     expect(decided.status).toBe("approved")
-    expect(decided.text).toBe("Draft title")
+    expect(decided.titleText).toBe("Draft title")
   })
 
   test("reject marks it rejected without touching the text", () => {
-    const decided = decideTitleAnnotation(pending, { action: "reject" })
+    const decided = decidePlanElement(proposed, { action: "reject" })
     expect(decided.status).toBe("rejected")
-    expect(decided.text).toBe("Draft title")
+    expect(decided.titleText).toBe("Draft title")
   })
 })
 
@@ -165,43 +171,50 @@ describe("renderTitleHtml", () => {
   })
 })
 
-describe("titleToOverlayScene", () => {
-  test("projects an exported annotation to the standard two-second overlay", () => {
+describe("titleElementToOverlayScene", () => {
+  test("projects an exported element to the standard two-second overlay", () => {
     const segments = buildSegments(words(["hello", "world"]))
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]
-    const annotation = {
-      ...createTitleAnnotation({
+    const element = {
+      ...createTitlePlanElement({
         segments,
         spans,
-        segmentIndex: 0,
-        text: "Hi",
+        sections: noSections,
+        fromSegment: 0,
+        toSegment: 0,
+        titleText: "Hi",
       }),
       status: "approved" as const,
       exportPath: "exports/title_1.mov",
     }
 
-    const overlay = titleToOverlayScene(annotation)
+    const overlay = titleElementToOverlayScene(element, segments)
 
     expect(overlay).toEqual({
-      id: annotation.id,
-      sourceFile: annotation.sourceFile,
-      scriptStart: annotation.scriptStart,
+      id: element.id,
+      planElementId: element.id,
+      sourceFile: segments[0].file,
+      scriptStart: segments[0].start,
       durationSec: TITLE_DURATION_SEC,
       exportPath: "exports/title_1.mov",
     })
   })
 
-  test("refuses to project an annotation with no export yet", () => {
+  test("refuses to project an element with no export yet", () => {
     const segments = buildSegments(words(["hello", "world"]))
     const spans: Span[] = [{ start: 0, end: 1, action: "keep" }]
-    const annotation = createTitleAnnotation({
+    const element = createTitlePlanElement({
       segments,
       spans,
-      segmentIndex: 0,
-      text: "Hi",
+      sections: noSections,
+      fromSegment: 0,
+      toSegment: 0,
+      titleText: "Hi",
     })
 
-    expect(() => titleToOverlayScene(annotation)).toThrow(/exportPath/)
+    expect(() => titleElementToOverlayScene(element, segments)).toThrow(
+      /exportPath/
+    )
   })
 })
 

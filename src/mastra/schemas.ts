@@ -1,17 +1,16 @@
 /**
  * `project.json`, as Zod (idea.md §7).
  *
- * These schemas do three jobs at once, which is why they live here rather than
- * being written out three times:
+ * These schemas do two jobs at once, which is why they live here rather than
+ * being written out twice:
  *
- *   1. workflow step `inputSchema` / `outputSchema`
- *   2. validation when reading a `project.json` off disk — projects are
+ *   1. validation when reading a `project.json` off disk — projects are
  *      portable, so the file on disk may have been written by an older build
- *   3. the UI's TypeScript types, via `z.infer` re-exported from `lib/types.ts`
+ *   2. the UI's TypeScript types, via `z.infer` re-exported from `lib/types.ts`
  *
- * Nothing here imports from `next`. The workflow has to run headless from
- * Studio and from a plain script (idea.md §8), so this file and everything
- * under `src/mastra/` stays framework-free.
+ * Nothing here imports from `next`. Every step under `src/mastra/steps/` is a
+ * plain, callable-from-a-script function (idea.md §8), so this file and
+ * everything under `src/mastra/` stays framework-free.
  */
 
 import { z } from "zod"
@@ -165,6 +164,11 @@ export const PlanElementTypeSchema = z.enum(["title", "zoom", "scene"])
 export const PlanElementSourceSchema = z.enum([
   "automatic",
   "manual",
+  /**
+   * Legacy: the spoken `TITRE ... TITRE` command (ADR 0004), superseded by
+   * ADR 0007. No longer produced — kept only so an older project.json with
+   * one already on disk still parses.
+   */
   "command",
 ])
 export const PlanElementStatusSchema = z.enum([
@@ -176,6 +180,21 @@ export const PlanElementStatusSchema = z.enum([
 ])
 export const PlanSectionSourceSchema = z.enum(["automatic", "manual"])
 export const ZoomPresetSchema = z.enum(["subtle", "medium", "strong"])
+export const PlanRenderStatusSchema = z.enum([
+  "pending",
+  "generating",
+  "rendered",
+  "exporting",
+  "exported",
+  "failed",
+  "rejected",
+])
+export const PlanCompositionStatusSchema = z.enum([
+  "not-composed",
+  "composed",
+  "partially-composed",
+  "placement-failed",
+])
 
 /** A section is anchored to the approved script, never to model-made seconds. */
 export const EditingSectionSchema = z.object({
@@ -211,6 +230,22 @@ export const EditingPlanElementSchema = z.object({
   coversLine: z.string().optional(),
   intent: z.string().optional(),
   sceneType: SceneTypeSchema.optional(),
+  /** B-roll lifecycle, kept on the same plan element as its decision. */
+  sceneId: z.string().optional(),
+  renderStatus: PlanRenderStatusSchema.optional(),
+  renderError: z.string().optional(),
+  /** Project-relative title template, once the approved title was rendered. */
+  htmlPath: z.string().nullable().optional(),
+  /** Project-relative title movie, once the approved title was rendered. */
+  exportPath: z.string().nullable().optional(),
+  /** True only while this title is referenced by the composed FCPXML. */
+  composed: z.boolean().optional(),
+  /** Sequence offset at the last deterministic composite pass. */
+  timelineOffsetSec: z.number().nonnegative().nullable().optional(),
+  /** The inserted title duration on the output frame grid. */
+  timelineDurationSec: z.number().positive().optional(),
+  compositionStatus: PlanCompositionStatusSchema.optional(),
+  compositionError: z.string().optional(),
 })
 
 /** The persisted plan: simple current state, not an event log. */
@@ -222,7 +257,7 @@ export const EditingDocumentSchema = z.object({
 })
 
 /* -------------------------------------------------------------------------- */
-/* Manual TITRE annotations (ADR 0004, ADR 0005 — issue #7)                    */
+/* Title annotations (legacy, kept for backward compat)                        */
 /* -------------------------------------------------------------------------- */
 
 export const TitleAnnotationStatusSchema = z.enum([
@@ -231,32 +266,16 @@ export const TitleAnnotationStatusSchema = z.enum([
   "rejected",
 ])
 
-/**
- * A manual `TITRE` annotation: an explicit editing intention, anchored to a
- * `Segment` of the approved script (`src/mastra/lib/segments.ts`) rather than
- * to the transcript's own text — adding one never rewrites a word.
- *
- * `segmentIndex` is the anchor's identity; `scriptStart`/`scriptEnd`/
- * `sourceFile` are copied from that segment at creation time so placement
- * (`titleToOverlayScene`) never has to recompute segments from the
- * transcript. Deliberately not anchored to a "section" — sections are a
- * later-issue concept (the structural analysis, ADR 0005) that doesn't exist
- * yet; a Segment is the finest-grained unit of the approved script this
- * issue can anchor to today.
- */
 export const TitleAnnotationSchema = z.object({
   id: z.string(),
-  segmentIndex: z.number(),
+  segmentIndex: z.number().int(),
   scriptStart: z.number(),
   scriptEnd: z.number(),
   sourceFile: z.string(),
-  /** The chosen copy — editable right up until it's rendered. */
   text: z.string(),
   status: TitleAnnotationStatusSchema,
   createdAt: z.string(),
-  /** Project-relative, once the deterministic template has been written. */
   htmlPath: z.string().nullable(),
-  /** Project-relative, once rendered to ProRes — see `steps/titles.ts`. */
   exportPath: z.string().nullable(),
 })
 
@@ -325,6 +344,15 @@ export const StoredProjectSchema = z.object({
     prompt: "",
     keyterms: [],
   }),
+  /**
+   * The creator's own script or outline, written before recording — a
+   * teleprompter draft, typically. Never the transcript: what's actually
+   * said may paraphrase it freely. Read-only context for the structural
+   * analysis (issue #5's follow-up), so the model recognises the sections,
+   * titles and B-roll the creator already had in mind even when the wording
+   * on screen differs from what was spoken.
+   */
+  sourceScript: z.string().nullable().default(null),
   transcript: z.object({ words: z.array(WordSchema) }),
   spans: z.array(SpanSchema),
   cleanupApprovedAt: z.string().nullable(),
@@ -343,8 +371,6 @@ export const StoredProjectSchema = z.object({
     analysisAt: null,
     reviewedAt: null,
   }),
-  /** Manual TITRE annotations (issue #7). Defaulted: absent on older files. */
-  titleAnnotations: z.array(TitleAnnotationSchema).default([]),
   copy: ProjectCopySchema.nullable(),
 })
 
@@ -394,12 +420,16 @@ export type StoredScene = z.infer<typeof SceneSchema>
 export type Scene = z.infer<typeof HydratedSceneSchema>
 export type PlanElementType = z.infer<typeof PlanElementTypeSchema>
 export type PlanElementSource = z.infer<typeof PlanElementSourceSchema>
+export type ZoomPreset = z.infer<typeof ZoomPresetSchema>
 export type PlanElementStatus = z.infer<typeof PlanElementStatusSchema>
+export type PlanRenderStatus = z.infer<typeof PlanRenderStatusSchema>
+export type PlanCompositionStatus = z.infer<typeof PlanCompositionStatusSchema>
 export type EditingSection = z.infer<typeof EditingSectionSchema>
 export type EditingPlanElement = z.infer<typeof EditingPlanElementSchema>
 export type EditingDocument = z.infer<typeof EditingDocumentSchema>
 export type TitleAnnotationStatus = z.infer<typeof TitleAnnotationStatusSchema>
 export type TitleAnnotation = z.infer<typeof TitleAnnotationSchema>
+export type ZoomPreset = z.infer<typeof ZoomPresetSchema>
 export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>
 export type TwitterCopy = z.infer<typeof TwitterCopySchema>
 export type ProjectCopy = z.infer<typeof ProjectCopySchema>

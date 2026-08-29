@@ -9,43 +9,35 @@ import type { PipelineState } from "@/lib/run-reducer"
 import type {
   PipelineAction,
   PipelineUIMessage,
-  PlanElementDecision,
-  PlanSectionDecision,
-  SceneDecision,
 } from "@/src/mastra/stream/contract"
-import type { SceneDraft, Span } from "@/lib/types"
+import type { SceneDraft } from "@/lib/types"
 
 /**
- * The live view of a workflow run.
+ * The live view of whichever single action is running.
  *
  * `useChat` for something that isn't a chat is deliberate. What it provides —
  * an append-and-reconcile message stream, typed data parts, and a transport
- * that survives a long-running response — is exactly what a workflow with
- * fourteen kinds of progress event needs, and building it again would be
- * building a worse version of it.
+ * that survives a long-running response — is exactly what a stream of
+ * progress events needs, and building it again would be building a worse
+ * version of it.
  *
  * The stream is only ever a *liveness* channel. Everything it carries has
- * already been written to `project.json` by the step that emitted it, so
+ * already been written to `project.json` by the action that emitted it, so
  * losing the connection — closing the tab, restarting the server — costs the
- * ticking progress bar and nothing else (idea.md §9).
+ * ticking progress bar and nothing else (idea.md §9). There is nothing to
+ * reconnect to: every action here is a direct, one-shot call, not a workflow
+ * run parked at a gate somewhere on the server.
  */
 export interface PipelineOptions {
   /**
-   * Fires when the response stream closes — whether the run finished, hit a
-   * gate, or failed. The right moment to re-read `project.json`, since every
-   * step wrote its results there before returning.
+   * Fires when the response stream closes — finished or failed. The right
+   * moment to re-read `project.json`, since the action wrote its results
+   * there before returning.
    *
    * Must be stable: it's handed to `useChat`, which holds one chat instance
    * for the life of the component.
    */
   onSettled?: () => void
-
-  /**
-   * A run left suspended at a gate for this project, found on the server
-   * (`getSuspendedRunId`, issue #3). Reconnects to it once on mount instead
-   * of leaving the UI showing "Idle" for work that's already been paid for.
-   */
-  activeRunId?: string | null
 }
 
 export function usePipeline(
@@ -57,21 +49,25 @@ export function usePipeline(
   const [logs, setLogs] = React.useState<Record<string, string[]>>({})
 
   // Same reason, and the same shape of problem: scene documents arrive in
-  // deltas, keyed by scene, and only matter while the run is in front of you.
+  // deltas, keyed by scene, and only matter while the action is in front of
+  // you.
   const [drafts, setDrafts] = React.useState<Record<string, SceneDraft>>({})
 
   const transport = React.useMemo(
     () =>
       new DefaultChatTransport<PipelineUIMessage>({
         api: "/api/pipeline",
-        prepareSendMessagesRequest: ({ messages }) => ({
-          body: toBody(messages.at(-1)?.metadata),
-        }),
+        prepareSendMessagesRequest: ({ messages }) => {
+          const action = messages.at(-1)?.metadata
+          if (!action)
+            throw new Error("Pipeline message sent without an action")
+          return { body: action }
+        },
       }),
     []
   )
 
-  const { onSettled, activeRunId = null } = options
+  const { onSettled } = options
 
   const { messages, sendMessage, status, error, stop } =
     useChat<PipelineUIMessage>({
@@ -116,27 +112,22 @@ export function usePipeline(
     [messages, logs, streaming]
   )
 
+  /**
+   * Every action is `{ kind, projectPath, ...args }` — `PipelineAction`
+   * (`src/mastra/stream/contract.ts`) is the one place that catalogues them,
+   * validated again server-side against the same schema. A caller building
+   * this object gets the same exhaustiveness checking a dedicated method per
+   * action would have given, without a wrapper per action to keep in sync.
+   */
   const send = React.useCallback(
     (action: PipelineAction) => {
-      // The text is inert — the workflow route reads the body, which
+      // The text is inert — the route reads the body, which
       // `prepareSendMessagesRequest` builds from the metadata. It exists
       // because `sendMessage` wants a message.
       sendMessage({ text: action.kind, metadata: action })
     },
     [sendMessage]
   )
-
-  // Reconnect exactly once. A ref rather than an empty dependency array: the
-  // effect has to survive StrictMode's deliberate double-invoke in dev, which
-  // an empty array does not stop, and sending two reconnects would replay the
-  // snapshot twice into the same session.
-  const reconnected = React.useRef(false)
-
-  React.useEffect(() => {
-    if (!activeRunId || reconnected.current) return
-    reconnected.current = true
-    send({ kind: "reconnect", runId: activeRunId })
-  }, [activeRunId, send])
 
   return {
     ...(messages.length === 0 ? EMPTY_PIPELINE_STATE : state),
@@ -145,118 +136,7 @@ export function usePipeline(
     streaming,
     error,
     stop,
-
-    start: React.useCallback(
-      () => send({ kind: "start", projectPath }),
-      [send, projectPath]
-    ),
-
-    approveCleanup: React.useCallback(
-      (runId: string, spans: Span[]) =>
-        send({ kind: "approve-cleanup", runId, spans }),
-      [send]
-    ),
-
-    reviewTimeline: React.useCallback(
-      (runId: string, approved: boolean, maxSilenceSec: number) =>
-        send({ kind: "review-timeline", runId, approved, maxSilenceSec }),
-      [send]
-    ),
-
-    reviewPlan: React.useCallback(
-      (
-        runId: string,
-        elementDecisions: PlanElementDecision[],
-        sectionDecisions: PlanSectionDecision[],
-        done: boolean
-      ) =>
-        send({
-          kind: "review-plan",
-          runId,
-          elementDecisions,
-          sectionDecisions,
-          done,
-        }),
-      [send]
-    ),
-
-    submitReview: React.useCallback(
-      (runId: string, decisions: SceneDecision[], done: boolean) =>
-        send({ kind: "review-scenes", runId, decisions, done }),
-      [send]
-    ),
-
-    reviewComposite: React.useCallback(
-      (runId: string, approved: boolean) =>
-        send({ kind: "review-composite", runId, approved }),
-      [send]
-    ),
-  }
-}
-
-/**
- * Action to request body.
- *
- * Exhaustive on purpose — the `never` fallthrough means adding a case to
- * `PipelineAction` without handling it here is a type error rather than a
- * request that silently starts a fresh run.
- */
-function toBody(action: PipelineAction | undefined) {
-  switch (action?.kind) {
-    case "start":
-      return {
-        inputData: { projectPath: action.projectPath },
-        // Correlates the run to its project, so a later reload can find it
-        // again via `getSuspendedRunId` (issue #3).
-        resourceId: action.projectPath,
-      }
-
-    case "reconnect":
-      return { kind: "reconnect", runId: action.runId }
-
-    case "approve-cleanup":
-      return {
-        runId: action.runId,
-        step: "cleanup",
-        resumeData: { approved: true, spans: action.spans },
-      }
-
-    case "review-timeline":
-      return {
-        runId: action.runId,
-        step: "fcpxml",
-        resumeData: {
-          approved: action.approved,
-          maxSilenceSec: action.maxSilenceSec,
-        },
-      }
-
-    case "review-plan":
-      return {
-        runId: action.runId,
-        step: "scenarios",
-        resumeData: {
-          elementDecisions: action.elementDecisions,
-          sectionDecisions: action.sectionDecisions,
-          done: action.done,
-        },
-      }
-
-    case "review-scenes":
-      return {
-        runId: action.runId,
-        step: "review",
-        resumeData: { decisions: action.decisions, done: action.done },
-      }
-
-    case "review-composite":
-      return {
-        runId: action.runId,
-        step: "overlay",
-        resumeData: { approved: action.approved },
-      }
-
-    default:
-      throw new Error("Pipeline message sent without an action")
+    projectPath,
+    send,
   }
 }

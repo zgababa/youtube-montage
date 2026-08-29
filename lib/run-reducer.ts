@@ -256,10 +256,12 @@ function runStatus(
   }
   if (reported.some((step) => step.status === "failed")) return "failed"
   if (streaming) return "running"
-  // The stream closed with nothing suspended and nothing failed. If the last
-  // step reported success the run finished; otherwise it was cut off — a
-  // closed tab, a restarted server — and is neither running nor done here.
-  return steps.get("shotlist")?.status === "success" ? "success" : "failed"
+  // The stream closed with nothing suspended and nothing failed reported —
+  // a real failure would already have been caught above, since every step
+  // function reports its own `failed` chunk before rethrowing. There's no
+  // fixed "last step" to check for any more: one action is any single step,
+  // not always the same one, so a clean close reads as done.
+  return "success"
 }
 
 /**

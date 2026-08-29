@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { buildSegments } from "../src/mastra/lib/segments"
-import { toWords } from "../src/mastra/lib/stt"
+import { checkTranscriptionHints, toWords } from "../src/mastra/lib/stt"
 
 /**
  * AssemblyAI reports word timings in milliseconds; everything downstream — span
@@ -103,5 +103,36 @@ describe("unit conversion, as segmentation sees it", () => {
 
     expect(segments[0].start).toBe(4.2)
     expect(segments[0].end).toBe(5.1)
+  })
+})
+
+describe("checkTranscriptionHints", () => {
+  test("accepts short keyterms under the total budget", () => {
+    const problem = checkTranscriptionHints({
+      prompt: "",
+      keyterms: ["Mastra", "AssemblyAI"],
+    })
+
+    expect(problem).toBeNull()
+  })
+
+  test("rejects a keyterm that reads like a sentence", () => {
+    const problem = checkTranscriptionHints({
+      prompt: "",
+      keyterms: ["the agent picks up the job from the queue"],
+    })
+
+    expect(problem).toMatch("longer than")
+  })
+
+  test("rejects a keyterm list over the total word budget", () => {
+    const keyterms = Array.from(
+      { length: 250 },
+      (_, i) => `term ${i} four five six`
+    )
+
+    const problem = checkTranscriptionHints({ prompt: "", keyterms })
+
+    expect(problem).toMatch("over the")
   })
 })

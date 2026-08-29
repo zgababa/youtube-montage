@@ -33,13 +33,17 @@ export type {
   StyleGuide,
   TitleAnnotation,
   TitleAnnotationStatus,
+  ZoomPreset,
   PlanElementSource,
   PlanElementStatus,
   PlanElementType,
+  PlanCompositionStatus,
+  PlanRenderStatus,
   TranscriptionHints,
   TwitterCopy,
   Word,
   YouTubeCopy,
+  ZoomPreset,
 } from "@/src/mastra/schemas"
 
 export type {

@@ -172,6 +172,36 @@ function autoPair(
   return { audio: audioOnly[0].path, video: videoWithSound[0].path }
 }
 
+/**
+ * Catches the two ways a saved set of media roles can be internally
+ * inconsistent, before it reaches disk.
+ *
+ * Both are worth refusing rather than storing: a `voices` pointing nowhere
+ * silently retags words onto a file the editor doesn't have, and a chain of
+ * them has no well-defined anchor at all.
+ */
+export function checkMediaRoles(media: MediaFile[]): string | null {
+  const paths = new Set(media.map((file) => file.path))
+
+  for (const file of media) {
+    if (file.voices === null) continue
+
+    if (!paths.has(file.voices)) {
+      return `${file.path} is set to voice ${file.voices}, which isn't in this project.`
+    }
+    if (file.voices === file.path) {
+      return `${file.path} can't voice itself.`
+    }
+
+    const target = media.find((other) => other.path === file.voices)
+    if (target?.voices) {
+      return `${file.path} voices ${file.voices}, which voices something else in turn. Point it at the clip you actually scrub.`
+    }
+  }
+
+  return null
+}
+
 /** Human-readable summary of what `assignRoles` decided, for the scan log. */
 export function describeRoles(media: MediaFile[]): string[] {
   const lines = media

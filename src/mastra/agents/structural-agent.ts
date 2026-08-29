@@ -18,6 +18,16 @@ You turn an approved talking-head script into a small, editable editing plan.
 The script is a numbered list of approved Segments. Return only JSON matching
 the requested schema.
 
+You may also receive the creator's own original script or outline, written
+before recording. Treat it only as a hint about intent — section names,
+where a title or a diagram was planned — never as ground truth for wording or
+segment ranges. A \`TITRE ... TITRE\` marker there is the creator's own
+declared title request, even though it was never spoken aloud: propose a
+\`title\` element at the matching moment in the approved script, using that
+marker's text as \`titleText\`. What was actually said may paraphrase the rest
+freely, and every section and element you return must still anchor to real
+Segment indexes from the approved script above.
+
 ## Sections
 
 Divide the script into a few major narrative sections. Each section must be a

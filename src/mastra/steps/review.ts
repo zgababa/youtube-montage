@@ -1,25 +1,18 @@
 /**
- * Step 8 — the second gate.
- *
- * Approve, reject, or regenerate-with-note, per scene (idea.md §10). Regenerate
- * is handled here rather than by looping the workflow back: the step reruns the
- * same generate → validate → repair path for the scenes that asked for it, then
- * suspends again so the new versions get reviewed too. A scene can go round
- * that loop as many times as the user has patience for, and the run never
- * leaves the gate until they're done.
+ * Approve, reject, or regenerate-with-note, per scene (idea.md §10).
  */
 
-import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
 import { readStoredProject, updateProject } from "../lib/project"
+import { updatePlanElementLifecycle } from "../lib/editing-plan"
 import { modelLabel, SCENE_MODEL } from "../models"
-import { SceneStatusSchema, type StoredScene } from "../schemas"
+import type { StoredScene } from "../schemas"
 import type { PipelineWriter } from "../stream/contract"
 import { generateAndPersistScene } from "./generate-scene"
-import { PipelineIO, message, reporter } from "./shared"
+import { reporter } from "./shared"
 
-const DecisionSchema = z.object({
+export const DecisionSchema = z.object({
   id: z.string(),
   action: z.enum(["approve", "reject", "regenerate"]),
   /** Only meaningful for `regenerate` — fed back into the scene prompt. */
@@ -28,64 +21,17 @@ const DecisionSchema = z.object({
   model: z.string().optional(),
 })
 
-export const reviewStep = createStep({
-  id: "review",
-  description: "Suspend for scene approval; regenerate anything sent back",
-  inputSchema: PipelineIO,
-  outputSchema: PipelineIO,
-  resumeSchema: z.object({
-    decisions: z.array(DecisionSchema),
-    /** True once the user is finished and wants the run to continue. */
-    done: z.boolean(),
-  }),
-  suspendSchema: z.object({
-    reason: z.literal("review-scenes"),
-    scenes: z.array(z.object({ id: z.string(), status: SceneStatusSchema })),
-  }),
-  execute: async ({ inputData, resumeData, writer, runId, suspend }) => {
-    const report = reporter("review", writer)
-    const { projectPath } = inputData
-
-    try {
-      if (resumeData) {
-        await applyDecisions(
-          projectPath,
-          resumeData.decisions,
-          writer as PipelineWriter | undefined,
-          report
-        )
-
-        if (resumeData.done) {
-          await report.done()
-          return { projectPath }
-        }
-      }
-
-      const project = await readStoredProject(projectPath)
-
-      await report.emit("gate", { on: "review-scenes", runId, step: "review" })
-      await report.suspended()
-
-      return suspend({
-        reason: "review-scenes",
-        scenes: project.scenes.map((scene) => ({
-          id: scene.id,
-          status: scene.status,
-        })),
-      })
-    } catch (error) {
-      await report.failed(message(error))
-      throw error
-    }
-  },
-})
-
-async function applyDecisions(
+/**
+ * Approve, reject or regenerate a batch of scenes — a direct write, not a
+ * workflow resume. `app/api/pipeline/route.ts` calls this for the "Apply
+ * scene decisions" action.
+ */
+export async function applySceneDecisions(
   projectPath: string,
   decisions: z.infer<typeof DecisionSchema>[],
-  writer: PipelineWriter | undefined,
-  report: ReturnType<typeof reporter>
+  writer: PipelineWriter | undefined
 ) {
+  const report = reporter("review", writer)
   const project = await readStoredProject(projectPath)
   const byId = new Map(project.scenes.map((scene) => [scene.id, scene]))
 
@@ -107,6 +53,21 @@ async function applyDecisions(
         status.has(scene.id)
           ? { ...scene, status: status.get(scene.id)! }
           : scene
+      ),
+      editingDocument: current.editingDocument.elements.reduce(
+        (document, element) => {
+          const scene = current.scenes.find(
+            (candidate) => candidate.planElementId === element.id
+          )
+          const nextStatus = scene ? status.get(scene.id) : undefined
+          if (!scene || !nextStatus) return document
+          return updatePlanElementLifecycle(document, element.id, {
+            renderStatus: nextStatus === "approved" ? "rendered" : "rejected",
+            compositionStatus: "not-composed",
+            compositionError: undefined,
+          })
+        },
+        current.editingDocument
       ),
     }))
 

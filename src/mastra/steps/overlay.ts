@@ -1,90 +1,60 @@
 /**
- * Step 10 — composite the exported scenes into `timeline.fcpxml`, then
- * suspend for approval.
+ * Composite the exported scenes into `timeline.fcpxml`.
  *
- * `timelineStep` (gate 2) already wrote a first `timeline.fcpxml` — cut only,
- * before scenes existed, on purpose (ADR 0002: a user who only wants the cut
- * gets it without paying for scene generation). This step rewrites the same
- * file, now with each exported scene as a connected clip backed by a plain
- * white clip (`white-backing.ts`) so it reads as a full-frame cutaway rather
- * than a transparent overlay — see `fcpxml.ts` for how a scene's `scriptStart`
- * becomes a connected clip's `offset`.
+ * `writeTimeline` (`timeline.ts`) already wrote a first `timeline.fcpxml` —
+ * cut only, before scenes existed, on purpose (ADR 0002: a user who only
+ * wants the cut gets it without paying for scene generation). This rewrites
+ * the same file, now with each exported scene as a connected clip backed by
+ * a plain white clip (`white-backing.ts`) so it reads as a full-frame
+ * cutaway rather than a transparent overlay — see `fcpxml.ts` for how a
+ * scene's `scriptStart` becomes a connected clip's `offset`.
  *
- * A fourth gate rather than a silent rewrite (idea.md §4.2 covers the other
- * three): the same file the earlier gate already had you review is about to
- * change again, this time after every step that isn't just a formatting
- * pass. Regenerate is offered even though the compositing is deterministic —
- * this is where a scene that got manually re-exported outside a normal run
- * would show up.
+ * No gate here (ADR 0009): compositing is deterministic — same inputs,
+ * same file, every time. Called by the plain "update timeline" action
+ * (`app/api/projects/[id]/timeline/route.ts`) whenever a scene gets
+ * exported.
  */
 
 import fs from "node:fs/promises"
-import { createStep } from "@mastra/core/workflows"
-import { z } from "zod"
 
 import { buildCompositeOverlays } from "../lib/composite"
-import { buildFcpxml, placeOverlays } from "../lib/fcpxml"
+import { sceneRenderStatus } from "../lib/editing-plan"
+import { buildFcpxml, buildTimelineLayout, placeOverlays, placeZooms } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
-import { readStoredProject, updateProject } from "../lib/project"
+import { updateProject } from "../lib/project"
+import { buildSegments, keptSegments } from "../lib/segments"
 import { ensureWhiteBacking } from "../lib/white-backing"
+import { approvedZoomWindows } from "../lib/zooms"
 import type { StoredProject } from "../schemas"
-import { PipelineIO, message, reporter } from "./shared"
 
-export const overlayStep = createStep({
-  id: "overlay",
-  description:
-    "Composite exported scenes into timeline.fcpxml, then suspend for approval",
-  inputSchema: PipelineIO,
-  outputSchema: PipelineIO,
-  resumeSchema: z.object({
-    approved: z.boolean(),
-  }),
-  suspendSchema: z.object({
-    reason: z.literal("review-composite"),
-    path: z.string(),
-    placedCount: z.number(),
-    skipped: z.array(z.string()),
-  }),
-  execute: async ({ inputData, resumeData, writer, runId, suspend }) => {
-    const report = reporter("overlay", writer)
-    const { projectPath } = inputData
+/**
+ * Rebuilds the runs, recomposits the exported scenes and titles, and
+ * rewrites `timeline.fcpxml`. Also called directly, outside the workflow,
+ * by the plain "update timeline" action.
+ */
+export async function writeComposite(project: StoredProject) {
+  const { runs, overlays, titleInsertions } = buildCompositeOverlays(project)
+  const { placed, skipped, truncated } = placeOverlays(runs, overlays)
+  const layout = buildTimelineLayout(runs, titleInsertions, project.fps)
 
-    try {
-      if (!resumeData) await report.start()
-
-      const project = await readStoredProject(projectPath)
-      const stats = await writeComposite(project)
-
-      if (resumeData?.approved) {
-        await updateProject(projectPath, (current) => ({
-          ...current,
-          compositeApprovedAt: new Date().toISOString(),
-        }))
-        await report.emit("composite", stats)
-        await report.done()
-        return { projectPath }
-      }
-
-      await report.emit("composite", stats)
-      await report.emit("gate", {
-        on: "review-composite",
-        runId,
-        step: "overlay",
-      })
-      await report.suspended()
-
-      return suspend({ reason: "review-composite", ...stats })
-    } catch (error) {
-      await report.failed(message(error))
-      throw error
-    }
-  },
-})
-
-/** Rebuilds the runs, recomposits the exported scenes and titles, and rewrites `timeline.fcpxml`. */
-async function writeComposite(project: StoredProject) {
-  const { runs, overlays } = buildCompositeOverlays(project)
-  const { placed, skipped } = placeOverlays(runs, overlays)
+  // Zooms are a transform on the source clip itself, not an overlay asset —
+  // so an approved zoom that collides with an approved title or scene at the
+  // same moment can't share the frame with it. Reported as a conflict rather
+  // than picking a winner silently.
+  const segments = keptSegments(
+    buildSegments(project.transcript.words),
+    project.spans
+  )
+  const { windows: zooms, conflicts: zoomConflicts } = approvedZoomWindows(
+    project.editingDocument.elements,
+    segments,
+    project.editingDocument.elements.filter(
+      (element) =>
+        element.status === "approved" &&
+        (element.type === "title" || element.type === "scene")
+    )
+  )
+  const { placed: placedZooms, skipped: skippedZooms } = placeZooms(runs, zooms)
 
   // Only encoded when there's actually something to back — a project with
   // scenes rejected outright never needs the clip at all.
@@ -97,14 +67,119 @@ async function writeComposite(project: StoredProject) {
         )
       : null
 
-  const xml = buildFcpxml(project, runs, overlays, whiteBacking)
+  const xml = buildFcpxml(project, runs, overlays, whiteBacking, titleInsertions, zooms)
   const file = fcpxmlPath(project.path)
   await fs.writeFile(file, xml, "utf8")
+
+  const titlePlacements = new Map(
+    layout.titlePlacements.map((title) => [title.id, title])
+  )
+  const placedIds = new Set(placed.map((fragment) => fragment.sceneId))
+  const skippedIds = new Set(skipped)
+  const truncatedIds = new Set(truncated)
+  const composedZoomIds = new Set(
+    placedZooms.map((fragment) => fragment.zoomId)
+  )
+  const failedZoomIds = new Set([...zoomConflicts, ...skippedZooms])
+  const compositionFor = (id: string) => {
+    if (skippedIds.has(id)) {
+      return {
+        compositionStatus: "placement-failed" as const,
+        compositionError:
+          "The exported scene could not be placed in the approved runs.",
+      }
+    }
+    if (truncatedIds.has(id)) {
+      return {
+        compositionStatus: "partially-composed" as const,
+        compositionError:
+          "The scene ran out of kept footage before its full window.",
+      }
+    }
+    if (placedIds.has(id)) {
+      return {
+        compositionStatus: "composed" as const,
+        compositionError: undefined,
+      }
+    }
+    return null
+  }
+  await updateProject(project.path, (current) => ({
+    ...current,
+    editingDocument: {
+      ...current.editingDocument,
+      elements: current.editingDocument.elements.map((element) => {
+        if (element.type === "scene" && element.sceneId) {
+          const scene = current.scenes.find(
+            (candidate) => candidate.id === element.sceneId
+          )
+          const next = {
+            ...element,
+            ...(scene
+              ? {
+                  renderStatus: sceneRenderStatus(scene),
+                  htmlPath: scene.htmlPath,
+                  exportPath: scene.exportPath,
+                  ...(scene.error ? { renderError: scene.error } : {}),
+                }
+              : {}),
+          }
+          return { ...next, ...(compositionFor(element.sceneId) ?? {}) }
+        }
+        if (
+          element.type === "title" &&
+          element.source !== "manual" &&
+          element.exportPath != null
+        ) {
+          const placement = titlePlacements.get(element.id)
+          if (!placement) {
+            return {
+              ...element,
+              composed: false,
+              timelineOffsetSec: null,
+            }
+          }
+          return {
+            ...element,
+            composed: true,
+            timelineOffsetSec: placement.timelineOffsetSec,
+            timelineDurationSec: placement.durationSec,
+          }
+        }
+        // A title has no separate `StoredScene` — the overlay `id` fed to
+        // `placeOverlays` is the element's own id (`titleElementToOverlayScene`).
+        if (element.type === "title" && element.exportPath) {
+          return { ...element, ...(compositionFor(element.id) ?? {}) }
+        }
+        // A zoom has no export of its own either — it's a transform applied
+        // directly to the source clip, stamped straight from `placeZooms`.
+        if (element.type === "zoom" && element.status === "approved") {
+          if (composedZoomIds.has(element.id)) {
+            return { ...element, compositionStatus: "composed" as const }
+          }
+          if (failedZoomIds.has(element.id)) {
+            return {
+              ...element,
+              status: "conflict" as const,
+              compositionStatus: "placement-failed" as const,
+              compositionError:
+                "This zoom collides with an approved title or scene, or falls outside the kept footage.",
+            }
+          }
+        }
+        return element
+      }),
+    },
+  }))
 
   // A scene split across a run boundary produces more than one fragment —
   // count distinct scenes, not fragments, so the UI reports "10 scenes"
   // rather than however many pieces they happened to break into.
   const placedCount = new Set(placed.map((fragment) => fragment.sceneId)).size
 
-  return { path: file, placedCount, skipped }
+  return {
+    path: file,
+    placedCount,
+    skipped: [...skipped, ...layout.skippedTitles, ...zoomConflicts, ...skippedZooms],
+  }
 }

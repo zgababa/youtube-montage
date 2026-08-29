@@ -46,7 +46,8 @@ export async function saveProject(
       | "transcriptionHints"
       | "fps"
       | "styleGuide"
-      | "titleAnnotations"
+      | "editingDocument"
+      | "sourceScript"
     >
   >
 ): Promise<Project> {
@@ -66,6 +67,23 @@ export async function saveProject(
 export async function removeProject(id: string): Promise<{ path: string }> {
   return request<{ path: string }>(`/api/projects/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  })
+}
+
+/**
+ * Writes the cut timeline and recomposites it, in one request (ADR 0009).
+ *
+ * Not a workflow gate: deterministic and cheap, so it's a plain action
+ * available any time, not tied to a live run being suspended anywhere.
+ */
+export async function updateTimeline(
+  id: string,
+  maxSilenceSec?: number
+): Promise<Project> {
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}/timeline`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(maxSilenceSec ? { maxSilenceSec } : {}),
   })
 }
 

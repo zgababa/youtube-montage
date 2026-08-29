@@ -5,8 +5,6 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import {
   Alert02Icon,
   ArrowDown01Icon,
-  CheckmarkCircle02Icon,
-  CircleIcon,
   LockIcon,
   PauseIcon,
 } from "@hugeicons/core-free-icons"
@@ -247,31 +245,48 @@ function StageLog({ lines }: { lines: string[] }) {
   )
 }
 
+/**
+ * `pending` and `success` get no icon at all — both, unlike `running`, only
+ * reflect whichever action is currently streaming in the browser
+ * (`lib/stages.ts` rolls up `RunStep`s that default back to "pending" the
+ * moment nothing is in flight — there's nothing to reconnect to after a
+ * reload any more, every action being a direct one-shot call). Reload a
+ * finished project and a `success` checkmark would be lying about an action
+ * that isn't running any more; the stage's actual state — done, approved,
+ * needs review — is already told correctly by `detail` and the action
+ * badge, which read persisted project data instead. An empty circle in that
+ * spot said nothing an icon-less row doesn't already say. `suspended` stays
+ * a distinct icon in the status enum even though the interactive app never
+ * reaches it any more — no run is left to suspend.
+ */
 function StageIcon({ stage }: { stage: StageState }) {
+  if (stage.status === "running") {
+    return (
+      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">
+        <Spinner />
+      </span>
+    )
+  }
+
+  const icon = Icon({ status: stage.status })
+  if (!icon) return null
+
   return (
     <span
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4",
-        stage.status === "success" && "text-primary",
-        stage.status === "failed" && "text-destructive",
-        stage.status === "pending" && "opacity-50"
+        "flex size-5 shrink-0 items-center justify-center text-muted-foreground opacity-50 [&_svg]:size-4",
+        stage.status === "failed" && "text-destructive opacity-100"
       )}
     >
-      {stage.status === "running" ? (
-        <Spinner />
-      ) : (
-        <Icon status={stage.status} />
-      )}
+      {icon}
     </span>
   )
 }
 
 function Icon({ status }: { status: StepStatus }) {
-  if (status === "success")
-    return <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={2} />
   if (status === "suspended")
     return <HugeiconsIcon icon={PauseIcon} strokeWidth={2} />
   if (status === "failed")
     return <HugeiconsIcon icon={Alert02Icon} strokeWidth={2} />
-  return <HugeiconsIcon icon={CircleIcon} strokeWidth={2} />
+  return null
 }

@@ -115,48 +115,45 @@ the spans not to tile the transcript.
 
 ## 3. The shape of the system
 
-One [Mastra](https://mastra.ai) workflow, eleven steps, two places it stops and
-waits for a human:
+Eleven steps, each one a direct, one-shot action the UI calls and streams
+progress from — there is no single run connecting them, and nothing suspends:
 
 ```
 scan → extract-audio → transcribe → cleanup ⏸ → fcpxml → scenarios
      → generate ×3 → review ⏸ → export → copy → shotlist
 ```
 
-Steps that need judgement use an agent. Steps that shell out to ffmpeg or drive
-a browser are plain functions. Mixing the two in one graph is the point of using
-a workflow engine at all.
+Steps that need judgement call an agent ([Mastra](https://mastra.ai)'s `Agent`
+class, streamed structured output). Steps that shell out to ffmpeg or drive a
+browser are plain async functions. Every one of them lives in
+`src/mastra/steps/*.ts` and is callable on its own — `app/api/pipeline/route.ts`
+is the one thing that calls them, one action at a time, over a stream built on
+the same AI SDK primitive Mastra's own workflow runner uses internally.
 
-### Storage is split, deliberately
+### One store
 
-Two stores, with a clean rule about what belongs in each:
-
-|                                           | Owns                                                                 | Lifetime                                              |
-| ----------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------- |
-| `project.json`, inside the project folder | transcript, spans, scenes, copy — **the deliverables**               | Portable. Move the folder and the work moves with it. |
-| `~/.videotool/mastra.db` (LibSQL)         | which step is running, suspended payloads, snapshots — **run state** | Disposable. Losing it costs a re-run.                 |
-
-Every step writes its results to `project.json` _before_ it returns. That single
-discipline is why the live progress stream can be dropped at any moment —
-closing the tab, restarting the server, losing the connection — and cost nothing
-but the ticking progress bar.
+`project.json`, inside the project folder, owns everything a step produces —
+transcript, spans, scenes, copy, the editing document — and is portable: move
+the folder and the work moves with it. Every step writes its results there
+_before_ it returns. That single discipline is why the live progress stream
+can be dropped at any moment — closing the tab, restarting the server, losing
+the connection — and cost nothing but the ticking progress bar.
 
 `project.json` is validated by Zod on every read and written atomically
 (temp file, then rename) through a per-project promise queue, because scene
 generation runs three at a time and three concurrent read-modify-writes to one
 file would lose two of them.
 
-### The two gates are not application state
+### The two gates are not application state either
 
-The cleanup approval and the scene review are Mastra `suspend()` calls, resumed
-with `run.resume()`. Mastra persists the snapshot, so an approval can arrive
-minutes or days later, across a server restart, and the run picks up exactly
-where it stopped.
+The cleanup approval and the scene review are plain writes to `project.json` —
+whatever's on screen when the user clicks Approve, sent as one direct call. An
+approval can arrive minutes or days later, across a server restart, because
+there was never a run parked anywhere waiting for it.
 
-This is why there is no job registry in this codebase, no status enum, no
-"which step was I on" recovery logic, and no polling endpoint. All of it would
-have been a worse re-implementation of something the workflow engine already
-does.
+This is why there is no job registry in this codebase, no status enum, and no
+"which step was I on" recovery logic: the only thing worth recovering,
+`project.json`, is already sitting on disk.
 
 ---
 
@@ -176,9 +173,9 @@ Walks the project folder, finds media by extension, probes each file with
 `exports/` and `node_modules/` — those are our own output, and walking them
 would find our own exports.
 
-It also creates `project.json` if there isn't one, which is what lets the
-workflow be pointed at a bare folder of footage from a script or from Mastra
-Studio, with no UI involved.
+It also creates `project.json` if there isn't one, which is what lets `scan`
+be pointed at a bare folder of footage from a plain script, with no UI
+involved.
 
 Then it does the interesting part: **deciding which files are the script and
 which are just footage.**
@@ -300,13 +297,14 @@ Most of the agent's instructions are about **what not to cut**, because that's
 the failure that matters. A pass that misses some filler is a mild annoyance;
 one that sands off deliberate repetition, a callback, or a pause the speaker
 meant to leave in has quietly rewritten the talk. That's precisely why the diff
-exists and why the workflow stops here.
+exists and why nothing downstream runs before you've seen it.
 
-**This is gate one.** The step calls `suspend()`. The UI shows the diff — kept
-text normal, cut text struck through and dimmed, grouped by category with counts
-(`filler: 82`, `redundant: 6`, `bad_take: 3`) — and you toggle individual cuts
-back on before approving. Nothing downstream runs until you do, because the
-scenario agent reads the _approved_ script, not the raw transcript.
+**This is gate one.** The UI shows the diff — kept text normal, cut text
+struck through and dimmed, grouped by category with counts (`filler: 82`,
+`redundant: 6`, `bad_take: 3`) — and you toggle individual cuts back on
+before approving. Approving is a plain write to `project.json`, not a resume:
+nothing downstream runs until you do, because the scenario agent reads the
+_approved_ script, not the raw transcript.
 
 ### Step 5 — `scenarios`: where b-roll actually helps
 
@@ -324,21 +322,21 @@ in the script, not from the model's opinion.
 
 ### Step 6 — `generate`: twelve scenes, three at a time
 
-`.foreach(generateSceneWorkflow, { concurrency: 3 })`. Modest on purpose: three
-concurrent agents stays inside rate limits, and three Chromium instances
-validating at once is already as much as a laptop wants to do while you're
-editing in the next window.
+Batched `SCENE_CONCURRENCY` (3) at a time by `app/api/pipeline/route.ts`.
+Modest on purpose: three concurrent agents stays inside rate limits, and
+three Chromium instances validating at once is already as much as a laptop
+wants to do while you're editing in the next window.
 
 Each scene runs **generate → validate → repair**, up to three attempts. See
 [section 5](#5-scene-generation-in-detail) — it's the hardest part of the system
 and gets its own section.
 
-Two rules make the fan-out survivable:
+Two rules make the batch survivable:
 
-- **Nothing in a scene step is allowed to throw.** In Mastra a single throwing
-  iteration fails the whole block, and one bad scene must not kill a run that
-  produced eleven good ones. Failures come back as `status: "failed"` with the
-  reason attached to that scene's card.
+- **Nothing in a scene's generation is allowed to throw past its own job.**
+  One bad scene must not cost the batch the eleven good ones — failures come
+  back as `status: "failed"` with the reason attached to that scene's card,
+  never a rejected promise that takes the others down with it.
 - **Scene updates arrive out of order** and each is keyed by scene id, so the
   client reconciles them in place instead of appending.
 
@@ -351,11 +349,11 @@ better part of a minute.
 
 **Gate two.** Per scene: approve, reject, or regenerate with a note.
 
-Regeneration is handled inside this step rather than by looping the workflow
-back. The step reruns the same generate → validate → repair path for whichever
-scenes asked for it, then suspends again so the new versions get reviewed too. A
-scene can go round that loop as many times as you have patience for, and the run
-never leaves the gate until you say you're done.
+Regeneration reruns the same generate → validate → repair path for whichever
+scenes asked for it, as its own direct call — not a loop inside a suspended
+run. A scene can go through that as many times as you have patience for; each
+time is a fresh "Regenerate" click, and the gate is just the review screen
+staying open until you're satisfied.
 
 A regenerate can also **name a different model** — see
 [section 7](#7-changing-the-model-for-one-scene).
@@ -612,10 +610,9 @@ produce:
 
 The join is the point. Progress used to live in one panel and the work in a
 separate row of tabs under different names, so watching a step finish told you
-nothing about where to go to act on it — and the two moments the workflow
-genuinely stops for a human were the hardest things on the page to find. Now
-"Cleanup is waiting for you" and the diff you approve are the same object on
-screen.
+nothing about where to go to act on it — and the two moments that genuinely
+need a human were the hardest things on the page to find. Now "Cleanup is
+waiting for you" and the diff you approve are the same object on screen.
 
 ### Scene previews are sandboxed, and the sandbox has a consequence
 
@@ -650,7 +647,7 @@ checked against one definition.
 The client uses the AI SDK's `useChat` for something that is not a chat, on
 purpose: what it provides — an append-and-reconcile message stream, typed data
 parts, and a transport that survives a response lasting minutes — is exactly
-what a workflow with fourteen kinds of progress event needs.
+what a pipeline with fourteen kinds of progress event needs.
 
 And the stream is _only_ a liveness channel. Everything it carries has already
 been written to `project.json` by the step that emitted it.
@@ -692,7 +689,7 @@ first 30 seconds · a native app wrapper.
 
 |                              |                                     |
 | ---------------------------- | ----------------------------------- |
-| Pipeline                     | 11 steps, 2 human gates, 1 workflow |
+| Pipeline                     | 11 steps, 2 human gates, 0 workflow engine |
 | Scene concurrency            | 3                                   |
 | Export concurrency           | 1                                   |
 | Attempts per scene           | 3 (generate + 2 repairs)            |
@@ -710,7 +707,7 @@ first 30 seconds · a native app wrapper.
 
 | Question                                | File                                                                                                                        |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| What is the pipeline?                   | [`workflows/broll-workflow.ts`](src/mastra/workflows/broll-workflow.ts)                                                     |
+| What is the pipeline?                   | [`app/api/pipeline/route.ts`](app/api/pipeline/route.ts) and [`steps/`](src/mastra/steps)                                   |
 | What does `project.json` look like?     | [`schemas.ts`](src/mastra/schemas.ts)                                                                                       |
 | How do words become segments and spans? | [`lib/segments.ts`](src/mastra/lib/segments.ts)                                                                             |
 | Which files get transcribed?            | [`lib/media.ts`](src/mastra/lib/media.ts)                                                                                   |

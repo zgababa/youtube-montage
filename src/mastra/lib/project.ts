@@ -41,8 +41,9 @@ import { projectFile, sceneHtmlPath, toAbsolute } from "./paths"
  *
  * Module-level, which is correct here: the whole point is that every writer in
  * this process shares one queue. It does *not* guard against a second process
- * (Studio, say) writing the same file — nothing short of a lock file would, and
- * driving one run from two processes is already out of bounds.
+ * (a script run alongside the app, say) writing the same file — nothing short
+ * of a lock file would, and driving one project from two processes at once is
+ * already out of bounds.
  */
 const queues = new Map<string, Promise<unknown>>()
 
@@ -257,6 +258,7 @@ export function blankProject(
     fps: 30,
     media,
     transcriptionHints: { prompt: "", keyterms: [] },
+    sourceScript: null,
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,
@@ -271,7 +273,6 @@ export function blankProject(
       analysisAt: null,
       reviewedAt: null,
     },
-    titleAnnotations: [],
     copy: null,
   }
 }

@@ -33,7 +33,6 @@ import {
   ProjectCopySchema,
   SpanCategorySchema,
   SpanSchema,
-  type Span,
 } from "../schemas"
 
 /* -------------------------------------------------------------------------- */
@@ -71,13 +70,19 @@ export const RunStatusSchema = z.enum([
   "failed",
 ])
 
-/** The places the workflow parks and waits for a human (idea.md §4.2). */
+/**
+ * The places the workflow parks and waits for a human (idea.md §4.2).
+ *
+ * The timeline export and the composite used to be two more of these
+ * (`review-timeline`, `review-composite`) — both steps are deterministic and
+ * cheap, so there was nothing to actually review, only a number occasionally
+ * worth tuning. They're a plain, always-available action now
+ * (`app/api/projects/[id]/timeline/route.ts`), not a workflow gate.
+ */
 export const GateSchema = z.enum([
   "review-cleanup",
-  "review-timeline",
   "review-plan",
   "review-scenes",
-  "review-composite",
 ])
 
 /** Human-readable labels, so a step id never reaches the UI raw. */
@@ -272,35 +277,61 @@ export type PlanSectionDecision = z.infer<typeof PlanSectionDecisionSchema>
  *
  * `useChat` is a chat transport, and this isn't a chat — so the action rides
  * on the message's metadata and `prepareSendMessagesRequest` turns it into the
- * body the workflow route expects. Making it a union rather than a loose
- * object means the mapping is exhaustive: a new action can't be added without
- * the transport being taught how to send it.
+ * body `app/api/pipeline/route.ts` expects. Making it a union rather than a
+ * loose object means the mapping is exhaustive: a new action can't be added
+ * without the transport being taught how to send it.
+ *
+ * No `runId`, no `reconnect` — each action is a direct, one-shot call against
+ * `projectPath`, not a resume against a workflow run parked somewhere on the
+ * server.
+ *
+ * A Zod schema rather than a plain type, and the one the route parses the
+ * request body against (`app/api/pipeline/route.ts`) — so a new `kind` is
+ * added to the catalogue once, here, instead of in the client union and the
+ * server's validator separately, with nothing forcing the two to agree.
  */
-export type PipelineAction =
-  | { kind: "start"; projectPath: string }
-  | { kind: "approve-cleanup"; runId: string; spans: Span[] }
-  | {
-      kind: "review-timeline"
-      runId: string
-      approved: boolean
-      maxSilenceSec: number
-    }
-  | {
-      kind: "review-plan"
-      runId: string
-      elementDecisions: PlanElementDecision[]
-      sectionDecisions: PlanSectionDecision[]
-      done: boolean
-    }
-  | {
-      kind: "review-scenes"
-      runId: string
-      decisions: SceneDecision[]
-      /** False keeps the gate open for another round of regeneration. */
-      done: boolean
-    }
-  | { kind: "review-composite"; runId: string; approved: boolean }
-  | { kind: "reconnect"; runId: string }
+export const PipelineActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("scan"), projectPath: z.string().min(1) }),
+  z.object({ kind: z.literal("transcribe"), projectPath: z.string().min(1) }),
+  z.object({
+    kind: z.literal("propose-cleanup"),
+    projectPath: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("approve-cleanup"),
+    projectPath: z.string().min(1),
+    spans: z.array(SpanSchema),
+  }),
+  z.object({ kind: z.literal("analyze-plan"), projectPath: z.string().min(1) }),
+  z.object({
+    kind: z.literal("apply-plan"),
+    projectPath: z.string().min(1),
+    elementDecisions: z.array(PlanElementDecisionSchema),
+    sectionDecisions: z.array(PlanSectionDecisionSchema),
+    /** Materialises accepted `scene` elements into `project.scenes`. */
+    done: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("generate-scenes"),
+    projectPath: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("apply-scenes"),
+    projectPath: z.string().min(1),
+    decisions: z.array(SceneDecisionSchema),
+  }),
+  z.object({
+    kind: z.literal("export-approved"),
+    projectPath: z.string().min(1),
+  }),
+  z.object({ kind: z.literal("write-copy"), projectPath: z.string().min(1) }),
+  z.object({
+    kind: z.literal("write-shotlist"),
+    projectPath: z.string().min(1),
+  }),
+])
+
+export type PipelineAction = z.infer<typeof PipelineActionSchema>
 
 /** The `useChat` type parameter. Both ends of the stream agree on this. */
 export type PipelineUIMessage = UIMessage<PipelineAction, PipelineDataParts>
@@ -349,9 +380,9 @@ export type Emit = <K extends PipelineDataType>(
  * Wraps a step's `writer` so emitting is checked at both compile time (the key
  * picks the payload type) and run time (the schema parses it).
  *
- * `writer` is optional because a step invoked outside a stream — from a script,
- * or from Studio's single-step runner — has nowhere to write. Those runs should
- * still work, so a missing writer is a no-op rather than a crash.
+ * `writer` is optional because a step invoked outside a stream — from a
+ * script, say — has nowhere to write. Those runs should still work, so a
+ * missing writer is a no-op rather than a crash.
  */
 export function emitter(writer: PipelineWriter | undefined): Emit {
   return async function emit(type, data, options) {

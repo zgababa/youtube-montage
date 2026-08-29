@@ -7,11 +7,13 @@ import {
   type OverlayScene,
 } from "../src/mastra/lib/fcpxml"
 import { composableTitleOverlays } from "../src/mastra/lib/titles"
+import type { Segment } from "../src/mastra/lib/segments"
 import type { TimelineRun } from "../src/mastra/lib/timeline"
+import type { ZoomWindow } from "../src/mastra/lib/zooms"
 import type {
+  EditingPlanElement,
   MediaFile,
   StoredProject,
-  TitleAnnotation,
 } from "../src/mastra/schemas"
 
 function media(overrides: Partial<MediaFile> = {}): MediaFile {
@@ -37,6 +39,7 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
     fps: 30,
     media: [media()],
     transcriptionHints: { prompt: "", keyterms: [] },
+    sourceScript: null,
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,
@@ -51,7 +54,6 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
       analysisAt: null,
       reviewedAt: null,
     },
-    titleAnnotations: [],
     copy: null,
     ...overrides,
   }
@@ -193,6 +195,34 @@ describe("buildFcpxml", () => {
 
     expect(xml).toContain('<fcpxml version="1.9">')
   })
+
+  test("splits the source clip for an approved zoom and keeps its audio asset", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+    const zoom: ZoomWindow = {
+      id: "zoom-1",
+      sourceFile: "raw/01 - a.mp4",
+      fromSegment: 2,
+      toSegment: 3,
+      scriptStart: 3,
+      scriptEnd: 5,
+      preset: "medium",
+      durationSec: 2,
+      scale: 1.15,
+    }
+
+    const xml = buildFcpxml(project(), runs, [], null, [zoom])
+    const clips = [...xml.matchAll(/<asset-clip\b[^>]*>/g)].map((m) => m[0])
+
+    expect(clips).toHaveLength(3)
+    expect(xml).toContain(
+      '<adjust-transform position="0 0" scale="1.15 1.15"/>'
+    )
+    expect(xml).not.toContain('lane="')
+    expect(xml).toContain('<asset id="asset-1"')
+    expect(xml).toContain('hasAudio="1"')
+  })
 })
 
 function overlay(overrides: Partial<OverlayScene> = {}): OverlayScene {
@@ -289,13 +319,29 @@ describe("placeOverlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
     ]
 
-    const { placed } = placeOverlays(runs, [
+    const { placed, truncated } = placeOverlays(runs, [
       overlay({ scriptStart: 4, durationSec: 10 }),
     ])
 
     expect(placed).toHaveLength(1)
+    expect(truncated).toEqual(["scene_01"])
     // Only 1s left in the only run past scriptStart=4.
     expect(placed[0].durationSec).toBe(1)
+  })
+
+  test("carries the plan identity into placement diagnostics", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const { placed } = placeOverlays(runs, [
+      overlay({ planElementId: "scene-plan-1", scriptStart: 3 }),
+    ])
+
+    expect(placed[0]).toMatchObject({
+      sceneId: "scene_01",
+      planElementId: "scene-plan-1",
+    })
   })
 })
 
@@ -384,6 +430,18 @@ describe("buildFcpxml with scene overlays", () => {
 
     expect(xml).not.toContain("lane=")
     expect(xml).not.toContain("scene-asset-scene_01")
+  })
+
+  test("leaves the plan element identity in the composited FCPXML", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [
+      overlay({ planElementId: "scene-plan-1", scriptStart: 3 }),
+    ])
+
+    expect(xml).toContain("scene-plan-1")
   })
 })
 
@@ -483,16 +541,21 @@ describe("buildFcpxml with a white backing", () => {
   })
 })
 
-describe("a manual TITRE annotation composites like a scene", () => {
-  const annotation: TitleAnnotation = {
+describe("a TITRE element composites like a scene", () => {
+  const segments: Segment[] = [
+    { index: 0, start: 4, end: 6, text: "The agents", file: "raw/01 - a.mp4" },
+  ]
+
+  const element: EditingPlanElement = {
     id: "title_1",
-    segmentIndex: 0,
-    scriptStart: 4,
-    scriptEnd: 6,
-    sourceFile: "raw/01 - a.mp4",
-    text: "The agents",
+    sectionId: "",
+    type: "title",
+    source: "manual",
     status: "approved",
-    createdAt: new Date().toISOString(),
+    fromSegment: 0,
+    toSegment: 0,
+    reason: "Added manually",
+    titleText: "The agents",
     htmlPath: "titles/title_1.html",
     exportPath: "exports/title_1.mov",
   }
@@ -502,7 +565,7 @@ describe("a manual TITRE annotation composites like a scene", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
     ]
 
-    const overlays = composableTitleOverlays([annotation])
+    const overlays = composableTitleOverlays([element], segments)
     const { placed, skipped } = placeOverlays(runs, overlays)
 
     expect(skipped).toHaveLength(0)
@@ -515,18 +578,20 @@ describe("a manual TITRE annotation composites like a scene", () => {
     expect(xml).toContain(`duration="${secondsToRational(2, 30)}"`)
   })
 
-  test("an approved annotation with nothing rendered yet composites nothing", () => {
-    const overlays = composableTitleOverlays([
-      { ...annotation, htmlPath: null, exportPath: null },
-    ])
+  test("an approved element with nothing rendered yet composites nothing", () => {
+    const overlays = composableTitleOverlays(
+      [{ ...element, htmlPath: null, exportPath: undefined }],
+      segments
+    )
 
     expect(overlays).toHaveLength(0)
   })
 
-  test("a rendered annotation that was never approved composites nothing", () => {
-    const overlays = composableTitleOverlays([
-      { ...annotation, status: "pending" },
-    ])
+  test("a rendered element that was never approved composites nothing", () => {
+    const overlays = composableTitleOverlays(
+      [{ ...element, status: "proposed" }],
+      segments
+    )
 
     expect(overlays).toHaveLength(0)
   })

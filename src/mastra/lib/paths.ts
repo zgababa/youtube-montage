@@ -1,16 +1,10 @@
 /**
  * Where things live on disk.
  *
- * Two rules from idea.md worth restating here, because breaking either is
- * quiet and painful:
- *
- *   - Mastra's database goes somewhere stable *outside* any project folder
- *     (§9). It holds run state, which is disposable; project folders hold
- *     deliverables, which are portable. Mixing them means moving a folder
- *     either drags a database along or loses the run.
- *   - Intermediate media — extracted audio, frame PNGs — goes to `os.tmpdir()`,
- *     never inside the project (§8). A single 7-second scene is 210 PNGs; the
- *     Next dev server watching those falls over.
+ * One rule from idea.md worth restating here, because breaking it is quiet
+ * and painful: intermediate media — extracted audio, frame PNGs — goes to
+ * `os.tmpdir()`, never inside the project (§8). A single 7-second scene is
+ * 210 PNGs; the Next dev server watching those falls over.
  */
 
 import os from "node:os"
@@ -27,12 +21,6 @@ import path from "node:path"
  */
 export const APP_DIR =
   process.env.VIDEOTOOL_HOME ?? path.join(os.homedir(), ".videotool")
-
-/** Mastra run storage. Losing this costs a re-run and nothing else. */
-export const MASTRA_DB = path.join(APP_DIR, "mastra.db")
-
-/** LibSQL wants a URL, not a path. */
-export const MASTRA_DB_URL = `file:${MASTRA_DB}`
 
 /** The disposable projects index (idea.md §7). */
 export const PROJECTS_INDEX = path.join(APP_DIR, "projects.json")
@@ -77,6 +65,19 @@ export function titleHtmlPath(projectPath: string, annotationId: string) {
 
 export function titleExportPath(projectPath: string, annotationId: string) {
   return assetExportPath(projectPath, annotationId)
+}
+
+function safeTitleElementId(elementId: string) {
+  return `plan_${elementId.replace(/[^a-zA-Z0-9_-]/g, "_")}`
+}
+
+/** Paths for deterministic title assets owned by an editing-plan element. */
+export function titleElementHtmlPath(projectPath: string, elementId: string) {
+  return assetHtmlPath(titlesDir(projectPath), safeTitleElementId(elementId))
+}
+
+export function titleElementExportPath(projectPath: string, elementId: string) {
+  return assetExportPath(projectPath, safeTitleElementId(elementId))
 }
 
 /**
