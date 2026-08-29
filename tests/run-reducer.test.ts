@@ -186,12 +186,45 @@ function project(scenes: Scene[]): Project {
     compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     scenes,
+    editingDocument: {
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    },
     titleAnnotations: [],
     copy: null,
   }
 }
 
 describe("applyPatch", () => {
+  test("folds the structural plan into the project patch", () => {
+    const document = {
+      sections: [
+        {
+          id: "section_01",
+          fromSegment: 0,
+          toSegment: 1,
+          name: "Opening",
+          reason: "starts the subject",
+          source: "automatic" as const,
+        },
+      ],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    }
+
+    const { patch } = reduceParts(
+      run({
+        type: "data-document",
+        data: { document },
+      } as Part)
+    )
+
+    expect(patch.editingDocument).toEqual(document)
+  })
+
   test("merges a partial scenes patch instead of replacing the array", () => {
     // The shape a reconnect + one regenerate produces: the client only ever
     // saw scene_02's `data-scene` event, but the disk copy has all three.
@@ -217,7 +250,9 @@ describe("applyPatch", () => {
 
   test("still overlays non-scene fields wholesale", () => {
     const onDisk = project([scene("scene_01", "ready", 0)])
-    const merged = applyPatch(onDisk, { cleanupApprovedAt: "2026-08-02T00:00:00.000Z" })
+    const merged = applyPatch(onDisk, {
+      cleanupApprovedAt: "2026-08-02T00:00:00.000Z",
+    })
 
     expect(merged.cleanupApprovedAt).toBe("2026-08-02T00:00:00.000Z")
     expect(merged.scenes).toEqual(onDisk.scenes)

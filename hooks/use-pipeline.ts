@@ -9,6 +9,8 @@ import type { PipelineState } from "@/lib/run-reducer"
 import type {
   PipelineAction,
   PipelineUIMessage,
+  PlanElementDecision,
+  PlanSectionDecision,
   SceneDecision,
 } from "@/src/mastra/stream/contract"
 import type { SceneDraft, Span } from "@/lib/types"
@@ -161,6 +163,23 @@ export function usePipeline(
       [send]
     ),
 
+    reviewPlan: React.useCallback(
+      (
+        runId: string,
+        elementDecisions: PlanElementDecision[],
+        sectionDecisions: PlanSectionDecision[],
+        done: boolean
+      ) =>
+        send({
+          kind: "review-plan",
+          runId,
+          elementDecisions,
+          sectionDecisions,
+          done,
+        }),
+      [send]
+    ),
+
     submitReview: React.useCallback(
       (runId: string, decisions: SceneDecision[], done: boolean) =>
         send({ kind: "review-scenes", runId, decisions, done }),
@@ -209,6 +228,17 @@ function toBody(action: PipelineAction | undefined) {
         resumeData: {
           approved: action.approved,
           maxSilenceSec: action.maxSilenceSec,
+        },
+      }
+
+    case "review-plan":
+      return {
+        runId: action.runId,
+        step: "scenarios",
+        resumeData: {
+          elementDecisions: action.elementDecisions,
+          sectionDecisions: action.sectionDecisions,
+          done: action.done,
         },
       }
 

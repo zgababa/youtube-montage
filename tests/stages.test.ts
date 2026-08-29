@@ -40,6 +40,12 @@ function project(over: Partial<Project> = {}): Project {
     timelineApprovedAt: null,
     compositeApprovedAt: null,
     scenes: [],
+    editingDocument: {
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    },
     copy: null,
     styleGuide: { palette: ["#000"], fontStack: "Inter, sans-serif" },
     ...over,
@@ -160,6 +166,45 @@ describe("a stage's status", () => {
 })
 
 describe("what a stage says when nothing is running", () => {
+  test("summarizes a reviewed plan before scene jobs exist", () => {
+    const state = stage(
+      "scenes",
+      project({
+        timelineApprovedAt: "2026-08-02T10:00:00.000Z",
+        editingDocument: {
+          sections: [
+            {
+              id: "section_01",
+              fromSegment: 0,
+              toSegment: 1,
+              name: "Opening",
+              reason: "starts the subject",
+              source: "automatic",
+            },
+          ],
+          elements: [
+            {
+              id: "title_01",
+              sectionId: "section_01",
+              type: "title",
+              source: "automatic",
+              status: "approved",
+              fromSegment: 0,
+              toSegment: 0,
+              reason: "name the opening",
+              titleText: "Opening",
+            },
+          ],
+          analysisAt: "2026-08-02T10:00:00.000Z",
+          reviewedAt: "2026-08-02T10:01:00.000Z",
+        },
+      }),
+      null
+    )
+
+    expect(state.detail).toBe("1 sections · 1 planned")
+  })
+
   test("summarizes what it holds", () => {
     const state = stage(
       "scenes",

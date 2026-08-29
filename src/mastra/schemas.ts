@@ -118,6 +118,8 @@ export const StyleGuideSchema = z.object({
 /** A scene as stored in `project.json` — HTML lives in its own file. */
 export const SceneSchema = z.object({
   id: z.string(),
+  /** The editing-plan element that owns this B-roll renderer job. */
+  planElementId: z.string().optional(),
   scriptStart: z.number(),
   scriptEnd: z.number(),
   windowSec: z.number(),
@@ -153,6 +155,70 @@ export const SceneSchema = z.object({
  */
 export const HydratedSceneSchema = SceneSchema.extend({
   html: z.string().nullable(),
+})
+
+/* -------------------------------------------------------------------------- */
+/* Structural analysis and the editing plan (ADR 0005 — issue #8)             */
+/* -------------------------------------------------------------------------- */
+
+export const PlanElementTypeSchema = z.enum(["title", "zoom", "scene"])
+export const PlanElementSourceSchema = z.enum([
+  "automatic",
+  "manual",
+  "command",
+])
+export const PlanElementStatusSchema = z.enum([
+  "proposed",
+  "approved",
+  "rejected",
+  "conflict",
+  "orphaned",
+])
+export const PlanSectionSourceSchema = z.enum(["automatic", "manual"])
+export const ZoomPresetSchema = z.enum(["subtle", "medium", "strong"])
+
+/** A section is anchored to the approved script, never to model-made seconds. */
+export const EditingSectionSchema = z.object({
+  id: z.string(),
+  fromSegment: z.number().int(),
+  toSegment: z.number().int(),
+  name: z.string(),
+  reason: z.string(),
+  source: PlanSectionSourceSchema,
+})
+
+/**
+ * One visual intention in the reviewed plan.
+ *
+ * Type-specific fields stay optional for now so the structural analysis can
+ * introduce all three catalogue members without duplicating the plan shape.
+ * Later renderers validate the fields belonging to their own type.
+ */
+export const EditingPlanElementSchema = z.object({
+  id: z.string(),
+  sectionId: z.string(),
+  type: PlanElementTypeSchema,
+  source: PlanElementSourceSchema,
+  status: PlanElementStatusSchema,
+  fromSegment: z.number().int(),
+  toSegment: z.number().int(),
+  reason: z.string(),
+  /** Model confidence is explanatory metadata, never a render permission. */
+  confidence: z.number().min(0).max(1).optional(),
+  titleText: z.string().optional(),
+  zoomPreset: ZoomPresetSchema.optional(),
+  zoomDurationSec: z.number().positive().optional(),
+  coversLine: z.string().optional(),
+  intent: z.string().optional(),
+  sceneType: SceneTypeSchema.optional(),
+})
+
+/** The persisted plan: simple current state, not an event log. */
+export const EditingDocumentSchema = z.object({
+  sections: z.array(EditingSectionSchema),
+  elements: z.array(EditingPlanElementSchema),
+  analysisAt: z.string().nullable(),
+  reviewedAt: z.string().nullable(),
 })
 
 /* -------------------------------------------------------------------------- */
@@ -270,6 +336,13 @@ export const StoredProjectSchema = z.object({
   compositeApprovedAt: z.string().nullable().default(null),
   styleGuide: StyleGuideSchema,
   scenes: z.array(SceneSchema),
+  /** Structural plan; defaulted so older project.json files stay readable. */
+  editingDocument: EditingDocumentSchema.default({
+    sections: [],
+    elements: [],
+    analysisAt: null,
+    reviewedAt: null,
+  }),
   /** Manual TITRE annotations (issue #7). Defaulted: absent on older files. */
   titleAnnotations: z.array(TitleAnnotationSchema).default([]),
   copy: ProjectCopySchema.nullable(),
@@ -319,6 +392,12 @@ export type SceneType = z.infer<typeof SceneTypeSchema>
 export type StyleGuide = z.infer<typeof StyleGuideSchema>
 export type StoredScene = z.infer<typeof SceneSchema>
 export type Scene = z.infer<typeof HydratedSceneSchema>
+export type PlanElementType = z.infer<typeof PlanElementTypeSchema>
+export type PlanElementSource = z.infer<typeof PlanElementSourceSchema>
+export type PlanElementStatus = z.infer<typeof PlanElementStatusSchema>
+export type EditingSection = z.infer<typeof EditingSectionSchema>
+export type EditingPlanElement = z.infer<typeof EditingPlanElementSchema>
+export type EditingDocument = z.infer<typeof EditingDocumentSchema>
 export type TitleAnnotationStatus = z.infer<typeof TitleAnnotationStatusSchema>
 export type TitleAnnotation = z.infer<typeof TitleAnnotationSchema>
 export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>

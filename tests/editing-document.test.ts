@@ -177,7 +177,15 @@ describe("buildEditingDocument, read and written through project.json", () => {
 
     const document = buildEditingDocument(hydrated)
 
-    expect(document).toEqual({ script: null, entries: [], titles: [] })
+    expect(document).toMatchObject({
+      script: null,
+      entries: [],
+      titles: [],
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    })
   })
 
   test("a project.json written before this feature existed still parses and gets an empty document", () => {
@@ -202,6 +210,14 @@ describe("buildEditingDocument, read and written through project.json", () => {
     const parsed = StoredProjectSchema.parse(legacy)
     const document = buildEditingDocument({ ...parsed, scenes: [] })
 
-    expect(document).toEqual({ script: null, entries: [], titles: [] })
+    expect(document).toMatchObject({
+      script: null,
+      entries: [],
+      titles: [],
+      sections: [],
+      elements: [],
+      analysisAt: null,
+      reviewedAt: null,
+    })
   })
 })

@@ -15,6 +15,9 @@
 import type { Gate, StepId, StepStatus } from "@/src/mastra/stream/contract"
 
 export type {
+  EditingDocument,
+  EditingPlanElement,
+  EditingSection,
   MediaFile,
   Project,
   ProjectCopy,
@@ -30,6 +33,9 @@ export type {
   StyleGuide,
   TitleAnnotation,
   TitleAnnotationStatus,
+  PlanElementSource,
+  PlanElementStatus,
+  PlanElementType,
   TranscriptionHints,
   TwitterCopy,
   Word,

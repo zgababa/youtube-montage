@@ -23,6 +23,11 @@ import { z } from "zod"
 import type { UIMessage } from "ai"
 
 import {
+  EditingPlanDecisionSchema,
+  EditingSectionDecisionSchema,
+} from "../lib/editing-plan"
+import {
+  EditingDocumentSchema,
   HydratedSceneSchema,
   MediaFileSchema,
   ProjectCopySchema,
@@ -70,6 +75,7 @@ export const RunStatusSchema = z.enum([
 export const GateSchema = z.enum([
   "review-cleanup",
   "review-timeline",
+  "review-plan",
   "review-scenes",
   "review-composite",
 ])
@@ -142,6 +148,11 @@ export const pipelineDataSchemas = {
     spans: z.array(SpanSchema),
     cutSeconds: z.number(),
     counts: z.array(z.tuple([SpanCategorySchema, z.number()])),
+  }),
+
+  /** The persisted structural plan, before any renderer is started. */
+  document: z.object({
+    document: EditingDocumentSchema,
   }),
 
   /** Scene metadata only — placements decided, nothing generated yet. */
@@ -250,6 +261,12 @@ export const SceneDecisionSchema = z.object({
 
 export type SceneDecision = z.infer<typeof SceneDecisionSchema>
 
+export const PlanElementDecisionSchema = EditingPlanDecisionSchema
+export const PlanSectionDecisionSchema = EditingSectionDecisionSchema
+
+export type PlanElementDecision = z.infer<typeof PlanElementDecisionSchema>
+export type PlanSectionDecision = z.infer<typeof PlanSectionDecisionSchema>
+
 /**
  * Everything the UI can send, as a closed union.
  *
@@ -267,6 +284,13 @@ export type PipelineAction =
       runId: string
       approved: boolean
       maxSilenceSec: number
+    }
+  | {
+      kind: "review-plan"
+      runId: string
+      elementDecisions: PlanElementDecision[]
+      sectionDecisions: PlanSectionDecision[]
+      done: boolean
     }
   | {
       kind: "review-scenes"
