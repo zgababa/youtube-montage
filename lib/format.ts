@@ -36,6 +36,11 @@ export function relativeDate(iso: string, now = Date.now()) {
   return `${years} year${years === 1 ? "" : "s"} ago`
 }
 
+/** `1 segment` / `3 segments` — the naive English plural, enough for counts. */
+export function plural(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`
+}
+
 export const CATEGORY_LABELS: Record<SpanCategory, string> = {
   filler: "filler",
   redundant: "redundant",

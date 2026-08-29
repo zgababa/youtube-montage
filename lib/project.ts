@@ -7,7 +7,14 @@
 
 import { durationLabel, timecode } from "@/lib/format"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
-import type { Project, Scene, Span, SpanCategory, Word } from "@/lib/types"
+import type {
+  Project,
+  Scene,
+  SceneStatus,
+  Span,
+  SpanCategory,
+  Word,
+} from "@/lib/types"
 
 export interface SpanText extends Span {
   text: string
@@ -128,13 +135,18 @@ const DECIDED_STATUS: Record<SceneDecision["action"], Scene["status"]> = {
   regenerate: "generating",
 }
 
+/** Where a scene lands in the script — the order it's shown in everywhere. */
+function byScriptStart(a: Scene, b: Scene) {
+  return a.scriptStart - b.scriptStart
+}
+
 /** The plain-text file that sits on the second monitor during the edit (§11). */
 export function shotlistText(project: Project) {
   return project.scenes
     .filter(
       (scene) => scene.status === "approved" || scene.status === "exported"
     )
-    .sort((a, b) => a.scriptStart - b.scriptStart)
+    .sort(byScriptStart)
     .map((scene) => {
       const dur = durationLabel(scene.measuredDurationSec ?? scene.windowSec)
       return `${timecode(scene.scriptStart)}  ${dur}  ${scene.id}.mov  "${scene.coversLine}"`
@@ -144,4 +156,65 @@ export function shotlistText(project: Project) {
 
 export function totalMediaSeconds(project: Project) {
   return project.media.reduce((total, file) => total + file.durationSec, 0)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Editing document (ADR 0006)                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A known element already referenced by the document — a rendered scene,
+ * pointed at by id rather than carrying its HTML along.
+ */
+export interface EditingDocumentEntry {
+  /** Reference into `project.scenes` — the HTML and export stay where they are. */
+  sceneId: string
+  scriptStart: number
+  scriptEnd: number
+  reason: string
+  status: SceneStatus
+  htmlPath: string | null
+  exportPath: string | null
+}
+
+/**
+ * The editing document, minimal and visible (issue #6).
+ *
+ * Only the first two layers ADR 0006 describes: the approved script and the
+ * elements already known before any structural analysis proposes new ones.
+ * Nothing here is stored under its own key in `project.json` — every field it
+ * reads (`spans`, `scenes`, `cleanupApprovedAt`) is already persisted there, so
+ * this is derived at read time the same way `cleanScript` and `shotlistText`
+ * are. That also means a project written before this feature existed needs no
+ * migration: with `cleanupApprovedAt` absent or `null`, the document is empty.
+ */
+export interface EditingDocument {
+  /** `null` until the cleanup is approved — there is no approved script yet. */
+  script: { text: string; keptSpanCount: number } | null
+  entries: EditingDocumentEntry[]
+}
+
+export function buildEditingDocument(project: Project): EditingDocument {
+  if (project.cleanupApprovedAt === null) {
+    return { script: null, entries: [] }
+  }
+
+  const spans = spansWithText(project.spans, project.transcript.words)
+  const kept = spans.filter((span) => span.action === "keep")
+
+  return {
+    script: { text: cleanScript(spans), keptSpanCount: kept.length },
+    entries: project.scenes
+      .slice()
+      .sort(byScriptStart)
+      .map((scene) => ({
+        sceneId: scene.id,
+        scriptStart: scene.scriptStart,
+        scriptEnd: scene.scriptEnd,
+        reason: scene.intent,
+        status: scene.status,
+        htmlPath: scene.htmlPath,
+        exportPath: scene.exportPath,
+      })),
+  }
 }
