@@ -1,26 +1,60 @@
 import type { Segment } from "./segments"
-import type { EditingPlanElement, ZoomPreset } from "../schemas"
+import type {
+  EditingPlanElement,
+  ZoomPreset,
+  ZoomPosition,
+} from "../schemas"
 
 export const ZOOM_MIN_DURATION_SEC = 0.5
 export const ZOOM_MAX_DURATION_SEC = 4
 
-const ZOOM_PRESETS: Record<ZoomPreset, { scale: number; durationSec: number }> =
-  {
-    subtle: { scale: 1.08, durationSec: 1.5 },
-    medium: { scale: 1.15, durationSec: 2 },
-    strong: { scale: 1.25, durationSec: 2.5 },
-  }
+export interface ZoomPresetConfig {
+  scale: number
+  durationSec: number
+  /** Default position for this preset — overridable per element. */
+  position: ZoomPosition
+}
+
+const ZOOM_PRESETS: Record<ZoomPreset, ZoomPresetConfig> = {
+  subtle: { scale: 1.08, durationSec: 1.5, position: "center" },
+  medium: { scale: 1.15, durationSec: 2, position: "center" },
+  strong: { scale: 1.25, durationSec: 2.5, position: "center" },
+}
+
+/**
+ * Position offsets in FCPXML coordinate space (pixels from center).
+ * 1920×1080 frame, origin at center — positive X is right, positive Y is down.
+ */
+const ZOOM_POSITION_OFFSETS: Record<ZoomPosition, { x: number; y: number }> = {
+  center: { x: 0, y: 0 },
+  top: { x: 0, y: -200 },
+  bottom: { x: 0, y: 200 },
+  left: { x: -300, y: 0 },
+  right: { x: 300, y: 0 },
+  "top-left": { x: -250, y: -180 },
+  "top-right": { x: 250, y: -180 },
+  "bottom-left": { x: -250, y: 180 },
+  "bottom-right": { x: 250, y: 180 },
+}
+
+export function zoomPositionOffset(
+  position: ZoomPosition = "center"
+): { x: number; y: number } {
+  return ZOOM_POSITION_OFFSETS[position]
+}
 
 export interface ZoomSettings {
   preset: ZoomPreset
   durationSec: number
   scale: number
+  position: ZoomPosition
 }
 
 /** Converts the small preset vocabulary into bounded, deterministic values. */
 export function normalizeZoomSettings(
   preset: ZoomPreset = "medium",
-  durationSec?: number
+  durationSec?: number,
+  position?: ZoomPosition
 ): ZoomSettings {
   const settings = ZOOM_PRESETS[preset]
   const duration = durationSec ?? settings.durationSec
@@ -32,6 +66,7 @@ export function normalizeZoomSettings(
       Math.max(ZOOM_MIN_DURATION_SEC, duration)
     ),
     scale: settings.scale,
+    position: position ?? settings.position,
   }
 }
 
@@ -75,7 +110,8 @@ export function approvedZoomWindows(
 
     const settings = normalizeZoomSettings(
       element.zoomPreset,
-      element.zoomDurationSec
+      element.zoomDurationSec,
+      element.zoomPosition
     )
     const scriptStart = from.start
     const scriptEnd = Math.min(to.end, scriptStart + settings.durationSec)
@@ -92,7 +128,6 @@ export function approvedZoomWindows(
       scriptStart,
       scriptEnd,
       ...settings,
-      durationSec: scriptEnd - scriptStart,
     }
 
     if (

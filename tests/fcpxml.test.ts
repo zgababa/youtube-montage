@@ -210,15 +210,15 @@ describe("buildFcpxml", () => {
       preset: "medium",
       durationSec: 2,
       scale: 1.15,
+      position: "center",
     }
 
     const xml = buildFcpxml(project(), runs, [], null, [zoom])
     const clips = [...xml.matchAll(/<asset-clip\b[^>]*>/g)].map((m) => m[0])
 
     expect(clips).toHaveLength(3)
-    expect(xml).toContain(
-      '<adjust-transform position="0 0" scale="1.15 1.15"/>'
-    )
+    expect(xml).toContain('<param name="scale"')
+    expect(xml).toContain("1.15 1.15")
     expect(xml).not.toContain('lane="')
     expect(xml).toContain('<asset id="asset-1"')
     expect(xml).toContain('hasAudio="1"')

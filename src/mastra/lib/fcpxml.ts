@@ -42,8 +42,10 @@
 import path from "node:path"
 
 import { toAbsolute } from "./paths"
-import type { ZoomWindow } from "./zooms"
 import type { TimelineRun } from "./timeline"
+import type { ZoomWindow } from "./zooms"
+import { zoomPositionOffset } from "./zooms"
+import type { ZoomPosition, TransitionType } from "../schemas"
 import type { MediaFile, StoredProject } from "../schemas"
 
 /**
@@ -94,11 +96,6 @@ function framesToRational(frames: number, fps: number): string {
   return `${numerator / divisor}/${den / divisor}s`
 }
 
-function framesToSeconds(frames: number, fps: number): number {
-  const { num, den } = frameDuration(fps)
-  return (frames * num) / den
-}
-
 /**
  * Seconds as an FCPXML rational string, snapped to the fps's frame grid.
  *
@@ -145,142 +142,6 @@ export interface OverlayScene {
   durationSec: number
   /** Project-relative, as stored in `scene.exportPath`. */
   exportPath: string
-}
-
-/** A rendered automatic title that is inserted into the primary storyline. */
-export interface TimelineTitleInsertion {
-  id: string
-  sourceFile: string
-  /** Raw source timecode of the section's first approved segment. */
-  scriptStart: number
-  durationSec: number
-  /** Project-relative, as stored on the plan element. */
-  exportPath: string
-}
-
-interface LocatedTitleInsertion extends TimelineTitleInsertion {
-  runIndex: number
-}
-
-export interface TimelineTitlePlacement extends TimelineTitleInsertion {
-  runIndex: number
-  /** Sequence offset after earlier source clips and title insertions. */
-  timelineOffsetSec: number
-}
-
-export type TimelineLayoutItem =
-  | { kind: "source"; run: TimelineRun; sourceIndex: number }
-  | { kind: "title"; title: TimelineTitlePlacement }
-
-export interface TimelineLayout {
-  items: TimelineLayoutItem[]
-  sourceRuns: TimelineRun[]
-  titlePlacements: TimelineTitlePlacement[]
-  skippedTitles: string[]
-  sourceDurationSec: number
-  timelineDurationSec: number
-}
-
-/** Finds the one kept run that contains each title's source anchor. */
-export function placeTitleInsertions(
-  runs: TimelineRun[],
-  titles: TimelineTitleInsertion[]
-): { placed: LocatedTitleInsertion[]; skipped: string[] } {
-  const placed: LocatedTitleInsertion[] = []
-  const skipped: string[] = []
-
-  for (const title of titles) {
-    const runIndex = runs.findIndex(
-      (run) =>
-        run.file === title.sourceFile &&
-        title.scriptStart >= run.sourceStart &&
-        title.scriptStart < run.sourceEnd
-    )
-    if (runIndex === -1) {
-      skipped.push(title.id)
-      continue
-    }
-    placed.push({ ...title, runIndex })
-  }
-
-  return { placed, skipped }
-}
-
-/**
- * Splits only the source clips that need an inserted title and calculates the
- * output offsets once, in frame units. The source duration is deliberately
- * preserved; the two-second title is an extra primary-storyline clip.
- */
-export function buildTimelineLayout(
-  runs: TimelineRun[],
-  titles: TimelineTitleInsertion[],
-  fps: number
-): TimelineLayout {
-  const { placed, skipped } = placeTitleInsertions(runs, titles)
-  const titlesByRun = new Map<number, LocatedTitleInsertion[]>()
-  for (const title of placed) {
-    const current = titlesByRun.get(title.runIndex) ?? []
-    current.push(title)
-    titlesByRun.set(title.runIndex, current)
-  }
-  for (const current of titlesByRun.values()) {
-    current.sort(
-      (a, b) => a.scriptStart - b.scriptStart || a.id.localeCompare(b.id)
-    )
-  }
-
-  const items: TimelineLayoutItem[] = []
-  const sourceRuns: TimelineRun[] = []
-  const titlePlacements: TimelineTitlePlacement[] = []
-  let offsetFrames = 0
-
-  for (const [runIndex, run] of runs.entries()) {
-    let sourceStart = run.sourceStart
-    for (const title of titlesByRun.get(runIndex) ?? []) {
-      if (title.scriptStart > sourceStart) {
-        const source = {
-          file: run.file,
-          sourceStart,
-          sourceEnd: title.scriptStart,
-        }
-        const sourceIndex = sourceRuns.push(source) - 1
-        items.push({ kind: "source", run: source, sourceIndex })
-        offsetFrames += toFrames(source.sourceEnd - source.sourceStart, fps)
-      }
-
-      const placement: TimelineTitlePlacement = {
-        ...title,
-        timelineOffsetSec: framesToSeconds(offsetFrames, fps),
-      }
-      titlePlacements.push(placement)
-      items.push({ kind: "title", title: placement })
-      offsetFrames += toFrames(title.durationSec, fps)
-      sourceStart = Math.max(sourceStart, title.scriptStart)
-    }
-
-    if (sourceStart < run.sourceEnd) {
-      const source = {
-        file: run.file,
-        sourceStart,
-        sourceEnd: run.sourceEnd,
-      }
-      const sourceIndex = sourceRuns.push(source) - 1
-      items.push({ kind: "source", run: source, sourceIndex })
-      offsetFrames += toFrames(source.sourceEnd - source.sourceStart, fps)
-    }
-  }
-
-  return {
-    items,
-    sourceRuns,
-    titlePlacements,
-    skippedTitles: skipped,
-    sourceDurationSec: runs.reduce(
-      (total, run) => total + (run.sourceEnd - run.sourceStart),
-      0
-    ),
-    timelineDurationSec: framesToSeconds(offsetFrames, fps),
-  }
 }
 
 /**
@@ -392,6 +253,7 @@ export interface ZoomFragment {
   durationSec: number
   scale: number
   preset: ZoomWindow["preset"]
+  position: ZoomPosition
 }
 
 /** Places an approved source window without filling gaps removed by cleanup. */
@@ -418,6 +280,7 @@ export function placeZooms(
           durationSec: end - start,
           scale: zoom.scale,
           preset: zoom.preset,
+          position: zoom.position,
         },
       ]
     })
@@ -450,6 +313,21 @@ export interface WhiteBacking {
 }
 
 /**
+ * A transition placed between two consecutive spine clips.
+ *
+ * `runIndex` is the index of the clip *after* the transition — the cut point
+ * is between `runIndex - 1` and `runIndex`.
+ */
+export interface TransitionSpec {
+  /** The run index where the transition lands (between this and previous). */
+  runIndex: number
+  type: TransitionType
+  durationSec: number
+  /** The plan element id, so composition status can be written back. */
+  planElementId?: string
+}
+
+/**
  * Builds the FCPXML document for a cut timeline: one `<asset>` per distinct
  * source file, one `<asset-clip>` per kept run, in order — plus, for each
  * scene `placeOverlays` can place, a nested `<asset-clip>` and its own
@@ -461,26 +339,25 @@ export function buildFcpxml(
   runs: TimelineRun[],
   scenes: OverlayScene[] = [],
   whiteBacking: WhiteBacking | null = null,
-  titleInsertions: TimelineTitleInsertion[] = [],
-  zooms: ZoomWindow[] = []
+  zooms: ZoomWindow[] = [],
+  transitions: TransitionSpec[] = []
 ): string {
   const fps = project.fps
-  const layout = buildTimelineLayout(runs, titleInsertions, fps)
   const byPath = new Map(project.media.map((file) => [file.path, file]))
 
-  const files = [...new Set(layout.sourceRuns.map((run) => run.file))]
+  const files = [...new Set(runs.map((run) => run.file))]
   const assetIds = new Map(
     files.map((file, index) => [file, `asset-${index + 1}`])
   )
 
-  const { placed } = placeOverlays(layout.sourceRuns, scenes)
-  const { placed: placedZooms } = placeZooms(layout.sourceRuns, zooms)
+  const { placed } = placeOverlays(runs, scenes)
   const overlaysByRun = new Map<number, OverlayFragment[]>()
   for (const fragment of placed) {
     const forRun = overlaysByRun.get(fragment.runIndex) ?? []
     forRun.push(fragment)
     overlaysByRun.set(fragment.runIndex, forRun)
   }
+  const { placed: placedZooms } = placeZooms(runs, zooms)
   const zoomsByRun = new Map<number, ZoomFragment[]>()
   for (const fragment of placedZooms) {
     const forRun = zoomsByRun.get(fragment.runIndex) ?? []
@@ -493,9 +370,6 @@ export function buildFcpxml(
   const overlayAssetIds = new Map(
     placedScenes.map((scene) => [scene.id, `scene-asset-${scene.id}`])
   )
-  const titleAssetIds = new Map(
-    layout.titlePlacements.map((title) => [title.id, `title-asset-${title.id}`])
-  )
 
   // Only worth an <asset> if there's at least one fragment to back.
   const backing = placed.length > 0 ? whiteBacking : null
@@ -507,9 +381,6 @@ export function buildFcpxml(
     ),
     ...placedScenes.map((scene) =>
       sceneAssetXml(scene, project, overlayAssetIds.get(scene.id)!)
-    ),
-    ...layout.titlePlacements.map((title) =>
-      titleAssetXml(title, project, titleAssetIds.get(title.id)!)
     ),
     ...(backing ? [whiteBackingAssetXml(backing, project)] : []),
   ].join("\n    ")
@@ -524,23 +395,14 @@ export function buildFcpxml(
   // durations before it, so the spine has no gap or overlap however long it
   // gets. Summing floats and rounding each offset separately drifts by a frame.
   let offsetFrames = 0
-  const clips = layout.items
-    .map((item) => {
-      if (item.kind === "title") {
-        const durationFrames = toFrames(item.title.durationSec, fps)
-        const clip = clipXml({
-          ref: titleAssetIds.get(item.title.id)!,
-          name: item.title.id,
-          offset: framesToRational(offsetFrames, fps),
-          start: "0s",
-          duration: framesToRational(durationFrames, fps),
-        })
-        offsetFrames += durationFrames
-        return clip
-      }
-
-      const run = item.run
-      const zoomFragments = zoomsByRun.get(item.sourceIndex) ?? []
+  const transitionSet = new Map(transitions.map((t) => [t.runIndex, t]))
+  const clips = runs
+    .flatMap((run, index) => {
+      // A run with an approved zoom in it splits into as many source clips
+      // as the zoom has edges — `<adjust-transform>` applies to a whole
+      // `<asset-clip>`, so the zoomed span can't share a clip with the
+      // untransformed footage around it.
+      const zoomFragments = zoomsByRun.get(index) ?? []
       const boundaries = [
         run.sourceStart,
         run.sourceEnd,
@@ -557,13 +419,13 @@ export function buildFcpxml(
         )
         .sort((a, b) => a - b)
 
-      return boundaries.slice(0, -1).map((sourceStart, partIndex) => {
+      const runClips = boundaries.slice(0, -1).map((sourceStart, partIndex) => {
         const sourceEnd = boundaries[partIndex + 1]
         const zoom = zoomFragments.find(
           (fragment) =>
             fragment.runOffset >= sourceStart && fragment.runOffset < sourceEnd
         )
-        const children = (overlaysByRun.get(item.sourceIndex) ?? [])
+        const children = (overlaysByRun.get(index) ?? [])
           .flatMap((fragment) => {
             const overlapStart = Math.max(fragment.runOffset, sourceStart)
             const overlapEnd = Math.min(
@@ -596,6 +458,9 @@ export function buildFcpxml(
 
             if (!backing) return [scene]
 
+            // Same offset and duration as the scene it backs — always starts
+            // at 0s of its own clip, since any slice of a solid colour looks
+            // the same as any other.
             const white = connectedClipXml({
               ref: WHITE_BACKING_ASSET_ID,
               name: `${name} backing`,
@@ -615,11 +480,26 @@ export function buildFcpxml(
           start: secondsToRational(sourceStart, fps),
           duration: framesToRational(durationFrames, fps),
           children: children || undefined,
-          transformScale: zoom?.scale,
+          zoomAnimation: zoom
+            ? {
+                startScale: 1,
+                endScale: zoom.scale,
+                position: zoom.position,
+                durationSec: sourceEnd - sourceStart,
+                fps,
+              }
+            : undefined,
         })
         offsetFrames += durationFrames
         return clip
       })
+
+      // Insert a transition before this run's clips if one is specified.
+      const transition = transitionSet.get(index)
+      if (transition && index > 0) {
+        return [transitionXml(transition, fps), ...runClips]
+      }
+      return runClips
     })
     .join("\n            ")
 
@@ -717,25 +597,6 @@ function sceneAssetXml(
   )
 }
 
-/** The rendered title card is a primary-storyline, video-only asset. */
-function titleAssetXml(
-  title: TimelineTitleInsertion,
-  project: StoredProject,
-  id: string
-): string {
-  const name = esc(`${title.id} title`)
-  const src = esc(fileUrl(project.path, title.exportPath))
-  const duration = secondsToRational(title.durationSec, project.fps)
-
-  return (
-    `<asset id="${id}" name="${name}" ` +
-    `hasAudio="0" hasVideo="1" ` +
-    `format="format-1" duration="${duration}" start="0s">\n` +
-    `      <media-rep kind="original-media" src="${src}"/>\n` +
-    `    </asset>`
-  )
-}
-
 /** The `<asset>` id `buildFcpxml` gives the (at most one) white backing clip. */
 const WHITE_BACKING_ASSET_ID = "asset-white-backing"
 
@@ -767,20 +628,34 @@ function clipXml(clip: {
   duration: string
   /** Connected clips (`lane="1"` and up), already rendered as XML. */
   children?: string
-  /** A video-only transform; the source asset continues to carry audio. */
-  transformScale?: number
+  /** Animated zoom: start scale, end scale, position, and duration. */
+  zoomAnimation?: {
+    startScale: number
+    endScale: number
+    position: ZoomPosition
+    durationSec: number
+    fps: number
+  }
 }): string {
   const attrs =
     `name="${esc(clip.name)}" ref="${clip.ref}" ` +
     `offset="${clip.offset}" start="${clip.start}" duration="${clip.duration}"`
 
-  const transform =
-    clip.transformScale === undefined
-      ? undefined
-      : `<adjust-transform position="0 0" scale="${clip.transformScale} ${clip.transformScale}"/>`
-  const contents = [transform, clip.children]
-    .filter(Boolean)
-    .join("\n              ")
+  let transform: string | undefined
+  if (clip.zoomAnimation) {
+    const { startScale, endScale, position, durationSec, fps } =
+      clip.zoomAnimation
+    const pos = zoomPositionOffset(position)
+    const durationRational = secondsToRational(durationSec, fps)
+    transform = [
+      `<adjust-transform>`,
+      `  <param name="position" keyframeTimes="0s ${durationRational}" keyframeValues="0 0 ${pos.x} ${pos.y}"/>`,
+      `  <param name="scale" keyframeTimes="0s ${durationRational}" keyframeValues="${startScale} ${startScale} ${endScale} ${endScale}"/>`,
+      `</adjust-transform>`,
+    ].join("\n              ")
+  }
+
+  const contents = [transform, clip.children].filter(Boolean).join("\n              ")
 
   if (!contents) return `<asset-clip ${attrs}/>`
 
@@ -814,4 +689,35 @@ function connectedClipXml(overlay: {
     `<asset-clip name="${esc(overlay.name)}" ref="${overlay.ref}" lane="${overlay.lane}" ` +
     `offset="${overlay.offset}" start="${overlay.start}" duration="${overlay.duration}"/>`
   )
+}
+
+const TRANSITION_EFFECT_UIDS: Record<TransitionType, string> = {
+  crossfade: "FxPlug:4731E73A-88EA-4F8F-9E78-8586B1BDE8B4",
+  "zoom-punch": "",
+  "dip-to-black": "FxPlug:64C6988A-B44B-4FFE-9772-146E1B7160D8",
+}
+
+function transitionXml(
+  transition: TransitionSpec,
+  fps: number
+): string {
+  const duration = secondsToRational(transition.durationSec, fps)
+  const name =
+    transition.type === "crossfade"
+      ? "Cross Dissolve"
+      : transition.type === "dip-to-black"
+        ? "Dip to Color Dissolve"
+        : transition.type === "zoom-punch"
+          ? "Zoom Punch"
+          : "Cross Dissolve"
+
+  const uid = TRANSITION_EFFECT_UIDS[transition.type]
+  if (uid) {
+    return (
+      `<transition name="${esc(name)}" duration="${duration}">\n` +
+      `              <effect name="${esc(name)}" uid="${uid}"/>\n` +
+      `            </transition>`
+    )
+  }
+  return `<transition name="${esc(name)}" duration="${duration}"/>`
 }

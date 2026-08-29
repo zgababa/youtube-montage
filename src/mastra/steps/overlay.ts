@@ -19,7 +19,12 @@ import fs from "node:fs/promises"
 
 import { buildCompositeOverlays } from "../lib/composite"
 import { sceneRenderStatus } from "../lib/editing-plan"
-import { buildFcpxml, buildTimelineLayout, placeOverlays, placeZooms } from "../lib/fcpxml"
+import {
+  buildFcpxml,
+  placeOverlays,
+  placeZooms,
+  type TransitionSpec,
+} from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { updateProject } from "../lib/project"
 import { buildSegments, keptSegments } from "../lib/segments"
@@ -33,9 +38,8 @@ import type { StoredProject } from "../schemas"
  * by the plain "update timeline" action.
  */
 export async function writeComposite(project: StoredProject) {
-  const { runs, overlays, titleInsertions } = buildCompositeOverlays(project)
+  const { runs, overlays } = buildCompositeOverlays(project)
   const { placed, skipped, truncated } = placeOverlays(runs, overlays)
-  const layout = buildTimelineLayout(runs, titleInsertions, project.fps)
 
   // Zooms are a transform on the source clip itself, not an overlay asset —
   // so an approved zoom that collides with an approved title or scene at the
@@ -51,10 +55,38 @@ export async function writeComposite(project: StoredProject) {
     project.editingDocument.elements.filter(
       (element) =>
         element.status === "approved" &&
-        (element.type === "title" || element.type === "scene")
+        (element.type === "title" ||
+          element.type === "scene" ||
+          element.type === "lower-third")
     )
   )
   const { placed: placedZooms, skipped: skippedZooms } = placeZooms(runs, zooms)
+
+  // Build transitions from approved transition elements in the editing plan.
+  const transitionElements = project.editingDocument.elements.filter(
+    (element) =>
+      element.type === "transition" && element.status === "approved"
+  )
+  const transitions: TransitionSpec[] = transitionElements
+    .map((element) => {
+      // Find the run that contains the element's fromSegment.
+      const segment = segments.find((s) => s.index === element.fromSegment)
+      if (!segment) return null
+      const runIndex = runs.findIndex(
+        (run) =>
+          run.file === segment.file &&
+          segment.start >= run.sourceStart &&
+          segment.start < run.sourceEnd
+      )
+      if (runIndex <= 0) return null
+      return {
+        runIndex,
+        type: element.transitionType ?? "crossfade",
+        durationSec: 0.5,
+        planElementId: element.id,
+      }
+    })
+    .filter((t): t is TransitionSpec => t !== null)
 
   // Only encoded when there's actually something to back — a project with
   // scenes rejected outright never needs the clip at all.
@@ -67,13 +99,10 @@ export async function writeComposite(project: StoredProject) {
         )
       : null
 
-  const xml = buildFcpxml(project, runs, overlays, whiteBacking, titleInsertions, zooms)
+  const xml = buildFcpxml(project, runs, overlays, whiteBacking, zooms, transitions)
   const file = fcpxmlPath(project.path)
   await fs.writeFile(file, xml, "utf8")
 
-  const titlePlacements = new Map(
-    layout.titlePlacements.map((title) => [title.id, title])
-  )
   const placedIds = new Set(placed.map((fragment) => fragment.sceneId))
   const skippedIds = new Set(skipped)
   const truncatedIds = new Set(truncated)
@@ -126,29 +155,12 @@ export async function writeComposite(project: StoredProject) {
           }
           return { ...next, ...(compositionFor(element.sceneId) ?? {}) }
         }
+        // A title or lower-third has no separate `StoredScene` — the overlay
+        // `id` fed to `placeOverlays` is the element's own id.
         if (
-          element.type === "title" &&
-          element.source !== "manual" &&
-          element.exportPath != null
+          (element.type === "title" || element.type === "lower-third") &&
+          element.exportPath
         ) {
-          const placement = titlePlacements.get(element.id)
-          if (!placement) {
-            return {
-              ...element,
-              composed: false,
-              timelineOffsetSec: null,
-            }
-          }
-          return {
-            ...element,
-            composed: true,
-            timelineOffsetSec: placement.timelineOffsetSec,
-            timelineDurationSec: placement.durationSec,
-          }
-        }
-        // A title has no separate `StoredScene` — the overlay `id` fed to
-        // `placeOverlays` is the element's own id (`titleElementToOverlayScene`).
-        if (element.type === "title" && element.exportPath) {
           return { ...element, ...(compositionFor(element.id) ?? {}) }
         }
         // A zoom has no export of its own either — it's a transform applied
@@ -180,6 +192,6 @@ export async function writeComposite(project: StoredProject) {
   return {
     path: file,
     placedCount,
-    skipped: [...skipped, ...layout.skippedTitles, ...zoomConflicts, ...skippedZooms],
+    skipped: [...skipped, ...zoomConflicts, ...skippedZooms],
   }
 }

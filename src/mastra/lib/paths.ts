@@ -67,19 +67,6 @@ export function titleExportPath(projectPath: string, annotationId: string) {
   return assetExportPath(projectPath, annotationId)
 }
 
-function safeTitleElementId(elementId: string) {
-  return `plan_${elementId.replace(/[^a-zA-Z0-9_-]/g, "_")}`
-}
-
-/** Paths for deterministic title assets owned by an editing-plan element. */
-export function titleElementHtmlPath(projectPath: string, elementId: string) {
-  return assetHtmlPath(titlesDir(projectPath), safeTitleElementId(elementId))
-}
-
-export function titleElementExportPath(projectPath: string, elementId: string) {
-  return assetExportPath(projectPath, safeTitleElementId(elementId))
-}
-
 /**
  * A plain white clip the composite gate backs scene overlays with
  * (`white-backing.ts`) — one file, sliced to whatever length each fragment

@@ -42,12 +42,20 @@ an inclusive range of existing segment indexes and one of these exact types:
 - title: a short label for a major section;
 - zoom: a salient emphasis, pivot, or reveal, with a bounded preset;
 - scene: a selective B-roll brief for an idea that words alone make hard to
-  hold in the viewer's head.
+  hold in the viewer's head;
+- transition: a crossfade, zoom-punch, or dip-to-black between sections, with
+  a transition type and a reason;
+- lower-third: a persistent name/role overlay (format: "Name | Role"), for
+  introducing people or concepts that stay on screen for 3–5 seconds.
 
-Every element needs a concise reason. Titles have short titleText. Zooms use
-subtle, medium, or strong and a duration in seconds. Scenes include the
-verbatim coversLine, a visual intent, and a scene type from diagram, code,
-data, process, or concept.
+Every element needs a concise reason. Titles have short titleText and an
+optional titlePosition ("center" or "lower-third"). Zooms use subtle, medium,
+or strong, a duration in seconds, and an optional zoomPosition (center, top,
+bottom, left, right, top-left, top-right, bottom-left, bottom-right). Scenes
+include the verbatim coversLine, a visual intent, and a scene type from
+diagram, code, data, process, or concept. Transitions have a transitionType
+from crossfade, zoom-punch, or dip-to-black. Lower-thirds have lowerThirdName
+and optional lowerThirdRole.
 
 Do not repeat an ordinary mention of “title” as a title request. Explicit
 commands and manual annotations are added by deterministic project code and

@@ -160,7 +160,13 @@ export const HydratedSceneSchema = SceneSchema.extend({
 /* Structural analysis and the editing plan (ADR 0005 — issue #8)             */
 /* -------------------------------------------------------------------------- */
 
-export const PlanElementTypeSchema = z.enum(["title", "zoom", "scene"])
+export const PlanElementTypeSchema = z.enum([
+  "title",
+  "zoom",
+  "scene",
+  "transition",
+  "lower-third",
+])
 export const PlanElementSourceSchema = z.enum([
   "automatic",
   "manual",
@@ -180,6 +186,22 @@ export const PlanElementStatusSchema = z.enum([
 ])
 export const PlanSectionSourceSchema = z.enum(["automatic", "manual"])
 export const ZoomPresetSchema = z.enum(["subtle", "medium", "strong"])
+export const ZoomPositionSchema = z.enum([
+  "center",
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+])
+export const TransitionTypeSchema = z.enum([
+  "crossfade",
+  "zoom-punch",
+  "dip-to-black",
+])
 export const PlanRenderStatusSchema = z.enum([
   "pending",
   "generating",
@@ -227,23 +249,20 @@ export const EditingPlanElementSchema = z.object({
   titleText: z.string().optional(),
   zoomPreset: ZoomPresetSchema.optional(),
   zoomDurationSec: z.number().positive().optional(),
+  zoomPosition: ZoomPositionSchema.optional(),
   coversLine: z.string().optional(),
+  transitionType: TransitionTypeSchema.optional(),
+  lowerThirdName: z.string().optional(),
+  lowerThirdRole: z.string().optional(),
+  titlePosition: z.enum(["center", "lower-third"]).optional(),
   intent: z.string().optional(),
   sceneType: SceneTypeSchema.optional(),
   /** B-roll lifecycle, kept on the same plan element as its decision. */
   sceneId: z.string().optional(),
   renderStatus: PlanRenderStatusSchema.optional(),
   renderError: z.string().optional(),
-  /** Project-relative title template, once the approved title was rendered. */
   htmlPath: z.string().nullable().optional(),
-  /** Project-relative title movie, once the approved title was rendered. */
   exportPath: z.string().nullable().optional(),
-  /** True only while this title is referenced by the composed FCPXML. */
-  composed: z.boolean().optional(),
-  /** Sequence offset at the last deterministic composite pass. */
-  timelineOffsetSec: z.number().nonnegative().nullable().optional(),
-  /** The inserted title duration on the output frame grid. */
-  timelineDurationSec: z.number().positive().optional(),
   compositionStatus: PlanCompositionStatusSchema.optional(),
   compositionError: z.string().optional(),
 })
@@ -254,29 +273,6 @@ export const EditingDocumentSchema = z.object({
   elements: z.array(EditingPlanElementSchema),
   analysisAt: z.string().nullable(),
   reviewedAt: z.string().nullable(),
-})
-
-/* -------------------------------------------------------------------------- */
-/* Title annotations (legacy, kept for backward compat)                        */
-/* -------------------------------------------------------------------------- */
-
-export const TitleAnnotationStatusSchema = z.enum([
-  "pending",
-  "approved",
-  "rejected",
-])
-
-export const TitleAnnotationSchema = z.object({
-  id: z.string(),
-  segmentIndex: z.number().int(),
-  scriptStart: z.number(),
-  scriptEnd: z.number(),
-  sourceFile: z.string(),
-  text: z.string(),
-  status: TitleAnnotationStatusSchema,
-  createdAt: z.string(),
-  htmlPath: z.string().nullable(),
-  exportPath: z.string().nullable(),
 })
 
 /* -------------------------------------------------------------------------- */
@@ -421,15 +417,14 @@ export type Scene = z.infer<typeof HydratedSceneSchema>
 export type PlanElementType = z.infer<typeof PlanElementTypeSchema>
 export type PlanElementSource = z.infer<typeof PlanElementSourceSchema>
 export type ZoomPreset = z.infer<typeof ZoomPresetSchema>
+export type ZoomPosition = z.infer<typeof ZoomPositionSchema>
+export type TransitionType = z.infer<typeof TransitionTypeSchema>
 export type PlanElementStatus = z.infer<typeof PlanElementStatusSchema>
 export type PlanRenderStatus = z.infer<typeof PlanRenderStatusSchema>
 export type PlanCompositionStatus = z.infer<typeof PlanCompositionStatusSchema>
 export type EditingSection = z.infer<typeof EditingSectionSchema>
 export type EditingPlanElement = z.infer<typeof EditingPlanElementSchema>
 export type EditingDocument = z.infer<typeof EditingDocumentSchema>
-export type TitleAnnotationStatus = z.infer<typeof TitleAnnotationStatusSchema>
-export type TitleAnnotation = z.infer<typeof TitleAnnotationSchema>
-export type ZoomPreset = z.infer<typeof ZoomPresetSchema>
 export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>
 export type TwitterCopy = z.infer<typeof TwitterCopySchema>
 export type ProjectCopy = z.infer<typeof ProjectCopySchema>

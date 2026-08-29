@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.9">
+  <resources>
+    <format id="format-1" frameDuration="1/30s"/>
+    <asset id="asset-1" name="talk.mp4" hasAudio="1" hasVideo="1" format="format-1" duration="300/1s" start="0s">
+      <media-rep kind="original-media" src="file:///tmp/demo-project/raw/talk.mp4"/>
+    </asset>
+    <asset id="sfx-transition" name="Transition" hasAudio="1" hasVideo="0" format="format-1" duration="4/5s" start="0s">
+      <media-rep kind="original-media" src="file:///Users/fabien/Projects/youtube-montage/src/mastra/public/sfx/transition.mp3"/>
+    </asset>
+    <asset id="sfx-swoosh" name="Swoosh" hasAudio="1" hasVideo="0" format="format-1" duration="3/5s" start="0s">
+      <media-rep kind="original-media" src="file:///Users/fabien/Projects/youtube-montage/src/mastra/public/sfx/swoosh.mp3"/>
+    </asset>
+    <asset id="sfx-thud" name="Thud" hasAudio="1" hasVideo="0" format="format-1" duration="2/5s" start="0s">
+      <media-rep kind="original-media" src="file:///Users/fabien/Projects/youtube-montage/src/mastra/public/sfx/thud.mp3"/>
+    </asset>
+    <asset id="sfx-whoosh" name="Whoosh" hasAudio="1" hasVideo="0" format="format-1" duration="1/2s" start="0s">
+      <media-rep kind="original-media" src="file:///Users/fabien/Projects/youtube-montage/src/mastra/public/sfx/whoosh.mp3"/>
+    </asset>
+    <asset id="sfx-pop" name="Pop" hasAudio="1" hasVideo="0" format="format-1" duration="3/10s" start="0s">
+      <media-rep kind="original-media" src="file:///Users/fabien/Projects/youtube-montage/src/mastra/public/sfx/pop.mp3"/>
+    </asset>
+  </resources>
+  <library>
+    <event name="Timeline">
+      <project name="Demo SFX &amp; Transitions">
+        <sequence format="format-1" duration="50/1s" tcStart="0s">
+          <spine>
+            <asset-clip name="talk.mp4" ref="asset-1" offset="0s" start="0s" duration="10/1s">
+              <asset-clip name="SFX whoosh" ref="sfx-whoosh" lane="-1" offset="3/1s" start="0s" duration="1/2s"/>
+            </asset-clip>
+            <transition name="Cross Dissolve" duration="1/2s">
+              <effect name="Cross Dissolve" uid="FxPlug:4731E73A-88EA-4F8F-9E78-8586B1BDE8B4"/>
+            </transition>
+            <asset-clip name="talk.mp4" ref="asset-1" offset="10/1s" start="12/1s" duration="10/1s"/>
+            <transition name="Diagonal Wipe" duration="1/2s">
+              <effect name="Diagonal Wipe" uid="FxPlug:F5B2B6B4-0B2F-4B5A-9E8A-3A5B8C7D2E1F"/>
+              <param name="angle" value="315"/>
+            </transition>
+            <asset-clip name="talk.mp4" ref="asset-1" offset="20/1s" start="24/1s" duration="10/1s">
+              <asset-clip name="SFX pop" ref="sfx-pop" lane="-1" offset="25/1s" start="0s" duration="3/10s"/>
+            </asset-clip>
+            <transition name="Push Right" duration="1/2s">
+              <effect name="Push Right" uid="FxPlug:A1B2C3D4-E5F6-7890-ABCD-EF1234567890"/>
+              <param name="direction" value="right"/>
+            </transition>
+            <asset-clip name="talk.mp4" ref="asset-1" offset="30/1s" start="36/1s" duration="10/1s"/>
+            <transition name="Dip to Color Dissolve" duration="1/2s">
+              <effect name="Dip to Color Dissolve" uid="FxPlug:64C6988A-B44B-4FFE-9772-146E1B7160D8"/>
+            </transition>
+            <asset-clip name="talk.mp4" ref="asset-1" offset="40/1s" start="48/1s" duration="10/1s"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

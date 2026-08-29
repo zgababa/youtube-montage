@@ -30,7 +30,6 @@ import {
   type StoredScene,
 } from "../schemas"
 import { generateStructured } from "../lib/structured"
-import { shortTitleText } from "../lib/titles"
 import type { PipelineWriter } from "../stream/contract"
 import { message, reporter } from "./shared"
 
@@ -57,6 +56,8 @@ const AnalysisSchema = z.object({
       coversLine: z.string().optional(),
       intent: z.string().optional(),
       sceneType: SceneTypeSchema.optional(),
+      lowerThirdName: z.string().optional(),
+      lowerThirdRole: z.string().optional(),
     })
   ),
 })
@@ -218,9 +219,7 @@ async function analyse(
         toSegment: element.toSegment,
         reason: element.reason.trim(),
         confidence: element.confidence ?? 0.5,
-        ...(element.titleText
-          ? { titleText: shortTitleText(element.titleText) }
-          : {}),
+        ...(element.titleText ? { titleText: element.titleText.trim() } : {}),
         ...(element.zoomPreset ? { zoomPreset: element.zoomPreset } : {}),
         ...(element.zoomDurationSec
           ? { zoomDurationSec: element.zoomDurationSec }
@@ -230,6 +229,19 @@ async function analyse(
           : {}),
         ...(element.intent ? { intent: element.intent.trim() } : {}),
         ...(element.sceneType ? { sceneType: element.sceneType } : {}),
+        ...(element.lowerThirdName
+          ? { lowerThirdName: element.lowerThirdName.trim() }
+          : {}),
+        ...(element.lowerThirdRole
+          ? { lowerThirdRole: element.lowerThirdRole.trim() }
+          : {}),
+        ...(element.type === "lower-third" && element.lowerThirdName
+          ? {
+              titleText: element.lowerThirdRole
+                ? `${element.lowerThirdName.trim()} | ${element.lowerThirdRole.trim()}`
+                : element.lowerThirdName.trim(),
+            }
+          : {}),
       }
     })
     .filter((element): element is EditingPlanElement => element !== null)
