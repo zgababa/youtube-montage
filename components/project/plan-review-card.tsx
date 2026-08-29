@@ -9,10 +9,28 @@ import type {
   PlanElementDecision,
   PlanSectionDecision,
 } from "@/src/mastra/stream/contract"
+import type { TransitionType, SfxType } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { StageSection } from "@/components/project/stage"
+
+const TRANSITION_OPTIONS: { value: TransitionType; label: string }[] = [
+  { value: "crossfade", label: "Crossfade" },
+  { value: "zoom-punch", label: "Zoom punch" },
+  { value: "dip-to-black", label: "Dip to black" },
+  { value: "wipe-left", label: "Wipe left" },
+  { value: "wipe-right", label: "Wipe right" },
+  { value: "wipe-top", label: "Wipe up" },
+  { value: "wipe-bottom", label: "Wipe down" },
+  { value: "wipe-diagonal", label: "Diagonal wipe" },
+  { value: "push-left", label: "Push left" },
+  { value: "push-right", label: "Push right" },
+  { value: "push-top", label: "Push up" },
+  { value: "push-bottom", label: "Push down" },
+]
+
+const SFX_OPTIONS: SfxType[] = ["whoosh", "transition", "pop", "swoosh", "thud"]
 
 export function PlanReviewCard({
   project,
@@ -304,6 +322,82 @@ function ElementRow({
               }
             }}
           />
+        </div>
+      ) : null}
+      {element.type === "transition" ? (
+        <div className="flex flex-wrap gap-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Type
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+              defaultValue={element.transitionType ?? "crossfade"}
+              disabled={!active || element.status === "orphaned"}
+              aria-label={`Transition type for ${element.id}`}
+              onChange={(event) =>
+                onDecision({
+                  id: element.id,
+                  action: "modify",
+                  transitionType: event.target.value as TransitionType,
+                })
+              }
+            >
+              {TRANSITION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            SFX
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+              defaultValue={element.sfxType ?? ""}
+              disabled={!active || element.status === "orphaned"}
+              aria-label={`SFX type for ${element.id}`}
+              onChange={(event) =>
+                onDecision({
+                  id: element.id,
+                  action: "modify",
+                  sfxType: (event.target.value || undefined) as SfxType | undefined,
+                })
+              }
+            >
+              <option value="">Auto</option>
+              {SFX_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+      {element.type === "zoom" || element.type === "scene" ? (
+        <div className="flex flex-wrap gap-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            SFX
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+              defaultValue={element.sfxType ?? ""}
+              disabled={!active || element.status === "orphaned"}
+              aria-label={`SFX type for ${element.id}`}
+              onChange={(event) =>
+                onDecision({
+                  id: element.id,
+                  action: "modify",
+                  sfxType: (event.target.value || undefined) as SfxType | undefined,
+                })
+              }
+            >
+              <option value="">Auto</option>
+              {SFX_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       ) : null}
       {active ? (

@@ -44,7 +44,23 @@ export const EditingPlanDecisionSchema = z.object({
   coversLine: z.string().optional(),
   intent: z.string().optional(),
   transitionType: z
-    .enum(["crossfade", "zoom-punch", "dip-to-black"])
+    .enum([
+      "crossfade",
+      "zoom-punch",
+      "dip-to-black",
+      "wipe-left",
+      "wipe-right",
+      "wipe-top",
+      "wipe-bottom",
+      "wipe-diagonal",
+      "push-left",
+      "push-right",
+      "push-top",
+      "push-bottom",
+    ])
+    .optional(),
+  sfxType: z
+    .enum(["whoosh", "transition", "pop", "swoosh", "thud"])
     .optional(),
   lowerThirdName: z.string().optional(),
   lowerThirdRole: z.string().optional(),
@@ -514,6 +530,7 @@ export function applyEditingPlanDecisions(
       "coversLine",
       "intent",
       "transitionType",
+      "sfxType",
       "lowerThirdName",
       "lowerThirdRole",
       "titlePosition",

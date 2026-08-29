@@ -56,8 +56,6 @@ const AnalysisSchema = z.object({
       coversLine: z.string().optional(),
       intent: z.string().optional(),
       sceneType: SceneTypeSchema.optional(),
-      lowerThirdName: z.string().optional(),
-      lowerThirdRole: z.string().optional(),
     })
   ),
 })
@@ -229,19 +227,6 @@ async function analyse(
           : {}),
         ...(element.intent ? { intent: element.intent.trim() } : {}),
         ...(element.sceneType ? { sceneType: element.sceneType } : {}),
-        ...(element.lowerThirdName
-          ? { lowerThirdName: element.lowerThirdName.trim() }
-          : {}),
-        ...(element.lowerThirdRole
-          ? { lowerThirdRole: element.lowerThirdRole.trim() }
-          : {}),
-        ...(element.type === "lower-third" && element.lowerThirdName
-          ? {
-              titleText: element.lowerThirdRole
-                ? `${element.lowerThirdName.trim()} | ${element.lowerThirdRole.trim()}`
-                : element.lowerThirdName.trim(),
-            }
-          : {}),
       }
     })
     .filter((element): element is EditingPlanElement => element !== null)

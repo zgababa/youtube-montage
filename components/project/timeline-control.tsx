@@ -19,11 +19,13 @@ export function TimelineControl({
   project,
   timeline,
   composite,
+  disabled,
   onUpdate,
 }: {
   project: Project
   timeline: PipelineDataParts["fcpxml"] | null
   composite: PipelineDataParts["composite"] | null
+  disabled: boolean
   onUpdate: (maxSilenceSec: number) => Promise<void>
 }) {
   const [showSettings, setShowSettings] = React.useState(false)
@@ -39,7 +41,7 @@ export function TimelineControl({
     <div className="flex flex-col gap-2 rounded-xl border p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={update} disabled={pending}>
+          <Button size="sm" onClick={update} disabled={disabled || pending}>
             {pending ? "Updating…" : "Update timeline"}
           </Button>
           <Button

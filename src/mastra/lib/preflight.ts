@@ -53,7 +53,7 @@ export async function preflight(): Promise<PreflightIssue[]> {
     issues.push({
       what: "chromium",
       message:
-        "Playwright's Chromium isn't installed. Run `npx playwright install chromium`. Scene validation and export need it.",
+        "Playwright's Chromium isn't installed. Run `bunx playwright install chromium`. Scene validation and export need it.",
     })
   }
 
