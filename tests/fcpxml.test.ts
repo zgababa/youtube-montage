@@ -5,6 +5,7 @@ import {
   placeOverlays,
   secondsToRational,
   type OverlayScene,
+  type SfxClip,
 } from "../src/mastra/lib/fcpxml"
 import { composableTitleOverlays } from "../src/mastra/lib/titles"
 import type { Segment } from "../src/mastra/lib/segments"
@@ -594,5 +595,170 @@ describe("a TITRE element composites like a scene", () => {
     )
 
     expect(overlays).toHaveLength(0)
+  })
+})
+
+describe("buildFcpxml with wipe and push transitions", () => {
+  test("a wipe-left transition is emitted as a simple transition without synthetic UID", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 6, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [
+      { runIndex: 1, type: "wipe-left", durationSec: 0.5 },
+    ])
+
+    expect(xml).toContain("Wipe Left")
+    expect(xml).not.toContain("FxPlug:F5B2B6B4")
+    expect(xml).not.toContain('name="angle"')
+  })
+
+  test("a wipe-diagonal transition is emitted as a simple transition", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 6, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [
+      { runIndex: 1, type: "wipe-diagonal", durationSec: 0.5 },
+    ])
+
+    expect(xml).toContain("Diagonal Wipe")
+    expect(xml).not.toContain('name="angle"')
+  })
+
+  test("a push-right transition is emitted as a simple transition without synthetic UID", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 6, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [
+      { runIndex: 1, type: "push-right", durationSec: 0.5 },
+    ])
+
+    expect(xml).toContain("Push Right")
+    expect(xml).not.toContain("FxPlug:A1B2C3D4")
+    expect(xml).not.toContain('name="direction"')
+  })
+
+  test("a push-bottom transition is emitted as a simple transition", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 6, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [
+      { runIndex: 1, type: "push-bottom", durationSec: 0.5 },
+    ])
+
+    expect(xml).toContain("Push Down")
+    expect(xml).not.toContain('name="direction"')
+  })
+
+  test("crossfade and dip-to-black still work unchanged", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 5 },
+      { file: "raw/01 - a.mp4", sourceStart: 6, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [
+      { runIndex: 1, type: "crossfade", durationSec: 0.5 },
+    ])
+
+    expect(xml).toContain("Cross Dissolve")
+    expect(xml).toContain("FxPlug:4731E73A-88EA-4F8F-9E78-8586B1BDE8B4")
+    expect(xml).not.toContain("angle")
+    expect(xml).not.toContain("direction")
+  })
+})
+
+describe("buildFcpxml with SFX clips", () => {
+  test("adds an audio-only asset for each SFX type used", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const sfxClips: SfxClip[] = [
+      { sfxType: "whoosh", runIndex: 0, runOffset: 3, durationSec: 0.5 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [], sfxClips)
+
+    expect(xml).toContain('<asset id="sfx-whoosh"')
+    expect(xml).toContain('hasAudio="1"')
+    expect(xml).toContain('hasVideo="0"')
+  })
+
+  test("places SFX clips on lane -1 as connected audio clips", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const sfxClips: SfxClip[] = [
+      { sfxType: "whoosh", runIndex: 0, runOffset: 3, durationSec: 0.5 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [], sfxClips)
+
+    const connected = xml.match(/<asset-clip[^>]*lane="-1"[^>]*\/>/)
+    expect(connected).not.toBeNull()
+    expect(connected![0]).toContain('ref="sfx-whoosh"')
+    expect(connected![0]).toContain(`offset="${secondsToRational(3, 30)}"`)
+  })
+
+  test("generates one asset per distinct SFX type", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const sfxClips: SfxClip[] = [
+      { sfxType: "whoosh", runIndex: 0, runOffset: 2, durationSec: 0.5 },
+      { sfxType: "whoosh", runIndex: 0, runOffset: 6, durationSec: 0.5 },
+      { sfxType: "pop", runIndex: 0, runOffset: 4, durationSec: 0.3 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [], sfxClips)
+
+    expect([...xml.matchAll(/<asset id="sfx-whoosh"/g)]).toHaveLength(1)
+    expect([...xml.matchAll(/<asset id="sfx-pop"/g)]).toHaveLength(1)
+    expect(
+      [...xml.matchAll(/<asset-clip[^>]*lane="-1"[^>]*\/>/g)]
+    ).toHaveLength(3)
+  })
+
+  test("SFX clips coexist with scene overlays on different lanes", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const sfxClips: SfxClip[] = [
+      { sfxType: "whoosh", runIndex: 0, runOffset: 3, durationSec: 0.5 },
+    ]
+
+    const xml = buildFcpxml(
+      project(),
+      runs,
+      [overlay({ scriptStart: 3 })],
+      null,
+      [],
+      [],
+      sfxClips
+    )
+
+    expect(xml).toContain('lane="-1"')
+    expect(xml).toContain('lane="1"')
+  })
+
+  test("no SFX assets when sfxClips is empty", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const xml = buildFcpxml(project(), runs, [], null, [], [], [])
+
+    expect(xml).not.toContain("sfx-")
+    expect(xml).not.toContain('lane="-1"')
   })
 })

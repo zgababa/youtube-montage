@@ -43,8 +43,11 @@ an inclusive range of existing segment indexes and one of these exact types:
 - zoom: a salient emphasis, pivot, or reveal, with a bounded preset;
 - scene: a selective B-roll brief for an idea that words alone make hard to
   hold in the viewer's head;
-- transition: a crossfade, zoom-punch, or dip-to-black between sections, with
-  a transition type and a reason;
+- transition: a transition between sections, with a transition type and a reason.
+  Available types: crossfade (smooth default), zoom-punch (energetic), dip-to-black
+  (dramatic pause), wipe-left, wipe-right, wipe-top, wipe-bottom, wipe-diagonal
+  (directional reveals), push-left, push-right, push-top, push-bottom (directional
+  motion that guides the eye);
 - lower-third: a persistent name/role overlay (format: "Name | Role"), for
   introducing people or concepts that stay on screen for 3–5 seconds.
 
@@ -54,8 +57,14 @@ or strong, a duration in seconds, and an optional zoomPosition (center, top,
 bottom, left, right, top-left, top-right, bottom-left, bottom-right). Scenes
 include the verbatim coversLine, a visual intent, and a scene type from
 diagram, code, data, process, or concept. Transitions have a transitionType
-from crossfade, zoom-punch, or dip-to-black. Lower-thirds have lowerThirdName
-and optional lowerThirdRole.
+from the list above. Lower-thirds have lowerThirdName and optional
+lowerThirdRole.
+
+You may also set an optional sfxType on zoom, transition, or scene elements
+to request a specific sound effect. Available SFX types: whoosh (for zooms),
+transition (for section transitions), pop (for scene entrances), swoosh (for
+wipe/push transitions), thud (for dip-to-black). When omitted, a suitable
+default is applied automatically.
 
 Do not repeat an ordinary mention of “title” as a title request. Explicit
 commands and manual annotations are added by deterministic project code and

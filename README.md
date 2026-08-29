@@ -10,18 +10,18 @@ The full spec is in [idea.md](idea.md).
 
 ```bash
 cp .env.example .env.local   # OPENROUTER_API_KEY and ASSEMBLYAI_API_KEY
-npm run dev                  # the app, port 3000
+bun run dev                  # the app, port 3000
 ```
 
 Needs `ffmpeg` and `ffprobe` on PATH plus Playwright's Chromium
-(`npx playwright install chromium`). The first step of every run checks all of
+(`bunx playwright install chromium`). The first step of every run checks all of
 them and fails with an install message rather than halfway through.
 
 ```bash
-npm test        # segment tiling, transcript units, media roles, scene validation,
+bun test        # segment tiling, transcript units, media roles, scene validation,
                 # timeline runs, FCPXML output
-npm run lint
-npm run typecheck
+bun run lint
+bun run typecheck
 ```
 
 ## How the pipeline works
@@ -312,5 +312,5 @@ project uses the **Base UI** primitives (`render`, not `asChild`) and
 **hugeicons**. The one deliberate exception is the scene preview `<iframe>`.
 
 ```bash
-npx shadcn@latest add <component>
+bunx shadcn@latest add <component>
 ```

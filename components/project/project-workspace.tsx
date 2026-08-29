@@ -841,6 +841,7 @@ export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
             onSaveEditingDocument={saveEditingDocument}
             timeline={pipeline.timeline}
             composite={pipeline.composite}
+            disabled={pipeline.streaming}
             onUpdateTimeline={updateTimeline}
           />
         </div>

@@ -98,3 +98,13 @@ export function toAbsolute(projectPath: string, relative: string) {
 export function tmpDir(...segments: string[]) {
   return path.join(os.tmpdir(), "videotool", ...segments)
 }
+
+/**
+ * Absolute path to an SFX file bundled with the app.
+ *
+ * SFX files live in `src/mastra/public/sfx/` — app-owned, not per-project.
+ * The returned path is absolute so `fcpxml.ts` can turn it into a `file://` URL.
+ */
+export function sfxPath(sfxType: string): string {
+  return path.resolve(import.meta.dir, "..", "public", "sfx", `${sfxType}.mp3`)
+}

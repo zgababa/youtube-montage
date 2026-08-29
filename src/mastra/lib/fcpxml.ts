@@ -41,11 +41,11 @@
 
 import path from "node:path"
 
-import { toAbsolute } from "./paths"
+import { toAbsolute, sfxPath } from "./paths"
 import type { TimelineRun } from "./timeline"
 import type { ZoomWindow } from "./zooms"
 import { zoomPositionOffset } from "./zooms"
-import type { ZoomPosition, TransitionType } from "../schemas"
+import type { ZoomPosition, TransitionType, SfxType } from "../schemas"
 import type { MediaFile, StoredProject } from "../schemas"
 
 /**
@@ -323,8 +323,36 @@ export interface TransitionSpec {
   runIndex: number
   type: TransitionType
   durationSec: number
+}
+
+/**
+ * An SFX clip placed as a connected audio clip on a negative lane.
+ *
+ * SFX accompany visual elements (transitions, zooms, scene entrances) and
+ * are placed automatically based on the element type, or explicitly via the
+ * plan element's `sfxType` field.
+ */
+export interface SfxClip {
+  sfxType: SfxType
+  runIndex: number
+  /** Start in the physical source clock of the parent spine clip. */
+  runOffset: number
+  durationSec: number
   /** The plan element id, so composition status can be written back. */
   planElementId?: string
+}
+
+const SFX_DURATIONS: Record<SfxType, number> = {
+  whoosh: 0.5,
+  transition: 0.8,
+  pop: 0.3,
+  swoosh: 0.6,
+  thud: 0.4,
+}
+
+/** Default duration for an SFX type when not specified. */
+export function defaultSfxDuration(sfxType: SfxType): number {
+  return SFX_DURATIONS[sfxType]
 }
 
 /**
@@ -340,7 +368,8 @@ export function buildFcpxml(
   scenes: OverlayScene[] = [],
   whiteBacking: WhiteBacking | null = null,
   zooms: ZoomWindow[] = [],
-  transitions: TransitionSpec[] = []
+  transitions: TransitionSpec[] = [],
+  sfxClips: SfxClip[] = []
 ): string {
   const fps = project.fps
   const byPath = new Map(project.media.map((file) => [file.path, file]))
@@ -371,9 +400,20 @@ export function buildFcpxml(
     placedScenes.map((scene) => [scene.id, `scene-asset-${scene.id}`])
   )
 
+  // Group SFX clips by run index for placement as connected audio clips.
+  const sfxByRun = new Map<number, SfxClip[]>()
+  for (const clip of sfxClips) {
+    const forRun = sfxByRun.get(clip.runIndex) ?? []
+    forRun.push(clip)
+    sfxByRun.set(clip.runIndex, forRun)
+  }
+
   // Only worth an <asset> if there's at least one fragment to back.
   const backing = placed.length > 0 ? whiteBacking : null
   const sceneLane = backing ? 2 : 1
+
+  // Collect unique SFX types used for asset generation.
+  const usedSfxTypes = [...new Set(sfxClips.map((s) => s.sfxType))]
 
   const resources = [
     ...files.map((file) =>
@@ -383,6 +423,7 @@ export function buildFcpxml(
       sceneAssetXml(scene, project, overlayAssetIds.get(scene.id)!)
     ),
     ...(backing ? [whiteBackingAssetXml(backing, project)] : []),
+    ...usedSfxTypes.map((sfxType) => sfxAssetXml(sfxType, project)),
   ].join("\n    ")
 
   // Fragments of the same scene are numbered in placement order — the second
@@ -425,52 +466,65 @@ export function buildFcpxml(
           (fragment) =>
             fragment.runOffset >= sourceStart && fragment.runOffset < sourceEnd
         )
-        const children = (overlaysByRun.get(index) ?? [])
-          .flatMap((fragment) => {
-            const overlapStart = Math.max(fragment.runOffset, sourceStart)
-            const overlapEnd = Math.min(
-              fragment.runOffset + fragment.durationSec,
-              sourceEnd
+        const children = [
+          ...(overlaysByRun.get(index) ?? [])
+            .flatMap((fragment) => {
+              const overlapStart = Math.max(fragment.runOffset, sourceStart)
+              const overlapEnd = Math.min(
+                fragment.runOffset + fragment.durationSec,
+                sourceEnd
+              )
+              if (overlapEnd <= overlapStart) return []
+
+              const part = (partNumber.get(fragment.sceneId) ?? 0) + 1
+              partNumber.set(fragment.sceneId, part)
+              const planElementId = sceneById.get(fragment.sceneId)?.planElementId
+              const identity =
+                planElementId && planElementId !== fragment.sceneId
+                  ? `${fragment.sceneId} [${planElementId}]`
+                  : fragment.sceneId
+              const name = part === 1 ? identity : `${identity} (${part})`
+              const sourceOffset =
+                fragment.sourceOffset + (overlapStart - fragment.runOffset)
+              const offset = secondsToRational(overlapStart, fps)
+              const duration = secondsToRational(overlapEnd - overlapStart, fps)
+
+              const scene = connectedClipXml({
+                ref: overlayAssetIds.get(fragment.sceneId)!,
+                name,
+                lane: sceneLane,
+                offset,
+                start: secondsToRational(sourceOffset, fps),
+                duration,
+              })
+
+              if (!backing) return [scene]
+
+              const white = connectedClipXml({
+                ref: WHITE_BACKING_ASSET_ID,
+                name: `${name} backing`,
+                lane: 1,
+                offset,
+                start: "0s",
+                duration,
+              })
+              return [white, scene]
+            }),
+          ...(sfxByRun.get(index) ?? [])
+            .filter(
+              (sfx) => sfx.runOffset >= sourceStart && sfx.runOffset < sourceEnd
             )
-            if (overlapEnd <= overlapStart) return []
-
-            const part = (partNumber.get(fragment.sceneId) ?? 0) + 1
-            partNumber.set(fragment.sceneId, part)
-            const planElementId = sceneById.get(fragment.sceneId)?.planElementId
-            const identity =
-              planElementId && planElementId !== fragment.sceneId
-                ? `${fragment.sceneId} [${planElementId}]`
-                : fragment.sceneId
-            const name = part === 1 ? identity : `${identity} (${part})`
-            const sourceOffset =
-              fragment.sourceOffset + (overlapStart - fragment.runOffset)
-            const offset = secondsToRational(overlapStart, fps)
-            const duration = secondsToRational(overlapEnd - overlapStart, fps)
-
-            const scene = connectedClipXml({
-              ref: overlayAssetIds.get(fragment.sceneId)!,
-              name,
-              lane: sceneLane,
-              offset,
-              start: secondsToRational(sourceOffset, fps),
-              duration,
-            })
-
-            if (!backing) return [scene]
-
-            // Same offset and duration as the scene it backs — always starts
-            // at 0s of its own clip, since any slice of a solid colour looks
-            // the same as any other.
-            const white = connectedClipXml({
-              ref: WHITE_BACKING_ASSET_ID,
-              name: `${name} backing`,
-              lane: 1,
-              offset,
-              start: "0s",
-              duration,
-            })
-            return [white, scene]
-          })
+            .map((sfx) =>
+              connectedClipXml({
+                ref: `sfx-${sfx.sfxType}`,
+                name: `SFX ${sfx.sfxType}`,
+                lane: -1,
+                offset: secondsToRational(sfx.runOffset, fps),
+                start: "0s",
+                duration: secondsToRational(sfx.durationSec, fps),
+              })
+            ),
+        ]
           .join("\n              ")
         const durationFrames = toFrames(sourceEnd - sourceStart, fps)
         const clip = clipXml({
@@ -620,6 +674,30 @@ function whiteBackingAssetXml(
   )
 }
 
+const SFX_DISPLAY_NAMES: Record<SfxType, string> = {
+  whoosh: "Whoosh",
+  transition: "Transition",
+  pop: "Pop",
+  swoosh: "Swoosh",
+  thud: "Thud",
+}
+
+function sfxAssetXml(sfxType: SfxType, project: StoredProject): string {
+  const id = `sfx-${sfxType}`
+  const name = SFX_DISPLAY_NAMES[sfxType]
+  const absolutePath = sfxPath(sfxType)
+  const src = esc(`file://${absolutePath.split(path.sep).map(encodeURIComponent).join("/")}`)
+  const duration = secondsToRational(SFX_DURATIONS[sfxType], project.fps)
+
+  return (
+    `<asset id="${id}" name="${esc(name)}" ` +
+    `hasAudio="1" hasVideo="0" ` +
+    `format="format-1" duration="${duration}" start="0s">\n` +
+    `      <media-rep kind="original-media" src="${src}"/>\n` +
+    `    </asset>`
+  )
+}
+
 function clipXml(clip: {
   ref: string
   name: string
@@ -695,6 +773,45 @@ const TRANSITION_EFFECT_UIDS: Record<TransitionType, string> = {
   crossfade: "FxPlug:4731E73A-88EA-4F8F-9E78-8586B1BDE8B4",
   "zoom-punch": "",
   "dip-to-black": "FxPlug:64C6988A-B44B-4FFE-9772-146E1B7160D8",
+  "wipe-left": "",
+  "wipe-right": "",
+  "wipe-top": "",
+  "wipe-bottom": "",
+  "wipe-diagonal": "",
+  "push-left": "",
+  "push-right": "",
+  "push-top": "",
+  "push-bottom": "",
+}
+
+const TRANSITION_DISPLAY_NAMES: Record<TransitionType, string> = {
+  crossfade: "Cross Dissolve",
+  "zoom-punch": "Cross Dissolve",
+  "dip-to-black": "Dip to Color Dissolve",
+  "wipe-left": "Wipe Left",
+  "wipe-right": "Wipe Right",
+  "wipe-top": "Wipe Up",
+  "wipe-bottom": "Wipe Down",
+  "wipe-diagonal": "Diagonal Wipe",
+  "push-left": "Push Left",
+  "push-right": "Push Right",
+  "push-top": "Push Up",
+  "push-bottom": "Push Down",
+}
+
+const WIPE_ANGLES: Record<string, number> = {
+  "wipe-left": 90,
+  "wipe-right": 270,
+  "wipe-top": 0,
+  "wipe-bottom": 180,
+  "wipe-diagonal": 315,
+}
+
+const PUSH_DIRECTIONS: Record<string, string> = {
+  "push-left": "left",
+  "push-right": "right",
+  "push-top": "top",
+  "push-bottom": "bottom",
 }
 
 function transitionXml(
@@ -702,16 +819,9 @@ function transitionXml(
   fps: number
 ): string {
   const duration = secondsToRational(transition.durationSec, fps)
-  const name =
-    transition.type === "crossfade"
-      ? "Cross Dissolve"
-      : transition.type === "dip-to-black"
-        ? "Dip to Color Dissolve"
-        : transition.type === "zoom-punch"
-          ? "Zoom Punch"
-          : "Cross Dissolve"
-
+  const name = TRANSITION_DISPLAY_NAMES[transition.type]
   const uid = TRANSITION_EFFECT_UIDS[transition.type]
+
   if (uid) {
     return (
       `<transition name="${esc(name)}" duration="${duration}">\n` +

@@ -7,9 +7,10 @@ import {
   createScenePlanElement,
   createTitlePlanElement,
   createZoomPlanElement,
+  createTransitionPlanElement,
 } from "@/src/mastra/lib/editing-plan"
 import { buildSegments, keptSegments } from "@/src/mastra/lib/segments"
-import type { EditingPlanElement, Project, ZoomPreset } from "@/lib/types"
+import type { EditingPlanElement, Project, ZoomPreset, TransitionType } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,9 +30,24 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 
-type ElementKind = "title" | "zoom" | "scene"
+type ElementKind = "title" | "zoom" | "scene" | "transition"
 
 const ZOOM_PRESETS: ZoomPreset[] = ["subtle", "medium", "strong"]
+
+const TRANSITION_TYPES: { value: TransitionType; label: string }[] = [
+  { value: "crossfade", label: "Crossfade" },
+  { value: "zoom-punch", label: "Zoom punch" },
+  { value: "dip-to-black", label: "Dip to black" },
+  { value: "wipe-left", label: "Wipe left" },
+  { value: "wipe-right", label: "Wipe right" },
+  { value: "wipe-top", label: "Wipe up" },
+  { value: "wipe-bottom", label: "Wipe down" },
+  { value: "wipe-diagonal", label: "Diagonal wipe" },
+  { value: "push-left", label: "Push left" },
+  { value: "push-right", label: "Push right" },
+  { value: "push-top", label: "Push up" },
+  { value: "push-bottom", label: "Push down" },
+]
 
 /**
  * Opens once a range is picked in the document (`segment-picker.tsx`). Every
@@ -53,6 +69,7 @@ export function AddElementDialog({
   const [kind, setKind] = React.useState<ElementKind>("title")
   const [titleText, setTitleText] = React.useState("")
   const [zoomPreset, setZoomPreset] = React.useState<ZoomPreset>("medium")
+  const [transitionType, setTransitionType] = React.useState<TransitionType>("crossfade")
   const [intent, setIntent] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
 
@@ -79,6 +96,7 @@ export function AddElementDialog({
     setKind("title")
     setTitleText("")
     setZoomPreset("medium")
+    setTransitionType("crossfade")
     setIntent("")
     setError(null)
   }
@@ -99,7 +117,9 @@ export function AddElementDialog({
           ? createTitlePlanElement({ ...input, titleText })
           : kind === "zoom"
             ? createZoomPlanElement({ ...input, zoomPreset })
-            : createScenePlanElement({ ...input, intent: intent || undefined })
+            : kind === "transition"
+              ? createTransitionPlanElement({ ...input, transitionType })
+              : createScenePlanElement({ ...input, intent: intent || undefined })
       onCreate(element)
       reset()
       onClose()
@@ -142,6 +162,7 @@ export function AddElementDialog({
               <SelectItem value="title">Title</SelectItem>
               <SelectItem value="zoom">Zoom</SelectItem>
               <SelectItem value="scene">Scène B-roll</SelectItem>
+              <SelectItem value="transition">Transition</SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -184,6 +205,31 @@ export function AddElementDialog({
           </Field>
         ) : null}
 
+        {kind === "transition" ? (
+          <Field>
+            <FieldLabel htmlFor="element-transition-type">
+              Transition type
+            </FieldLabel>
+            <Select
+              value={transitionType}
+              onValueChange={(value) =>
+                setTransitionType(value as TransitionType)
+              }
+            >
+              <SelectTrigger id="element-transition-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TRANSITION_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        ) : null}
+
         {kind === "scene" ? (
           <Field>
             <FieldLabel htmlFor="element-intent">
@@ -205,7 +251,7 @@ export function AddElementDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit}>
-            Add {kind === "scene" ? "scene" : kind}
+            Add {kind === "scene" ? "scene" : kind === "transition" ? "transition" : kind}
           </Button>
         </DialogFooter>
       </DialogContent>

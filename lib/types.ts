@@ -41,6 +41,8 @@ export type {
   Word,
   YouTubeCopy,
   ZoomPreset,
+  TransitionType,
+  SfxType,
 } from "@/src/mastra/schemas"
 
 export type {

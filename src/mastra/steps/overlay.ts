@@ -23,14 +23,40 @@ import {
   buildFcpxml,
   placeOverlays,
   placeZooms,
+  defaultSfxDuration,
   type TransitionSpec,
+  type SfxClip,
 } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { updateProject } from "../lib/project"
 import { buildSegments, keptSegments } from "../lib/segments"
 import { ensureWhiteBacking } from "../lib/white-backing"
 import { approvedZoomWindows } from "../lib/zooms"
-import type { StoredProject } from "../schemas"
+import type { StoredProject, SfxType, TransitionType } from "../schemas"
+import type { PlanElementType } from "../schemas"
+
+function resolveSfxType(
+  elementType: PlanElementType,
+  transitionType?: TransitionType
+): SfxType | null {
+  switch (elementType) {
+    case "transition":
+      if (
+        transitionType?.startsWith("wipe-") ||
+        transitionType?.startsWith("push-")
+      ) {
+        return "swoosh"
+      }
+      if (transitionType === "dip-to-black") return "thud"
+      return "transition"
+    case "zoom":
+      return "whoosh"
+    case "scene":
+      return "pop"
+    default:
+      return null
+  }
+}
 
 /**
  * Rebuilds the runs, recomposits the exported scenes and titles, and
@@ -83,10 +109,58 @@ export async function writeComposite(project: StoredProject) {
         runIndex,
         type: element.transitionType ?? "crossfade",
         durationSec: 0.5,
-        planElementId: element.id,
       }
     })
     .filter((t): t is TransitionSpec => t !== null)
+
+  // Build SFX clips from approved plan elements whose visuals are placed.
+  const placedElementIds = new Set([
+    ...placed.map((fragment) => fragment.sceneId),
+    ...placedZooms.map((fragment) => fragment.zoomId),
+  ])
+  const composedTitleIds = new Set(
+    project.editingDocument.elements
+      .filter(
+        (element) =>
+          (element.type === "title" || element.type === "lower-third") &&
+          element.compositionStatus === "composed"
+      )
+      .map((element) => element.id)
+  )
+  const sfxClips: SfxClip[] = []
+  for (const element of project.editingDocument.elements) {
+    if (element.status !== "approved") continue
+
+    const hasVisual =
+      placedElementIds.has(element.id) ||
+      placedElementIds.has(element.sceneId ?? "") ||
+      composedTitleIds.has(element.id)
+    if (!hasVisual) continue
+
+    const sfxType = resolveSfxType(element.type, element.transitionType)
+    if (!sfxType && !element.sfxType) continue
+
+    const resolvedType = element.sfxType ?? sfxType
+    if (!resolvedType) continue
+
+    const segment = segments.find((s) => s.index === element.fromSegment)
+    if (!segment) continue
+    const runIndex = runs.findIndex(
+      (run) =>
+        run.file === segment.file &&
+        segment.start >= run.sourceStart &&
+        segment.start < run.sourceEnd
+    )
+    if (runIndex === -1) continue
+
+    sfxClips.push({
+      sfxType: resolvedType,
+      runIndex,
+      runOffset: segment.start,
+      durationSec: defaultSfxDuration(resolvedType),
+      planElementId: element.id,
+    })
+  }
 
   // Only encoded when there's actually something to back — a project with
   // scenes rejected outright never needs the clip at all.
@@ -99,7 +173,7 @@ export async function writeComposite(project: StoredProject) {
         )
       : null
 
-  const xml = buildFcpxml(project, runs, overlays, whiteBacking, zooms, transitions)
+  const xml = buildFcpxml(project, runs, overlays, whiteBacking, zooms, transitions, sfxClips)
   const file = fcpxmlPath(project.path)
   await fs.writeFile(file, xml, "utf8")
 

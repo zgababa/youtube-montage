@@ -197,10 +197,27 @@ export const ZoomPositionSchema = z.enum([
   "bottom-left",
   "bottom-right",
 ])
+export const SfxTypeSchema = z.enum([
+  "whoosh",
+  "transition",
+  "pop",
+  "swoosh",
+  "thud",
+])
+
 export const TransitionTypeSchema = z.enum([
   "crossfade",
   "zoom-punch",
   "dip-to-black",
+  "wipe-left",
+  "wipe-right",
+  "wipe-top",
+  "wipe-bottom",
+  "wipe-diagonal",
+  "push-left",
+  "push-right",
+  "push-top",
+  "push-bottom",
 ])
 export const PlanRenderStatusSchema = z.enum([
   "pending",
@@ -252,6 +269,7 @@ export const EditingPlanElementSchema = z.object({
   zoomPosition: ZoomPositionSchema.optional(),
   coversLine: z.string().optional(),
   transitionType: TransitionTypeSchema.optional(),
+  sfxType: SfxTypeSchema.optional(),
   lowerThirdName: z.string().optional(),
   lowerThirdRole: z.string().optional(),
   titlePosition: z.enum(["center", "lower-third"]).optional(),
@@ -419,6 +437,7 @@ export type PlanElementSource = z.infer<typeof PlanElementSourceSchema>
 export type ZoomPreset = z.infer<typeof ZoomPresetSchema>
 export type ZoomPosition = z.infer<typeof ZoomPositionSchema>
 export type TransitionType = z.infer<typeof TransitionTypeSchema>
+export type SfxType = z.infer<typeof SfxTypeSchema>
 export type PlanElementStatus = z.infer<typeof PlanElementStatusSchema>
 export type PlanRenderStatus = z.infer<typeof PlanRenderStatusSchema>
 export type PlanCompositionStatus = z.infer<typeof PlanCompositionStatusSchema>

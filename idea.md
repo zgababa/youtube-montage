@@ -312,7 +312,7 @@ app/
   api/reveal/route.ts            POST — `open -R` on a path
 ```
 
-**`src/mastra/` must have zero Next imports.** The workflow has to run headless — from `npx mastra dev` Studio, from `npx mastra api workflow run start`, and from a plain script. This is how the renderer gets debugged; clicking through a browser to test frame-stepping is miserable.
+**`src/mastra/` must have zero Next imports.** The workflow has to run headless — from `bunx mastra dev` Studio, from `bunx mastra api workflow run start`, and from a plain script. This is how the renderer gets debugged; clicking through a browser to test frame-stepping is miserable.
 
 Frame PNGs and extracted audio go to `os.tmpdir()` — **never** inside the project directory, or the dev server watches thousands of PNGs and falls over.
 
@@ -320,7 +320,7 @@ Frame PNGs and extracted audio go to `os.tmpdir()` — **never** inside the proj
 
 Two processes during development:
 
-- **Mastra server** — `npx mastra dev`, port 4111. Runs the workflow, hosts Studio.
+- **Mastra server** — `bunx mastra dev`, port 4111. Runs the workflow, hosts Studio.
 - **Next.js** — port 3000. The UI, and thin API routes that call the workflow.
 
 Next routes talk to Mastra through `mastra.getWorkflow('brollWorkflow')` (preferred over a direct import — it carries the instance's logger, storage, telemetry, and registered agents, and gives full type inference on input/output schemas). Consult Mastra's "With Next.js" integration docs for whether to embed the instance in-process or call the server over HTTP with `MastraClient`; either works locally, and in-process is fewer moving parts.
@@ -357,7 +357,7 @@ Every step that produces deliverable data writes it into `project.json` before r
 
 ### Studio
 
-`npx mastra dev` gives a graph view of the pipeline, live per-step status, a generated input form, execution traces, and time travel to replay an individual step after a run.
+`bunx mastra dev` gives a graph view of the pipeline, live per-step status, a generated input form, execution traces, and time travel to replay an individual step after a run.
 
 This is the debugging surface for the whole build. Re-running just the `scenarios` step against an existing transcript — without re-transcribing an hour of footage — is what makes iteration on prompts tolerable. Use Studio before building any custom progress UI.
 
@@ -369,7 +369,7 @@ Three screens. Plain and functional; this is a tool, not a product.
 
 **All UI components must come from shadcn/ui.** No other component library, no hand-rolled equivalents of components shadcn already provides, no Material UI, Chakra, Mantine, Radix used directly, or bespoke button/dialog/input implementations.
 
-- Install via the CLI (`npx shadcn@latest add <component>`) so components land in `components/ui/` as owned source.
+- Install via the CLI (`bunx shadcn@latest add <component>`) so components land in `components/ui/` as owned source.
 - Tailwind for layout and spacing around those components; do not restyle them into something unrecognisable.
 - If a needed component isn't in shadcn, compose it from shadcn primitives before writing anything custom.
 
@@ -437,11 +437,11 @@ Do not build these. They're all reasonable and none is needed to find out whethe
 
 ## 13. Build order
 
-**Workflow in Studio before any UI.** `npx mastra dev` gives a graph view, an input form, live status, and time travel — a better debugging surface than a hand-rolled CLI, and it exists on day one.
+**Workflow in Studio before any UI.** `bunx mastra dev` gives a graph view, an input form, live status, and time travel — a better debugging surface than a hand-rolled CLI, and it exists on day one.
 
 ```
-npx mastra dev
-npx mastra api workflow run start broll-pipeline '{"inputData":{"projectPath":"/path/to/project"}}'
+bunx mastra dev
+bunx mastra api workflow run start broll-pipeline '{"inputData":{"projectPath":"/path/to/project"}}'
 ```
 
 Run it on one real folder until it goes from raw files to `.mov` files and a shot list untouched. The real bugs live here — timestamp drift between STT output and span decisions, scenes referencing the wrong script line, duration mismatches. Use Studio's time travel to re-run a single step against an existing transcript rather than re-transcribing an hour of footage each iteration.
@@ -460,16 +460,16 @@ Milestone 2 is already usable.
 **AI layer — Mastra, for everything model-related and all orchestration.**
 
 - `@mastra/core` — agents, workflows (`createStep`, `createWorkflow`), suspend/resume
-- `mastra` CLI — `npx mastra dev` for Studio on port 4111
+- `mastra` CLI — `bunx mastra dev` for Studio on port 4111
 - `@mastra/libsql` — local run storage at `~/.videotool/mastra.db`
 - Zod for all step input/output schemas
 - Mastra's model router for provider access — model strings in `provider/model` form (e.g. `anthropic/claude-opus-5`), defined as strings, not imported provider objects
 
 **App layer**
 
-- Next.js (App Router), TypeScript, run locally via `npm run dev`
+- Next.js (App Router), TypeScript, run locally via `bun run dev`
 - Node 20+, `"type": "module"`
-- **shadcn/ui for every UI component** (§10) — Tailwind CSS, components installed via `npx shadcn@latest add`, living in `components/ui/`. No other component library.
+- **shadcn/ui for every UI component** (§10) — Tailwind CSS, components installed via `bunx shadcn@latest add`, living in `components/ui/`. No other component library.
 
 **Media layer — outside Mastra, plain deterministic steps**
 
@@ -485,4 +485,4 @@ Milestone 2 is already usable.
 
 ### Setup
 
-`npm create mastra@latest` scaffolds the project and installs Mastra's skills for coding assistants. Worth running `npx skills add mastra-ai/skills --skill mastra` so the generating AI has current Mastra API guidance rather than working from training data — the workflow API has changed shape (there is a separate legacy workflows namespace in the docs; ignore it and use `@mastra/core/workflows`).
+`bun create mastra@latest` scaffolds the project and installs Mastra's skills for coding assistants. Worth running `bunx skills add mastra-ai/skills --skill mastra` so the generating AI has current Mastra API guidance rather than working from training data — the workflow API has changed shape (there is a separate legacy workflows namespace in the docs; ignore it and use `@mastra/core/workflows`).
