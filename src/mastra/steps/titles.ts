@@ -48,6 +48,7 @@ export const titlesStep = createStep({
       const pendingPlanTitles = project.editingDocument.elements.filter(
         (element) =>
           element.type === "title" &&
+          element.source === "automatic" &&
           element.status === "approved" &&
           element.titleText &&
           element.exportPath == null
