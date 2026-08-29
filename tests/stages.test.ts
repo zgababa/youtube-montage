@@ -75,33 +75,22 @@ function stage(id: string, project: Project, current: Run | null) {
 }
 
 describe("the stage list", () => {
-  test("covers every pipeline step exactly once", () => {
+  test("covers every pipeline step exactly once, except the two the document's Timeline control owns directly", () => {
+    // `fcpxml` and `overlay` no longer have a stepper card of their own (D3)
+    // — the merged Timeline control resumes them straight from the editing
+    // document, so they deliberately don't belong to any `StageDefinition`.
     const owned = STAGES.flatMap((definition) => definition.steps)
-
-    expect([...owned].sort()).toEqual([...STEP_IDS].sort())
-  })
-
-  test("never claims the style guide ran, because it isn't a step", () => {
-    // It's an input the user sets, not a phase. With no steps of its own an
-    // "are they all done?" roll-up would otherwise call it finished on load,
-    // and finished again after a run it took no part in.
-    const everything = run(
-      Object.fromEntries(STEP_IDS.map((id) => [id, "success" as StepStatus]))
+    const expected = STEP_IDS.filter(
+      (id) => id !== "fcpxml" && id !== "overlay"
     )
-    const state = stage("look", project(), everything)
 
-    expect(state.runSteps).toEqual([])
-    expect(state.status).toBe("pending")
+    expect([...owned].sort()).toEqual([...expected].sort())
   })
 
   test("reads as pending before anything has run", () => {
     const states = stageStates(project(), null)
 
     expect(states.map((state) => state.status)).toEqual([
-      "pending",
-      "pending",
-      "pending",
-      "pending",
       "pending",
       "pending",
       "pending",
@@ -138,6 +127,7 @@ describe("a stage's status", () => {
         scan: "success",
         "extract-audio": "success",
         transcribe: "success",
+        cleanup: "success",
       })
     )
 
@@ -158,7 +148,7 @@ describe("a stage's status", () => {
   })
 
   test("flags the gate it is parked on", () => {
-    const state = stage("cleanup", project(), run({ cleanup: "suspended" }))
+    const state = stage("footage", project(), run({ cleanup: "suspended" }))
 
     expect(state.needsYou).toBe(true)
     expect(state.status).toBe("suspended")
@@ -240,40 +230,14 @@ describe("what a stage says when nothing is running", () => {
   })
 })
 
-describe("the timeline export stage", () => {
-  test("says nothing until there are spans to build a timeline from", () => {
-    expect(stage("timeline", project(), null).detail).toBeNull()
-  })
-
-  test("reports the silence cap and whether it's approved", () => {
-    const notApproved = stage(
-      "timeline",
-      project({ spans: [{ start: 0, end: 1, action: "keep" }] as never }),
-      null
-    )
-    const approved = stage(
-      "timeline",
-      project({
-        spans: [{ start: 0, end: 1, action: "keep" }] as never,
-        maxSilenceSec: 0.5,
-        timelineApprovedAt: "2026-08-02T10:00:00.000Z",
-      }),
-      null
-    )
-
-    expect(notApproved.detail).toBe("0.3s silence cap · not yet approved")
-    expect(approved.detail).toBe("0.5s silence cap · approved")
-  })
-})
-
 describe("locking", () => {
-  test("holds scenes shut until the timeline export is approved", () => {
-    const gated = stage(
+  test("never locks scenes on the timeline export — ADR 0008 auto-approves it instead", () => {
+    const withoutTimeline = stage(
       "scenes",
       project({ cleanupApprovedAt: "2026-08-02T10:00:00.000Z" }),
       null
     )
-    const open = stage(
+    const withTimeline = stage(
       "scenes",
       project({
         cleanupApprovedAt: "2026-08-02T10:00:00.000Z",
@@ -282,35 +246,19 @@ describe("locking", () => {
       null
     )
 
-    expect(gated.locked).toContain("approve the timeline export")
-    expect(open.locked).toBeNull()
+    expect(withoutTimeline.locked).toBeNull()
+    expect(withTimeline.locked).toBeNull()
   })
 
-  test("holds the timeline export shut until cleanup is approved", () => {
-    const gated = stage("timeline", project(), null)
-    const open = stage(
-      "timeline",
-      project({ cleanupApprovedAt: "2026-08-02T10:00:00.000Z" }),
-      null
-    )
-
-    expect(gated.locked).not.toBeNull()
-    expect(open.locked).toBeNull()
-  })
-
-  test("never locks the style guide, which is an input", () => {
-    expect(stage("look", project(), null).locked).toBeNull()
-  })
-
-  test("opens cleanup as soon as there are spans to look at", () => {
-    const empty = stage("cleanup", project(), null)
+  test("never locks footage — cleanup is an input state within it, not a gate on the stage", () => {
+    const empty = stage("footage", project(), null)
     const withSpans = stage(
-      "cleanup",
+      "footage",
       project({ spans: [{ start: 0, end: 1, action: "cut" }] as never }),
       null
     )
 
-    expect(empty.locked).not.toBeNull()
+    expect(empty.locked).toBeNull()
     expect(withSpans.locked).toBeNull()
   })
 })
@@ -330,7 +278,7 @@ describe("which stage the page opens on", () => {
     const current = run({ generate: "running", cleanup: "suspended" })
     const states = stageStates(approved, current)
 
-    expect(focusStage(states, approved)).toBe("cleanup")
+    expect(focusStage(states, approved)).toBe("footage")
   })
 
   test("is the running one when nothing is waiting", () => {
@@ -354,15 +302,16 @@ describe("which stage the page opens on", () => {
   })
 
   test("never lands on a locked stage", () => {
-    // Scenes exist but the cleanup was reopened, so the scenes stage is shut.
-    const reopened = project({
+    // Deliverables is locked (no copy, no approved scenes yet), so the
+    // furthest unlocked stage with content is scenes, not deliverables.
+    const midway = project({
       spans: [{ start: 0, end: 1, action: "cut" }] as never,
       media: [{ path: "01.MP4" }] as never,
       scenes: [scene("scene_01", "ready")],
     })
-    const states = stageStates(reopened, null)
+    const states = stageStates(midway, null)
 
-    expect(focusStage(states, reopened)).toBe("cleanup")
+    expect(focusStage(states, midway)).toBe("scenes")
   })
 
   test("starts on the footage of a project that has never run", () => {

@@ -6,15 +6,20 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Tick02Icon } from "@hugeicons/core-free-icons"
 
 import { applyPatch } from "@/lib/run-reducer"
-import { reveal, saveProject } from "@/lib/client-api"
+import { resolvePlanReviewDecisions } from "@/src/mastra/lib/editing-plan"
+import {
+  reveal,
+  saveProject,
+  updateTimeline as updateTimelineRequest,
+} from "@/lib/client-api"
 import { sceneCounts, withDecisions } from "@/lib/project"
 import { focusStage, stageStates, type StageId } from "@/lib/stages"
 import type {
+  EditingDocument,
   MediaFile,
   Project,
   Span,
   StyleGuide,
-  TitleAnnotation,
   TranscriptionHints,
 } from "@/lib/types"
 import type {
@@ -28,7 +33,6 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/toast"
 import { CleanupReview } from "@/components/project/cleanup-review"
-import { CompositeReview } from "@/components/project/composite-review"
 import { EditingDocumentCard } from "@/components/project/editing-document-card"
 import { CopyReview } from "@/components/project/copy-review"
 import { MediaSettings } from "@/components/project/media-settings"
@@ -36,10 +40,9 @@ import { ProjectHeader } from "@/components/project/project-header"
 import { RunStrip } from "@/components/project/run-strip"
 import { SceneList } from "@/components/project/scene-list"
 import { ShotlistCard } from "@/components/project/shotlist-card"
+import { SourceScriptEditor } from "@/components/project/source-script"
 import { Stage } from "@/components/project/stage"
 import { StyleGuideEditor } from "@/components/project/style-guide-editor"
-import { TimelineReview } from "@/components/project/timeline-review"
-import { TitleAnnotationsCard } from "@/components/project/title-annotations-card"
 import { PlanReviewCard } from "@/components/project/plan-review-card"
 import { TranscriptionHintsEditor } from "@/components/project/transcription-hints"
 
@@ -54,29 +57,23 @@ import { TranscriptionHintsEditor } from "@/components/project/transcription-hin
  *   3. local edits — span toggles and scene decisions the user has made but
  *      not submitted yet.
  *
- * The two approval gates are `run.resume()` calls, not application state
- * (idea.md §4.2), so what's on screen when the user clicks Approve is what the
- * workflow continues with.
+ * Approve/apply actions (`hooks/use-pipeline.ts`) are direct writes, not
+ * `run.resume()` calls — what's on screen when the user clicks Approve is
+ * what gets sent, and nothing is waiting on a suspended workflow to line up
+ * with.
  *
  * The page itself is a list of stages (`lib/stages.ts`) rather than a progress
  * panel above a row of tabs. Each stage owns both a run of pipeline steps and
  * the UI for what they produce, so watching a phase and acting on it are the
  * same place, and the page opens on whichever one is asking for something.
  */
-export function ProjectWorkspace({
-  project: fromDisk,
-  activeRunId = null,
-}: {
-  project: Project
-  /** A run suspended at a gate for this project, if any (issue #3). */
-  activeRunId?: string | null
-}) {
+export function ProjectWorkspace({ project: fromDisk }: { project: Project }) {
   const router = useRouter()
 
   /** Edits made since the last server read. */
   const [local, setLocal] = React.useState<Partial<Project>>({})
 
-  // The stream closing means every step that ran has already written to
+  // The stream closing means the action that ran has already written to
   // `project.json`. Re-reading makes the server authoritative again and
   // retires the local overlay. Memoized because `useChat` keeps one instance.
   const onSettled = React.useCallback(() => {
@@ -84,7 +81,7 @@ export function ProjectWorkspace({
     router.refresh()
   }, [router])
 
-  const pipeline = usePipeline(fromDisk.path, { onSettled, activeRunId })
+  const pipeline = usePipeline(fromDisk.path, { onSettled })
 
   /**
    * Decisions are collected locally and submitted together.
@@ -223,22 +220,47 @@ export function ProjectWorkspace({
     })
   }
 
+  /**
+   * Every action below is a direct, one-shot call (`hooks/use-pipeline.ts`) —
+   * no run to check for, no gate to be lined up with. `pipeline.streaming`
+   * already disables the buttons while one is in flight (`useChat` holds one
+   * stream at a time), so there's nothing left to guard here.
+   */
+  function runScan() {
+    pipeline.send({ kind: "scan", projectPath: project.path })
+    toast.add({
+      title: "Scanning",
+      description: "Media settings carry forward from what's already set.",
+    })
+  }
+
+  function runTranscribe() {
+    pipeline.send({ kind: "transcribe", projectPath: project.path })
+    toast.add({
+      title: "Transcribing",
+      description: "Cleanup, the plan and scenes are untouched.",
+    })
+  }
+
+  function runProposeCleanup() {
+    pipeline.send({ kind: "propose-cleanup", projectPath: project.path })
+    toast.add({
+      title: "Proposing cuts",
+      description: "Replaces the current proposal — nothing downstream moves.",
+    })
+  }
+
   function approveCleanup() {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No run to approve",
-        description:
-          "Start a run first — approval resumes a suspended workflow.",
-      })
-      return
-    }
     // The spans on screen, not the ones the agent proposed. Every toggle the
     // user made is part of what gets approved.
-    pipeline.approveCleanup(pipeline.run.id, project.spans)
+    pipeline.send({
+      kind: "approve-cleanup",
+      projectPath: project.path,
+      spans: project.spans,
+    })
     toast.add({
       title: "Cleanup approved",
-      description:
-        "Run resumed — the scenario agent reads the approved script.",
+      description: "The structural analysis reads this script next.",
     })
   }
 
@@ -246,41 +268,72 @@ export function ProjectWorkspace({
     patch({ cleanupApprovedAt: null })
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* Gate 2 — timeline export                                                */
-  /* ---------------------------------------------------------------------- */
-
-  function regenerateTimeline(maxSilenceSec: number) {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No run to update",
-        description:
-          "Timeline export resumes a suspended workflow — start a run first.",
-      })
-      return
-    }
-    pipeline.reviewTimeline(pipeline.run.id, false, maxSilenceSec)
+  function runAnalyzePlan() {
+    pipeline.send({ kind: "analyze-plan", projectPath: project.path })
     toast.add({
-      title: "Regenerating",
-      description: "timeline.fcpxml rewritten with the new silence cap.",
+      title: "Analyzing structure",
+      description: "Replaces the current proposal's automatic elements.",
     })
   }
 
-  function approveTimeline(maxSilenceSec: number) {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No run to approve",
-        description:
-          "Approval resumes a suspended workflow — start a run first.",
-      })
-      return
-    }
-    pipeline.reviewTimeline(pipeline.run.id, true, maxSilenceSec)
+  function runGenerateScenes() {
+    pipeline.send({ kind: "generate-scenes", projectPath: project.path })
     toast.add({
-      title: "Timeline approved",
-      description:
-        "Run resumed — the scenario agent reads the approved script next.",
+      title: "Generating scenes",
+      description: "Scenes already ready, approved or exported are left alone.",
     })
+  }
+
+  function runExportApproved() {
+    pipeline.send({ kind: "export-approved", projectPath: project.path })
+    toast.add({
+      title: "Exporting",
+      description: "Approved scenes and titles, serialized one at a time.",
+    })
+  }
+
+  function runWriteCopy() {
+    pipeline.send({ kind: "write-copy", projectPath: project.path })
+    toast.add({
+      title: "Writing copy",
+      description: "From the approved script.",
+    })
+  }
+
+  function runWriteShotlist() {
+    pipeline.send({ kind: "write-shotlist", projectPath: project.path })
+    toast.add({
+      title: "Writing shot list",
+      description: "From the exported scenes.",
+    })
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Gate 2 + 4 — timeline export and composite, merged into one control     */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * ADR 0009: writing the cut and compositing it are deterministic and
+   * cheap, so this is a plain request outside the workflow entirely — not
+   * a `run.resume()`, no gate to be lined up with, available whether or
+   * not a pipeline run is active. `router.refresh()` picks up what it
+   * wrote the same way `persist()` does for a settings PATCH.
+   */
+  function updateTimeline(maxSilenceSec: number) {
+    return updateTimelineRequest(project.id, maxSilenceSec)
+      .then(() => {
+        toast.add({
+          title: "Timeline updated",
+          description: "Exported and recomposited from the current script.",
+        })
+        router.refresh()
+      })
+      .catch((error: Error) => {
+        toast.add({
+          title: "Couldn't update the timeline",
+          description: error.message,
+        })
+      })
   }
 
   /* ---------------------------------------------------------------------- */
@@ -307,23 +360,28 @@ export function ProjectWorkspace({
     decide({ id, action: "regenerate", note: note || undefined, model })
   }
 
-  /** Sends everything decided so far and lets the run continue to export. */
-  function submitReview(done: boolean) {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No run to resume",
-        description: "Scene review resumes a suspended workflow.",
-      })
-      return
-    }
+  /**
+   * Applies everything decided so far — a direct write, not a resume.
+   * Exporting approved scenes is its own separate action now (`Export
+   * approved`, in the header once there's something to render).
+   */
+  function submitReview() {
     const pending = Object.values(decisions)
-    pipeline.submitReview(pipeline.run.id, pending, done)
+    const regenerating = pending.filter(
+      (decision) => decision.action === "regenerate"
+    ).length
+    pipeline.send({
+      kind: "apply-scenes",
+      projectPath: project.path,
+      decisions: pending,
+    })
     setDecisions({})
     toast.add({
-      title: done ? "Review submitted" : "Regenerating",
-      description: done
-        ? "Approved scenes export next — serialized, one at a time."
-        : `${pending.length} scene${pending.length === 1 ? "" : "s"} sent back.`,
+      title: regenerating > 0 ? "Regenerating" : "Review applied",
+      description:
+        regenerating > 0
+          ? `${regenerating} scene${regenerating === 1 ? "" : "s"} sent back.`
+          : "Approved scenes are ready to export.",
     })
   }
 
@@ -354,76 +412,23 @@ export function ProjectWorkspace({
   }
 
   function submitPlanReview() {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No plan to approve",
-        description: "Start a run first — plan review resumes the workflow.",
-      })
-      return
-    }
-    const decisions = project.editingDocument.elements
-      .filter(
-        (element) =>
-          element.status !== "orphaned" &&
-          (element.status !== "conflict" || planDecisions[element.id])
-      )
-      .map((element) => {
-        const decision = planDecisions[element.id]
-        if (decision?.action === "reject") return decision
-        if (!decision && element.status === "rejected") {
-          return { id: element.id, action: "reject" as const }
-        }
-        return { ...decision, id: element.id, action: "approve" as const }
-      })
-
-    pipeline.reviewPlan(
-      pipeline.run.id,
-      decisions,
-      Object.values(sectionDecisions),
-      true
+    const decisions = resolvePlanReviewDecisions(
+      project.editingDocument.elements,
+      planDecisions
     )
+
+    pipeline.send({
+      kind: "apply-plan",
+      projectPath: project.path,
+      elementDecisions: decisions,
+      sectionDecisions: Object.values(sectionDecisions),
+      done: true,
+    })
     setPlanDecisions({})
     setSectionDecisions({})
     toast.add({
       title: "Plan approved",
       description: "Accepted visual elements will be rendered next.",
-    })
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* Gate 4 — timeline composite                                             */
-  /* ---------------------------------------------------------------------- */
-
-  function regenerateComposite() {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No run to update",
-        description:
-          "The composite gate resumes a suspended workflow — start a run first.",
-      })
-      return
-    }
-    pipeline.reviewComposite(pipeline.run.id, false)
-    toast.add({
-      title: "Regenerating",
-      description:
-        "timeline.fcpxml recomposited with the scenes exported so far.",
-    })
-  }
-
-  function approveComposite() {
-    if (!pipeline.run) {
-      toast.add({
-        title: "No run to approve",
-        description:
-          "Approval resumes a suspended workflow — start a run first.",
-      })
-      return
-    }
-    pipeline.reviewComposite(pipeline.run.id, true)
-    toast.add({
-      title: "Composite approved",
-      description: "Run resumed — copy and the shot list are written next.",
     })
   }
 
@@ -445,6 +450,14 @@ export function ProjectWorkspace({
     )
   }
 
+  function saveSourceScript(sourceScript: string | null) {
+    persist(
+      { sourceScript },
+      "Original script saved",
+      "Used as context the next time the structural analysis runs."
+    )
+  }
+
   function saveMedia(media: MediaFile[]) {
     const sources = media.filter((file) => file.hasAudio && file.transcribe)
     persist(
@@ -457,20 +470,27 @@ export function ProjectWorkspace({
   }
 
   /**
-   * TITRE annotations (issue #7). Unlike a span toggle, this is never
+   * A manually-added element (title, zoom or scene), and any decision on
+   * one — approve, reject, edit. Unlike a span toggle, this is never
    * pipeline output the run confirms — it's the creator's own intention —
    * so it's a direct `persist`, the same as media settings or the style
    * guide, rather than something held for a gate to approve.
    */
-  function saveTitleAnnotations(titleAnnotations: TitleAnnotation[]) {
+  function saveEditingDocument(editingDocument: EditingDocument) {
     persist(
-      { titleAnnotations },
-      "TITRE annotation saved",
-      "Approved annotations render the next time the pipeline runs."
+      { editingDocument },
+      "Element saved",
+      "Approved elements render the next time the pipeline runs."
     )
   }
 
   const counts = sceneCounts(project.scenes)
+  const pendingScenes = project.scenes.filter(
+    (scene) => scene.status === "pending"
+  ).length
+  const hasTranscriptionSource = project.media.some(
+    (file) => file.hasAudio && file.transcribe
+  )
 
   /**
    * More than one file feeding the transcriber, before anything has been
@@ -489,17 +509,28 @@ export function ProjectWorkspace({
     (decision) => decision.action === "regenerate"
   ).length
   /**
-   * Either there's something new to say, or there are approved scenes that
-   * haven't been rendered yet — and the run isn't already working.
-   *
-   * The streaming half is load-bearing, not politeness. Every submit is a
-   * `run.resume()`, and a second one while the first is still going runs the
-   * export step twice over the same scenes; the two passes then delete each
-   * other's frames and every scene comes back failed.
+   * There's something new to say — and the previous submit isn't still
+   * writing. `applySceneDecisions` is a direct write, not a resume, but two
+   * of them in flight at once could still race on the same scene.
    */
-  const canSubmitReview =
-    !pipeline.streaming &&
-    (decided.length > 0 || counts.approved > counts.exported)
+  const canSubmitReview = !pipeline.streaming && decided.length > 0
+
+  /** No proposal, or a proposal nobody has approved yet. */
+  const cleanupPending = project.cleanupApprovedAt === null
+
+  /** A structural analysis has run and nobody has approved its plan yet. */
+  const planPending =
+    project.editingDocument.analysisAt !== null &&
+    project.editingDocument.reviewedAt === null
+
+  const exportable =
+    project.scenes.some((scene) => scene.status === "approved") ||
+    project.editingDocument.elements.some(
+      (element) =>
+        element.type === "title" &&
+        element.status === "approved" &&
+        element.exportPath == null
+    )
 
   const body: Record<StageId, React.ReactNode> = {
     footage: (
@@ -514,6 +545,26 @@ export function ProjectWorkspace({
             </AlertDescription>
           </Alert>
         ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Walks the folder and probes every file. Settings already set —
+            roles, sync — carry forward.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runScan}
+            disabled={pipeline.streaming}
+          >
+            {project.media.length > 0 ? "Re-scan" : "Scan"}
+          </Button>
+        </div>
+        <Separator />
+        <SourceScriptEditor
+          sourceScript={project.sourceScript}
+          onSave={saveSourceScript}
+        />
+        <Separator />
         <MediaSettings media={project.media} onSave={saveMedia} />
         <Separator />
         <TranscriptionHintsEditor
@@ -521,54 +572,131 @@ export function ProjectWorkspace({
           locked={project.transcript.words.length > 0}
           onSave={saveHints}
         />
-      </>
-    ),
-
-    cleanup: (
-      <>
-        <CleanupReview
-          project={project}
-          onToggleSpan={toggleSpan}
-          onReopen={reopenCleanup}
-        />
         <Separator />
-        <TitleAnnotationsCard
-          project={project}
-          onChange={saveTitleAnnotations}
-        />
-        <Separator />
-        <EditingDocumentCard project={project} />
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {hasTranscriptionSource
+              ? "Only rewrites the transcript — cleanup, the plan and scenes are untouched."
+              : "Mark a file as a transcription source above first."}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runTranscribe}
+            disabled={pipeline.streaming || !hasTranscriptionSource}
+          >
+            Transcribe
+          </Button>
+        </div>
+        {project.transcript.words.length > 0 ? (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {project.spans.length > 0
+                  ? "Replaces the current proposal with a fresh one."
+                  : "Nothing proposed yet."}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={runProposeCleanup}
+                disabled={pipeline.streaming}
+              >
+                {project.spans.length > 0 ? "Re-propose cuts" : "Propose cuts"}
+              </Button>
+            </div>
+          </>
+        ) : null}
+        {project.spans.length > 0 ? (
+          <>
+            <Separator />
+            <CleanupReview
+              project={project}
+              onToggleSpan={toggleSpan}
+              onReopen={reopenCleanup}
+              pending={cleanupPending}
+            />
+          </>
+        ) : null}
       </>
-    ),
-
-    timeline: (
-      <TimelineReview
-        project={project}
-        timeline={pipeline.timeline}
-        onRegenerate={regenerateTimeline}
-        onApprove={approveTimeline}
-        disabled={pipeline.streaming}
-      />
-    ),
-
-    look: (
-      <StyleGuideEditor
-        styleGuide={project.styleGuide}
-        onSave={saveStyleGuide}
-      />
     ),
 
     scenes: (
       <>
+        <StyleGuideEditor
+          styleGuide={project.styleGuide}
+          onSave={saveStyleGuide}
+        />
+        <Separator />
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            {project.cleanupApprovedAt === null
+              ? "Approve cleanup first — the analysis reads the approved script."
+              : project.editingDocument.analysisAt !== null
+                ? "Replaces the proposal's automatic sections and elements — manual ones stay."
+                : "Nothing proposed yet."}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runAnalyzePlan}
+            disabled={pipeline.streaming || project.cleanupApprovedAt === null}
+          >
+            {project.editingDocument.analysisAt !== null
+              ? "Re-analyze structure"
+              : "Analyze structure"}
+          </Button>
+        </div>
+        <Separator />
         <PlanReviewCard
           project={project}
-          active={pipeline.gate?.on === "review-plan"}
+          active={planPending}
           elementDecisions={Object.values(planDecisions)}
           sectionDecisions={Object.values(sectionDecisions)}
           onElementDecision={decidePlanElement}
           onSectionDecision={decidePlanSection}
           onAcceptSection={acceptPlanSection}
         />
+        {pendingScenes > 0 ? (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {pendingScenes} scene{pendingScenes === 1 ? "" : "s"} waiting to
+                be generated — scenes already ready, approved or exported are
+                left alone.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={runGenerateScenes}
+                disabled={pipeline.streaming}
+              >
+                {`Generate ${pendingScenes} scene${pendingScenes === 1 ? "" : "s"}`}
+              </Button>
+            </div>
+          </>
+        ) : null}
+        {exportable ? (
+          <>
+            <Separator />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Approved scenes and titles, rendered to ProRes — serialized, one
+                at a time.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={runExportApproved}
+                disabled={pipeline.streaming}
+              >
+                Export approved
+              </Button>
+            </div>
+          </>
+        ) : null}
         <Separator />
         <SceneList
           project={project}
@@ -581,66 +709,86 @@ export function ProjectWorkspace({
       </>
     ),
 
-    composite: (
-      <CompositeReview
-        project={project}
-        composite={pipeline.composite}
-        onRegenerate={regenerateComposite}
-        onApprove={approveComposite}
-        disabled={pipeline.streaming}
-      />
-    ),
-
     deliverables: (
       <>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Written from the approved script.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runWriteCopy}
+            disabled={pipeline.streaming || project.spans.length === 0}
+          >
+            {project.copy === null ? "Write copy" : "Rewrite copy"}
+          </Button>
+        </div>
+        <Separator />
         <CopyReview copy={project.copy} />
+        <Separator />
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Written from the exported scenes.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runWriteShotlist}
+            disabled={pipeline.streaming || counts.exported === 0}
+          >
+            Write shot list
+          </Button>
+        </div>
         <Separator />
         <ShotlistCard project={project} />
       </>
     ),
   }
 
-  /** The one thing each stage is for, hoisted into its header. */
+  /**
+   * The one thing each stage is for, hoisted into its header — but only while
+   * there's actually something to do. A disabled button that just repeats
+   * "Approved" duplicates the detail line's own "· approved", so once a gate
+   * is cleared the header goes quiet and the detail text is the only place
+   * that says so.
+   */
   const action: Partial<Record<StageId, React.ReactNode>> = {
-    cleanup: (
-      <Button
-        size="sm"
-        onClick={approveCleanup}
-        disabled={project.cleanupApprovedAt !== null || pipeline.streaming}
-      >
-        <HugeiconsIcon
-          icon={Tick02Icon}
-          strokeWidth={2}
-          data-icon="inline-start"
-        />
-        {project.cleanupApprovedAt !== null ? "Approved" : "Approve cleanup"}
-      </Button>
-    ),
-
-    scenes:
-      pipeline.gate?.on === "review-plan" ? (
+    footage:
+      project.spans.length > 0 && cleanupPending ? (
         <Button
           size="sm"
-          onClick={submitPlanReview}
+          onClick={approveCleanup}
           disabled={pipeline.streaming}
         >
-          Approve plan
+          <HugeiconsIcon
+            icon={Tick02Icon}
+            strokeWidth={2}
+            data-icon="inline-start"
+          />
+          Approve cleanup
         </Button>
-      ) : (
-        <Button
-          size="sm"
-          onClick={() => submitReview(regenerating === 0)}
-          disabled={!canSubmitReview}
-        >
-          {regenerating > 0
-            ? `Send ${regenerating} back`
-            : `Submit review${decided.length > 0 ? ` (${decided.length})` : ""}`}
-        </Button>
-      ),
+      ) : undefined,
+
+    scenes: planPending ? (
+      <Button
+        size="sm"
+        onClick={submitPlanReview}
+        disabled={pipeline.streaming}
+      >
+        Approve plan
+      </Button>
+    ) : canSubmitReview ? (
+      <Button size="sm" onClick={submitReview}>
+        {regenerating > 0
+          ? `Send ${regenerating} back`
+          : `Submit review (${decided.length})`}
+      </Button>
+    ) : undefined,
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex w-full max-w-[92rem] flex-col gap-6 px-6 py-10">
       <ProjectHeader
         project={project}
         run={pipeline.run}
@@ -651,13 +799,6 @@ export function ProjectWorkspace({
             `Scenes export at ${fps} fps — match your timeline or the overlay judders.`
           )
         }
-        onRun={() => {
-          pipeline.start()
-          toast.add({
-            title: "Run started",
-            description: "Progress streams in as each step reports.",
-          })
-        }}
         onReveal={() => {
           reveal(project.path).catch((error: Error) =>
             toast.add({ title: "Couldn't reveal", description: error.message })
@@ -672,18 +813,38 @@ export function ProjectWorkspace({
         onJump={jump}
       />
 
-      <div className="flex flex-col gap-3">
-        {stages.map((stage) => (
-          <Stage
-            key={stage.id}
-            stage={stage}
-            open={open === stage.id}
-            onOpenChange={(next) => setPicked(next ? stage.id : null)}
-            action={action[stage.id]}
-          >
-            {body[stage.id]}
-          </Stage>
-        ))}
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_28rem]">
+        <div className="flex min-w-0 flex-col gap-3">
+          {stages.map((stage) => (
+            <Stage
+              key={stage.id}
+              stage={stage}
+              open={open === stage.id}
+              onOpenChange={(next) => setPicked(next ? stage.id : null)}
+              action={action[stage.id]}
+            >
+              {body[stage.id]}
+            </Stage>
+          ))}
+        </div>
+
+        {/*
+         * The editing document, always on screen rather than folded inside
+         * one stage's accordion — issue #5's whole point is that it stays
+         * present across every step and fills in as the pipeline runs, so
+         * hiding it behind "cleanup" defeated that the moment any other
+         * stage was open.
+         */}
+        <div className="max-h-[calc(100vh-3rem)] min-w-0 overflow-y-auto xl:sticky xl:top-6">
+          <EditingDocumentCard
+            project={project}
+            onSaveEditingDocument={saveEditingDocument}
+            timeline={pipeline.timeline}
+            composite={pipeline.composite}
+            disabled={pipeline.streaming}
+            onUpdateTimeline={updateTimeline}
+          />
+        </div>
       </div>
     </main>
   )

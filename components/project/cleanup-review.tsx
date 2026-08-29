@@ -38,6 +38,15 @@ interface CleanupReviewProps {
    * sit below a 26rem scroll area where you had to go looking for it.
    */
   onReopen: () => void
+  /**
+   * A fresh run reaching `cleanup` always suspends with a new proposal and a
+   * cleared `cleanupApprovedAt` — on disk. That update reaches this component
+   * late (stream settling or a reload), so trusting `cleanupApprovedAt` alone
+   * would keep showing "Approved" and a stale timestamp while a fresh
+   * decision is actually waiting. `true` when the live run has cleanup
+   * genuinely suspended right now, overriding the stored approval either way.
+   */
+  pending: boolean
 }
 
 /**
@@ -52,6 +61,7 @@ export function CleanupReview({
   project,
   onToggleSpan,
   onReopen,
+  pending,
 }: CleanupReviewProps) {
   const [hideCuts, setHideCuts] = React.useState(false)
   const [query, setQuery] = React.useState("")
@@ -72,7 +82,7 @@ export function CleanupReview({
   const counts = React.useMemo(() => cutCounts(project.spans), [project.spans])
   const removed = cutSeconds(project.spans)
   const total = transcriptSeconds(project.spans)
-  const approved = project.cleanupApprovedAt !== null
+  const approved = project.cleanupApprovedAt !== null && !pending
 
   return (
     <StageSection

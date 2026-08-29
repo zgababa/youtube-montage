@@ -1,5 +1,5 @@
 /**
- * Renders approved TITRE annotations to ProRes 4444 (issue #7).
+ * Renders approved TITRE elements to ProRes 4444 (issue #7).
  *
  * Mirrors `export.ts` exactly, but for title screens instead of generated
  * B-roll scenes: same `exportScene` call, same "one failure doesn't cost the
@@ -8,85 +8,90 @@
  * this step only ever renders the deterministic template
  * (`lib/titles.ts`'s `renderTitleHtml`) for the fixed `TITLE_DURATION_SEC`.
  *
- * Placed in `broll-workflow.ts` right after `exportStep` and before
- * `overlayStep`, so the composite step's existing review gate covers titles
- * too — no new gate needed for a flow this small.
+ * `app/api/pipeline/route.ts` calls this for the "Export approved" action,
+ * right alongside `exportApprovedScenes` — both render whatever's approved
+ * and missing its export, and always run back to back, so one button covers
+ * both rather than two nearly-identical ones.
  */
 
 import fs from "node:fs/promises"
-import { createStep } from "@mastra/core/workflows"
 
+import { updatePlanElementLifecycle } from "../lib/editing-plan"
 import {
   exportsDir,
   titleExportPath,
   titleHtmlPath,
+  titleElementExportPath,
+  titleElementHtmlPath,
   titlesDir,
   toRelative,
 } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
 import { exportScene } from "../lib/render"
 import { TITLE_DURATION_SEC, renderTitleHtml } from "../lib/titles"
-import { PipelineIO, message, reporter, runStep } from "./shared"
+import type { PipelineWriter } from "../stream/contract"
+import { message, reporter, runStep } from "./shared"
 
-export const titlesStep = createStep({
-  id: "titles",
-  description: "Render approved TITRE annotations to ProRes 4444",
-  inputSchema: PipelineIO,
-  outputSchema: PipelineIO,
-  execute: async ({ inputData, writer }) => {
-    const report = reporter("titles", writer)
-    const { projectPath } = inputData
+export async function exportApprovedTitles(
+  projectPath: string,
+  writer: PipelineWriter | undefined
+) {
+  const report = reporter("titles", writer)
 
-    return runStep(report, async () => {
-      const project = await readStoredProject(projectPath)
-      const pending = project.titleAnnotations.filter(
-        (annotation) => annotation.status === "approved" && annotation.exportPath === null
-      )
+  return runStep(report, async () => {
+    const project = await readStoredProject(projectPath)
+    const pending = project.editingDocument.elements.filter(
+      (element) =>
+        element.type === "title" &&
+        element.status === "approved" &&
+        element.exportPath == null
+    )
 
-      if (pending.length === 0) {
-        await report.log("No approved title annotations to render")
-        return { projectPath }
-      }
-
-      await fs.mkdir(titlesDir(projectPath), { recursive: true })
-      await fs.mkdir(exportsDir(projectPath), { recursive: true })
-
-      for (const [index, annotation] of pending.entries()) {
-        await report.progress(index / pending.length, annotation.id)
-
-        const html = renderTitleHtml(annotation.text, project.styleGuide)
-        const htmlOutput = titleHtmlPath(projectPath, annotation.id)
-        const exportOutput = titleExportPath(projectPath, annotation.id)
-
-        try {
-          await fs.writeFile(htmlOutput, html, "utf8")
-          await exportScene(html, {
-            fps: project.fps,
-            durationSec: TITLE_DURATION_SEC,
-            outputPath: exportOutput,
-          })
-
-          const htmlPath = toRelative(projectPath, htmlOutput)
-          const exportPath = toRelative(projectPath, exportOutput)
-          await updateProject(projectPath, (current) => ({
-            ...current,
-            titleAnnotations: current.titleAnnotations.map((a) =>
-              a.id === annotation.id ? { ...a, htmlPath, exportPath } : a
-            ),
-          }))
-
-          await report.log(`${annotation.id} → ${exportPath}`)
-        } catch (error) {
-          const reason = message(error)
-          await report.emit("failure", {
-            step: "titles",
-            message: `${annotation.id}: ${reason}`,
-            fatal: false,
-          })
-        }
-      }
-
+    if (pending.length === 0) {
+      await report.log("No approved TITRE elements to render")
       return { projectPath }
-    })
-  },
-})
+    }
+
+    await fs.mkdir(titlesDir(projectPath), { recursive: true })
+    await fs.mkdir(exportsDir(projectPath), { recursive: true })
+
+    for (const [index, element] of pending.entries()) {
+      await report.progress(index / pending.length, element.id)
+
+      const html = renderTitleHtml(element.titleText ?? "", project.styleGuide)
+      const htmlOutput = titleElementHtmlPath(projectPath, element.id)
+      const exportOutput = titleElementExportPath(projectPath, element.id)
+
+      try {
+        await fs.writeFile(htmlOutput, html, "utf8")
+        await exportScene(html, {
+          fps: project.fps,
+          durationSec: TITLE_DURATION_SEC,
+          outputPath: exportOutput,
+        })
+
+        const htmlPath = toRelative(projectPath, htmlOutput)
+        const exportPath = toRelative(projectPath, exportOutput)
+        await updateProject(projectPath, (current) => ({
+          ...current,
+          editingDocument: updatePlanElementLifecycle(
+            current.editingDocument,
+            element.id,
+            { htmlPath, exportPath }
+          ),
+        }))
+
+        await report.log(`${element.id} → ${exportPath}`)
+      } catch (error) {
+        const reason = message(error)
+        await report.emit("failure", {
+          step: "titles",
+          message: `${element.id}: ${reason}`,
+          fatal: false,
+        })
+      }
+    }
+
+    return { projectPath }
+  })
+}

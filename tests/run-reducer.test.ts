@@ -178,6 +178,7 @@ function project(scenes: Scene[]): Project {
     fps: 30,
     media: [],
     transcriptionHints: { prompt: "", keyterms: [] },
+    sourceScript: null,
     transcript: { words: [] },
     spans: [],
     cleanupApprovedAt: null,
@@ -192,7 +193,6 @@ function project(scenes: Scene[]): Project {
       analysisAt: null,
       reviewedAt: null,
     },
-    titleAnnotations: [],
     copy: null,
   }
 }

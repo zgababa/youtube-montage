@@ -1,19 +1,17 @@
 /**
  * One scene: generate, validate, repair, persist.
  *
- * Runs once per scene under `.foreach(..., { concurrency: 3 })`. Two things
- * follow from that:
+ * Called `SCENE_CONCURRENCY` at a time by `app/api/pipeline/route.ts`'s
+ * "Generate scenes" action. Two things follow from that:
  *
- *   - **Nothing here is allowed to throw.** In Mastra a single throwing
- *     iteration fails the whole block (idea.md §4.4), and one bad scene must
- *     not kill a run that produced eleven good ones. Failures come back as
- *     `status: "failed"` with the reason attached.
+ *   - **Nothing here is allowed to throw.** One bad scene must not cost the
+ *     batch the eleven good ones — failures come back as `status: "failed"`
+ *     with the reason attached, never a rejected promise.
  *   - Scene updates land out of order. Each emits `data-scene` keyed by scene
  *     id so the client reconciles them in place instead of appending.
  */
 
 import { RequestContext } from "@mastra/core/request-context"
-import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
 import {
@@ -21,6 +19,7 @@ import {
   SCENE_MODEL_KEY,
   type SceneModelContext,
 } from "../agents/scene-agent"
+import { updatePlanElementLifecycle } from "../lib/editing-plan"
 import { updateProject, writeSceneHtml } from "../lib/project"
 import { SCENE_MODEL } from "../models"
 import { validateScene } from "../lib/validate-scene"
@@ -35,6 +34,13 @@ import { emitter, type Emit, type PipelineWriter } from "../stream/contract"
 
 /** Generation plus two repairs. A third attempt almost never differs. */
 const MAX_ATTEMPTS = 3
+
+/**
+ * Modest on purpose. Three concurrent scene agents stays inside rate limits
+ * and keeps three Chromium instances validating at once, which is already as
+ * much as a laptop wants to do while the user is editing.
+ */
+export const SCENE_CONCURRENCY = 3
 
 /**
  * How often a scene reports what it has written so far.
@@ -69,34 +75,12 @@ export const SceneResultSchema = z.object({
   status: SceneSchema.shape.status,
 })
 
-export const generateSceneStep = createStep({
-  id: "generate-scene",
-  description:
-    "Generate one scene's HTML, validate it, and repair it if needed",
-  inputSchema: SceneJobSchema,
-  outputSchema: SceneResultSchema,
-  execute: async ({ inputData, writer }) => {
-    const stream = writer as PipelineWriter | undefined
-    const result = await generateAndPersistScene(inputData, stream)
-
-    // Only the foreach runs this step — review regenerates a scene by calling
-    // the body directly — so this line belongs to the `generate` row and can't
-    // land in a phase that has already reported itself finished.
-    await emitter(stream)("log", {
-      step: "generate",
-      line: `${result.id} → ${result.status}`,
-    })
-
-    return result
-  },
-})
-
 /**
- * The body of the step, callable on its own.
+ * Generate, validate, repair, persist — one scene.
  *
- * Review reuses it: regenerating a rejected scene is the same generate →
- * validate → repair → persist path, just triggered by a human instead of by
- * the foreach.
+ * Called three at a time (`SCENE_CONCURRENCY`, `app/api/pipeline/route.ts`)
+ * for the "Generate scenes" action, and reused as-is by review to regenerate
+ * a single rejected scene.
  */
 export async function generateAndPersistScene(
   job: SceneJob,
@@ -112,6 +96,26 @@ export async function generateAndPersistScene(
     // where nobody has chosen one.
     const model = scene.model ?? SCENE_MODEL
 
+    await updateProject(projectPath, (project) => ({
+      ...project,
+      scenes: project.scenes.map((candidate) =>
+        candidate.id === scene.id
+          ? { ...candidate, model, status: "generating" as const }
+          : candidate
+      ),
+      editingDocument: scene.planElementId
+        ? updatePlanElementLifecycle(
+            project.editingDocument,
+            scene.planElementId,
+            {
+              sceneId: scene.id,
+              renderStatus: "generating",
+              renderError: undefined,
+              compositionStatus: "not-composed",
+            }
+          )
+        : project.editingDocument,
+    }))
     await publish({ ...scene, model, status: "generating", html: null })
 
     try {
@@ -128,6 +132,7 @@ export async function generateAndPersistScene(
         model,
         status: "ready",
         htmlPath,
+        exportPath: null,
         measuredDurationSec: durationSec,
         error: undefined,
       }
@@ -135,6 +140,21 @@ export async function generateAndPersistScene(
       await updateProject(projectPath, (project) => ({
         ...project,
         scenes: project.scenes.map((s) => (s.id === scene.id ? ready : s)),
+        editingDocument: scene.planElementId
+          ? updatePlanElementLifecycle(
+              project.editingDocument,
+              scene.planElementId,
+              {
+                sceneId: scene.id,
+                renderStatus: "rendered",
+                renderError: undefined,
+                htmlPath,
+                exportPath: null,
+                compositionStatus: "not-composed",
+                compositionError: undefined,
+              }
+            )
+          : project.editingDocument,
       }))
 
       await publish({ ...ready, html })
@@ -146,6 +166,7 @@ export async function generateAndPersistScene(
         model,
         status: "failed",
         htmlPath: null,
+        exportPath: null,
         measuredDurationSec: null,
         error: reason,
       }
@@ -153,6 +174,20 @@ export async function generateAndPersistScene(
       await updateProject(projectPath, (project) => ({
         ...project,
         scenes: project.scenes.map((s) => (s.id === scene.id ? failed : s)),
+        editingDocument: scene.planElementId
+          ? updatePlanElementLifecycle(
+              project.editingDocument,
+              scene.planElementId,
+              {
+                sceneId: scene.id,
+                renderStatus: "failed",
+                renderError: reason,
+                htmlPath: null,
+                exportPath: null,
+                compositionStatus: "not-composed",
+              }
+            )
+          : project.editingDocument,
       }))
 
       await publish({ ...failed, html: null })

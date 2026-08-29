@@ -1,9 +1,18 @@
 import { z } from "zod"
 
+import type { Segment } from "./segments"
+import { keptSegments } from "./segments"
+import { shortTitleText } from "./titles"
 import type {
   EditingDocument,
   EditingPlanElement,
   EditingSection,
+  PlanElementType,
+  PlanRenderStatus,
+  SceneType,
+  Span,
+  StoredScene,
+  ZoomPreset,
 } from "../schemas"
 
 /** The validated shape returned by the structural-analysis agent. */
@@ -37,26 +46,294 @@ export type EditingSectionDecision = z.infer<
   typeof EditingSectionDecisionSchema
 >
 
-export interface ExplicitTitleCommand {
-  segmentIndex: number
-  text: string
+export type PlanElementLifecycleUpdate = Partial<
+  Pick<
+    EditingPlanElement,
+    | "sceneId"
+    | "renderStatus"
+    | "renderError"
+    | "htmlPath"
+    | "exportPath"
+    | "compositionStatus"
+    | "compositionError"
+  >
+>
+
+/**
+ * Updates one renderer's lifecycle without replacing sibling plan elements.
+ *
+ * Generic across element types — `sceneId` is simply absent on the update for
+ * a title or zoom, since nothing has ever generated a `StoredScene` for one.
+ */
+export function updatePlanElementLifecycle(
+  document: EditingDocument,
+  planElementId: string,
+  update: PlanElementLifecycleUpdate
+): EditingDocument {
+  return {
+    ...document,
+    elements: document.elements.map((element) =>
+      element.id === planElementId ? { ...element, ...update } : element
+    ),
+  }
 }
 
-/** Parses only paired, reserved envelopes; ordinary mentions stay prose. */
-export function parseTitleCommands(
-  segments: Array<{ index: number; text: string }>
-): ExplicitTitleCommand[] {
-  const commands: ExplicitTitleCommand[] = []
-  const marker = /\bTITRE\b\s+(.+?)\s+\bTITRE\b/gi
+/**
+ * A scene's status, projected onto the plan element's rendering vocabulary.
+ *
+ * The one translation both `scenarios.ts` (a scene's status just changed) and
+ * `overlay.ts` (reporting what it found before compositing) need — kept here
+ * so a future `SceneStatus` value only has one switch to update.
+ */
+export function sceneRenderStatus(scene: StoredScene): PlanRenderStatus {
+  switch (scene.status) {
+    case "pending":
+      return "pending"
+    case "generating":
+      return "generating"
+    case "ready":
+    case "approved":
+      return "rendered"
+    case "exporting":
+      return "exporting"
+    case "exported":
+      return "exported"
+    case "rejected":
+      return "rejected"
+    case "failed":
+      return "failed"
+  }
+}
 
-  for (const segment of segments) {
-    for (const match of segment.text.matchAll(marker)) {
-      const text = match[1]?.trim()
-      if (text) commands.push({ segmentIndex: segment.index, text })
+/* -------------------------------------------------------------------------- */
+/* Manual creation (D2 — select a range in the document, add an element)      */
+/* -------------------------------------------------------------------------- */
+
+interface CreatePlanElementInput {
+  segments: Segment[]
+  spans: Span[]
+  sections: EditingSection[]
+  fromSegment: number
+  toSegment: number
+  reason?: string
+}
+
+/** The section covering `segmentIndex`, or `""` — surfaced as an orphan by the review UI. */
+function coveringSection(
+  sections: EditingSection[],
+  segmentIndex: number
+): string {
+  return (
+    sections.find(
+      (section) =>
+        segmentIndex >= section.fromSegment && segmentIndex <= section.toSegment
+    )?.id ?? ""
+  )
+}
+
+/**
+ * Refuses two ways, without mutating anything: a segment that doesn't exist,
+ * and a segment belonging to a cut span. Generalizes the single-segment
+ * check `createTitleAnnotation` used to make to a whole range, since a
+ * manually-picked zoom or scene can span more than one segment.
+ */
+function validateKeptRange(
+  segments: Segment[],
+  spans: Span[],
+  from: number,
+  to: number
+): void {
+  const kept = new Set(keptSegments(segments, spans).map((s) => s.index))
+  for (let index = from; index <= to; index++) {
+    if (!segments.some((segment) => segment.index === index)) {
+      throw new Error(
+        `No segment at index ${index} — nothing to anchor the element to.`
+      )
+    }
+    if (!kept.has(index)) {
+      throw new Error(
+        `Segment ${index} belongs to a cut span. Restore the span before ` +
+          "annotating it, or pick a target from the approved script."
+      )
     }
   }
+}
 
-  return commands
+/** `globalThis.crypto`, not `node:crypto` — these run in the browser too (see `titles.ts`). */
+function newPlanElementId(type: PlanElementType): string {
+  return `manual_${type}_${globalThis.crypto.randomUUID()}`
+}
+
+function basePlanElement(
+  type: PlanElementType,
+  input: CreatePlanElementInput
+): EditingPlanElement {
+  validateKeptRange(
+    input.segments,
+    input.spans,
+    input.fromSegment,
+    input.toSegment
+  )
+  return {
+    id: newPlanElementId(type),
+    sectionId: coveringSection(input.sections, input.fromSegment),
+    type,
+    source: "manual",
+    // A manual element still goes through the same review as an automatic
+    // one — deliberate, so a fat-fingered range has a safety net before a
+    // scene's real generation cost is spent (see the ADR-adjacent reasoning
+    // in the plan this implements: uniform across title/zoom/scene rather
+    // than skipping review for the two that are free to render).
+    status: "proposed",
+    fromSegment: input.fromSegment,
+    toSegment: input.toSegment,
+    reason: input.reason ?? "Added manually",
+  }
+}
+
+export function createTitlePlanElement(
+  input: CreatePlanElementInput & { titleText: string }
+): EditingPlanElement {
+  return { ...basePlanElement("title", input), titleText: input.titleText }
+}
+
+export function createZoomPlanElement(
+  input: CreatePlanElementInput & {
+    zoomPreset: ZoomPreset
+    zoomDurationSec?: number
+  }
+): EditingPlanElement {
+  return {
+    ...basePlanElement("zoom", input),
+    zoomPreset: input.zoomPreset,
+    zoomDurationSec: input.zoomDurationSec,
+  }
+}
+
+export function createScenePlanElement(
+  input: CreatePlanElementInput & { sceneType?: SceneType; intent?: string }
+): EditingPlanElement {
+  return {
+    ...basePlanElement("scene", input),
+    sceneType: input.sceneType,
+    intent: input.intent,
+  }
+}
+
+export type PlanElementDecision =
+  | { action: "approve" }
+  | { action: "reject" }
+  | { action: "modify"; titleText?: string; reason?: string }
+
+/**
+ * Approves, rejects or edits one element, client-side, without a live
+ * workflow run.
+ *
+ * `applyEditingPlanDecisions` below is the batch review after an automatic
+ * structural analysis, and only runs as part of resuming the `scenarios`
+ * workflow step — it needs a run currently suspended at `review-plan`. A
+ * manually-added element must stay decidable any time (the same way titles
+ * always could before this module unified them with scenes/zooms), so this
+ * is a pure mutation the client applies directly and persists via a PATCH,
+ * never through the workflow.
+ */
+export function decidePlanElement(
+  element: EditingPlanElement,
+  decision: PlanElementDecision
+): EditingPlanElement {
+  switch (decision.action) {
+    case "approve":
+      return { ...element, status: "approved" }
+    case "reject":
+      return { ...element, status: "rejected" }
+    case "modify":
+      return {
+        ...element,
+        ...(decision.titleText !== undefined
+          ? { titleText: decision.titleText }
+          : {}),
+        ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
+        // Edited copy invalidates whatever was already rendered — same rule
+        // `decideTitleAnnotation` used to enforce for TitleAnnotation.
+        htmlPath: null,
+        exportPath: null,
+      }
+  }
+}
+
+/**
+ * Which decisions submitting the plan review actually sends, given what the
+ * reviewer has clicked so far.
+ *
+ * An `orphaned` element has nothing to decide until the next analysis
+ * re-anchors or drops it. A `conflict` element only produces a decision once
+ * the reviewer explicitly acted on it — otherwise a click on one side of a
+ * conflict would silently never reach the server. Every other element sends
+ * its drafted decision, or an implicit `reject` if a previous review already
+ * rejected it and nothing overrides that, or an implicit `approve` otherwise
+ * — approving is what "submit the plan" means for anything left untouched.
+ */
+export function resolvePlanReviewDecisions(
+  elements: EditingPlanElement[],
+  drafted: Record<string, EditingPlanDecision>
+): EditingPlanDecision[] {
+  return elements
+    .filter((element) => {
+      if (element.status === "orphaned") return false
+      if (element.status === "conflict") return drafted[element.id] !== undefined
+      return true
+    })
+    .map((element): EditingPlanDecision => {
+      const decision = drafted[element.id]
+      if (decision?.action === "reject") return decision
+      if (!decision && element.status === "rejected") {
+        return { id: element.id, action: "reject" }
+      }
+      return { ...decision, id: element.id, action: "approve" }
+    })
+}
+
+/**
+ * Keeps renderer/composition fields server-authoritative on a client PATCH.
+ *
+ * The client never renders or composites anything itself, so trusting the
+ * fields a workflow step writes (`sceneId`, `renderStatus`, `htmlPath`,
+ * `exportPath`, `compositionStatus`, `compositionError`) would silently erase
+ * them the instant a step writes something the client's stale copy doesn't
+ * have yet. Re-attaching what's on disk avoids that — `sections` carries none
+ * of these fields, so only `elements` needs this.
+ *
+ * One exception, inherited from the old TITRE-annotation flow: a render
+ * belongs to the copy it was rendered from. If an element's `titleText`
+ * changed, the .mov on disk shows the old wording, so `htmlPath`/
+ * `exportPath` are dropped rather than re-attached — which is exactly what
+ * makes the `titles` step pick it up again on the next run (it only renders
+ * where `exportPath` is `null`).
+ */
+export function reconcileRenderedFields(
+  incoming: EditingDocument,
+  onDisk: EditingDocument
+): EditingDocument {
+  const byId = new Map(onDisk.elements.map((element) => [element.id, element]))
+  return {
+    ...incoming,
+    elements: incoming.elements.map((element): EditingPlanElement => {
+      const stored = byId.get(element.id)
+      if (!stored) return element
+
+      const sameCopy = stored.titleText === element.titleText
+      return {
+        ...element,
+        sceneId: stored.sceneId,
+        renderStatus: stored.renderStatus,
+        renderError: stored.renderError,
+        compositionStatus: stored.compositionStatus,
+        compositionError: stored.compositionError,
+        htmlPath: sameCopy ? stored.htmlPath : null,
+        exportPath: sameCopy ? stored.exportPath : null,
+      }
+    }),
+  }
 }
 
 /**
@@ -72,6 +349,9 @@ export function mergeEditingPlan(
   proposal: EditingPlanProposal,
   keptSegmentIndexes: Set<number>
 ): EditingDocument {
+  const sections = sectionsAfterAnalysis(current.sections, proposal.sections)
+  const sectionIds = new Set(sections.map((section) => section.id))
+
   const protectedElements = current.elements
     .filter(isProtected)
     .map((element) => orphanIfNeeded(element, keptSegmentIndexes))
@@ -92,6 +372,7 @@ export function mergeEditingPlan(
   const automatic = dedupeById([
     ...protectedElements.filter((element) => element.source === "automatic"),
     ...proposal.elements.filter((element) => element.source === "automatic"),
+    ...sectionStartZooms(sections),
   ])
   for (const candidate of automatic) {
     // An explicit intention owns the location, even when an older automatic
@@ -101,9 +382,6 @@ export function mergeEditingPlan(
     const nextCandidate = preserved ?? candidate
     next.push(withConflict(nextCandidate, next))
   }
-
-  const sections = sectionsAfterAnalysis(current.sections, proposal.sections)
-  const sectionIds = new Set(sections.map((section) => section.id))
 
   const normalized: EditingPlanElement[] = next.map((element) => {
     if (sectionIds.has(element.sectionId) || element.status === "orphaned") {
@@ -121,6 +399,36 @@ export function mergeEditingPlan(
     sections,
     elements: normalized.sort(byAnchor),
   }
+}
+
+/** Stable across reruns, so a reviewed decision on it survives a fresh analysis. */
+function sectionStartZoomId(sectionId: string): string {
+  return `section_zoom_${sectionId}`
+}
+
+/**
+ * One automatic zoom per section, anchored to its opening segment.
+ *
+ * This is deterministic rather than left to the structural agent — "zoom in
+ * as each section begins" is a mechanical editing rule, not a judgement call,
+ * and asking a model to remember it on every single section is exactly the
+ * kind of thing that's reliable on the first nine and silently missing on the
+ * tenth. The id is derived from the section id alone, so it's stable across
+ * reruns and carries an approve/reject/edit decision forward the same way any
+ * other protected automatic element does.
+ */
+function sectionStartZooms(sections: EditingSection[]): EditingPlanElement[] {
+  return sections.map((section) => ({
+    id: sectionStartZoomId(section.id),
+    sectionId: section.id,
+    type: "zoom",
+    source: "automatic",
+    status: "proposed",
+    fromSegment: section.fromSegment,
+    toSegment: section.fromSegment,
+    reason: "Zoom automatique en début de section",
+    zoomPreset: "medium",
+  }))
 }
 
 function sectionsAfterAnalysis(
@@ -150,7 +458,11 @@ export function applyEditingPlanDecisions(
 
     const next = { ...element }
     if (decision.action === "approve") next.status = "approved"
-    if (decision.action === "reject") next.status = "rejected"
+    if (decision.action === "reject") {
+      next.status = "rejected"
+      clearTitleRender(next)
+    }
+    let titleChanged = false
     for (const key of [
       "titleText",
       "reason",
@@ -160,8 +472,16 @@ export function applyEditingPlanDecisions(
       "intent",
     ] as const) {
       const value = decision[key]
-      if (value !== undefined) next[key] = value as never
+      if (value !== undefined) {
+        next[key] = (
+          key === "titleText" && element.source === "automatic"
+            ? shortTitleText(value as string)
+            : value
+        ) as never
+        titleChanged = titleChanged || key === "titleText"
+      }
     }
+    if (titleChanged && element.type === "title") clearTitleRender(next)
     return next
   })
 
@@ -226,6 +546,24 @@ export function applyEditingPlanDecisions(
   }
 
   return { ...current, sections, elements: attached }
+}
+
+function clearTitleRender(element: EditingPlanElement) {
+  if (element.type !== "title") return
+  if (
+    element.htmlPath === undefined &&
+    element.exportPath === undefined &&
+    element.composed === undefined &&
+    element.timelineOffsetSec === undefined &&
+    element.timelineDurationSec === undefined
+  ) {
+    return
+  }
+  element.htmlPath = null
+  element.exportPath = null
+  element.composed = false
+  element.timelineOffsetSec = null
+  delete element.timelineDurationSec
 }
 
 function isProtected(element: EditingPlanElement) {

@@ -11,15 +11,11 @@ The full spec is in [idea.md](idea.md).
 ```bash
 cp .env.example .env.local   # OPENROUTER_API_KEY and ASSEMBLYAI_API_KEY
 npm run dev                  # the app, port 3000
-npm run studio               # Mastra Studio, port 4111 — optional
 ```
 
 Needs `ffmpeg` and `ffprobe` on PATH plus Playwright's Chromium
 (`npx playwright install chromium`). The first step of every run checks all of
 them and fails with an install message rather than halfway through.
-
-Both processes share `~/.videotool/mastra.db`, so a run started in the app is
-inspectable in Studio and vice versa.
 
 ```bash
 npm test        # segment tiling, transcript units, media roles, scene validation,
@@ -30,26 +26,21 @@ npm run typecheck
 
 ## How the pipeline works
 
-One Mastra workflow, eleven steps, two human gates:
+Eleven steps, each one a direct, one-shot action the UI calls and streams
+progress from — scan, extract-audio, transcribe, cleanup, fcpxml, scenarios,
+generate ×3, review, export, copy, shotlist. There is no single run and
+nothing suspends: cleanup approval and scene review are plain writes to
+`project.json`, not a workflow gate, so an approval can arrive days later,
+across a server restart, with nothing parked waiting for it.
 
-```
-scan → extract-audio → transcribe → cleanup ⏸ → fcpxml → scenarios
-     → generate ×3 → review ⏸ → export → copy → shotlist
-```
-
-`fcpxml` sits right after the cleanup gate on purpose: it only needs the
+`fcpxml` runs right after cleanup is approved on purpose: it only needs the
 approved spans, so the cut timeline lands in the project folder before the
 expensive scene generation starts (`docs/adr/0002-…`).
 
-The gates are Mastra `suspend()` calls resumed with `run.resume()`, not
-application state — so an approval can arrive days later, across a server
-restart.
-
-**Storage is split on purpose.** `project.json` inside the project folder owns
-the deliverables (transcript, spans, scenes, copy) and is portable; moving the
-folder moves the work. `~/.videotool/mastra.db` owns run state and is
-disposable — losing it costs a re-run. Every step writes to `project.json`
-before returning, which is why a lost stream costs nothing but the progress bar.
+**`project.json`, inside the project folder, is the only store.** It owns the
+deliverables (transcript, spans, scenes, copy) and is portable — moving the
+folder moves the work. Every action writes to it before returning, which is
+why a lost stream costs nothing but the progress bar.
 
 ### Big source files never leave the machine
 
@@ -193,17 +184,15 @@ when it landed.
 
 ## Layout
 
-`src/mastra/` has **zero Next imports** — the workflow has to run headless from
-Studio and from a plain script, which is how the renderer gets debugged.
+`src/mastra/` has **zero Next imports** — every step is a plain function,
+callable headless from a script, which is how the renderer gets debugged.
 
 ```
 src/mastra/
-  index.ts                    the instance: agents, workflows, LibSQL storage
   schemas.ts                  project.json as Zod — the single source of truth
   models.ts                   router ids, plus the models a scene can be re-rolled on
   stream/contract.ts          every event, once; the typed emitter
   agents/                     cleanup, scenario, scene, copy
-  workflows/                  broll-workflow, generate-scene-workflow
   steps/                      one file per step
   lib/
     project.ts                project.json read/modify/write, atomic + queued
@@ -218,7 +207,7 @@ src/mastra/
 app/
   page.tsx                    projects list
   p/[id]/page.tsx             project view
-  api/pipeline/route.ts       start and resume, both streaming
+  api/pipeline/route.ts       one action at a time, direct calls, streaming
   api/projects/[id]/route.ts  PATCH media roles, hints, fps, style guide
   api/projects  api/browse  api/reveal
 components/

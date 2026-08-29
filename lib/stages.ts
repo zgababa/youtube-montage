@@ -1,5 +1,5 @@
 /**
- * Twelve pipeline steps, as the five things a person actually does.
+ * Thirteen pipeline steps, as the three things a person actually does.
  *
  * The page used to show progress and the work in two separate places: a panel
  * listing every step, and a row of tabs listing the same phases again under
@@ -20,14 +20,7 @@ import { cutSeconds, sceneCounts } from "@/lib/project"
 import { STEP_LABELS } from "@/src/mastra/stream/contract"
 import type { Project, Run, RunStep, StepId, StepStatus } from "@/lib/types"
 
-export type StageId =
-  | "footage"
-  | "cleanup"
-  | "timeline"
-  | "look"
-  | "scenes"
-  | "composite"
-  | "deliverables"
+export type StageId = "footage" | "scenes" | "deliverables"
 
 export interface StageDefinition {
   id: StageId
@@ -55,43 +48,15 @@ export const STAGES: readonly StageDefinition[] = [
     id: "footage",
     label: "Footage & transcript",
     blurb:
-      "What was recorded, which file carries the words, and how the recordings line up.",
-    steps: ["scan", "extract-audio", "transcribe"],
-  },
-  {
-    id: "cleanup",
-    label: "Transcript cleanup",
-    blurb:
-      "The clean script is the kept spans. Everything downstream is a rewrite of it.",
-    steps: ["cleanup"],
-  },
-  {
-    id: "timeline",
-    label: "Timeline export",
-    blurb:
-      "The cut, exported as FCPXML for DaVinci. Tune the silence cap and regenerate before approving.",
-    steps: ["fcpxml"],
-  },
-  {
-    id: "look",
-    label: "Style guide",
-    blurb:
-      "Handed to every scene agent. Without it, scenes generated in parallel don't match. Set before the run rather than produced by it — the house default is in design.md.",
-    steps: [],
+      "What was recorded, which file carries the words, how the recordings line up, and the cleanup pass that turns the raw words into the kept script everything downstream rewrites.",
+    steps: ["scan", "extract-audio", "transcribe", "cleanup"],
   },
   {
     id: "scenes",
     label: "Scenes",
     blurb:
-      "Placed against the approved script, generated three at a time, exported one at a time.",
+      "Placed against the approved script, generated three at a time, exported one at a time. The style guide here is handed to every scene agent — without it, scenes generated in parallel don't match. Set before the run rather than produced by it; the house default is in design.md.",
     steps: ["scenarios", "generate", "review", "export", "titles"],
-  },
-  {
-    id: "composite",
-    label: "Timeline composite",
-    blurb:
-      "The same timeline.fcpxml, rewritten with every exported scene laid in as a connected clip on lane 1. Regenerate to pick up scenes exported since the last pass.",
-    steps: ["overlay"],
   },
   {
     id: "deliverables",
@@ -200,29 +165,13 @@ function summarize(id: StageId, project: Project): string | null {
       if (project.media.length === 0) return null
       const files = `${project.media.length} file${project.media.length === 1 ? "" : "s"}`
       const words = project.transcript.words.length
-      return words === 0
-        ? `${files} · not transcribed`
-        : `${files} · ${words.toLocaleString()} words`
-    }
-
-    case "cleanup": {
-      if (project.spans.length === 0) return null
+      if (words === 0) return `${files} · not transcribed`
+      if (project.spans.length === 0) return `${files} · ${words.toLocaleString()} words`
       const removed = durationLabel(cutSeconds(project.spans))
       return project.cleanupApprovedAt === null
-        ? `${removed} proposed for removal`
-        : `${removed} removed · approved`
+        ? `${files} · ${removed} proposed for removal`
+        : `${files} · ${removed} removed · approved`
     }
-
-    case "timeline": {
-      if (project.spans.length === 0) return null
-      const cap = `${project.maxSilenceSec}s silence cap`
-      return project.timelineApprovedAt === null
-        ? `${cap} · not yet approved`
-        : `${cap} · approved`
-    }
-
-    case "look":
-      return `${project.styleGuide.palette.length} colours · ${project.styleGuide.fontStack.split(",")[0]}`
 
     case "scenes": {
       const counts = sceneCounts(project.scenes)
@@ -235,13 +184,6 @@ function summarize(id: StageId, project: Project): string | null {
       if (counts.exported > 0) parts.push(`${counts.exported} exported`)
       if (counts.failed > 0) parts.push(`${counts.failed} failed`)
       return parts.join(" · ")
-    }
-
-    case "composite": {
-      if (sceneCounts(project.scenes).exported === 0) return null
-      return project.compositeApprovedAt === null
-        ? "Composited · not yet approved"
-        : "Composited · approved"
     }
 
     case "deliverables":
@@ -260,25 +202,10 @@ function summarize(id: StageId, project: Project): string | null {
  */
 function lockReason(id: StageId, project: Project): string | null {
   switch (id) {
-    case "cleanup":
-      return project.spans.length === 0
-        ? "Opens once there's a transcript to clean up."
-        : null
-
-    case "timeline":
-      return project.cleanupApprovedAt === null
-        ? "Opens once cleanup is approved."
-        : null
-
+    // ADR 0008: the timeline export auto-approves with the stored default
+    // the moment Scenes needs it — Scenes is never locked on it.
     case "scenes":
-      return project.timelineApprovedAt === null
-        ? "The scenario agent reads the approved script — approve the timeline export first."
-        : null
-
-    case "composite":
-      return sceneCounts(project.scenes).exported === 0
-        ? "Opens once at least one scene has been exported."
-        : null
+      return null
 
     case "deliverables":
       return project.copy === null && sceneCounts(project.scenes).approved === 0
@@ -301,18 +228,10 @@ function hasContent(id: StageId, project: Project): boolean {
   switch (id) {
     case "footage":
       return project.media.length > 0
-    case "cleanup":
-      return project.spans.length > 0
-    case "timeline":
-      return project.timelineApprovedAt !== null
-    case "look":
-      return false
     case "scenes":
       return (
         project.scenes.length > 0 || project.editingDocument.sections.length > 0
       )
-    case "composite":
-      return project.compositeApprovedAt !== null
     case "deliverables":
       return project.copy !== null
   }

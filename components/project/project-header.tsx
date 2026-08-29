@@ -2,12 +2,7 @@
 
 import Link from "next/link"
 import { HugeiconsIcon } from "@hugeicons/react"
-import {
-  ArrowLeft01Icon,
-  FolderOpenIcon,
-  PlayIcon,
-  ReloadIcon,
-} from "@hugeicons/core-free-icons"
+import { ArrowLeft01Icon, FolderOpenIcon } from "@hugeicons/core-free-icons"
 
 import { longTimecode, stepStatusVariant } from "@/lib/format"
 import { totalMediaSeconds } from "@/lib/project"
@@ -41,7 +36,6 @@ interface ProjectHeaderProps {
   project: Project
   run: Run | null
   onFpsChange: (fps: number) => void
-  onRun: () => void
   onReveal: () => void
 }
 
@@ -49,13 +43,11 @@ export function ProjectHeader({
   project,
   run,
   onFpsChange,
-  onRun,
   onReveal,
 }: ProjectHeaderProps) {
   const current = run?.steps.find(
     (step) => step.status === "running" || step.status === "suspended"
   )
-  const running = run?.status === "running"
 
   return (
     <header className="flex flex-col gap-4">
@@ -95,9 +87,7 @@ export function ProjectHeader({
                 ? `Waiting: ${current.label}`
                 : current.label}
             </Badge>
-          ) : (
-            <Badge variant="outline">Idle</Badge>
-          )}
+          ) : null}
 
           <Select
             items={FPS_ITEMS}
@@ -133,15 +123,6 @@ export function ProjectHeader({
             />
             <TooltipContent>Reveal in Finder</TooltipContent>
           </Tooltip>
-
-          <Button onClick={onRun} disabled={running}>
-            <HugeiconsIcon
-              icon={running ? ReloadIcon : PlayIcon}
-              strokeWidth={2}
-              data-icon="inline-start"
-            />
-            {running ? "Running" : run ? "Re-run pipeline" : "Run pipeline"}
-          </Button>
         </div>
       </div>
     </header>

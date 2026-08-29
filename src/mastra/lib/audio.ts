@@ -1,11 +1,11 @@
 /**
- * Where extracted audio lives between steps 2 and 3.
+ * Where extracted audio lives between extraction and transcription.
  *
- * Two steps need to agree on the path without passing it through workflow
- * state, so it's derived from the project id and the media file's relative
- * path. Deriving rather than storing also means a re-run of step 3 alone —
- * which is the whole point of Studio's time travel (idea.md §9) — still finds
- * the audio extracted by an earlier run.
+ * The two steps need to agree on the path without passing it through any
+ * shared state, so it's derived from the project id and the media file's
+ * relative path. Deriving rather than storing also means re-running
+ * transcription alone still finds the audio a previous run already
+ * extracted, cache-and-skip rather than a re-extract (idea.md §9).
  */
 
 import { createHash } from "node:crypto"

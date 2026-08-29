@@ -1,79 +1,180 @@
 /**
  * The one endpoint the pipeline UI talks to.
  *
- * Starting a run and resuming a suspended one are the same request with a
- * different body — `{ inputData }` versus `{ runId, step, resumeData }` — and
- * both stream back through the same connection. That's why the approvals in
- * idea.md §4.2 need no job registry or status endpoint: `run.resume()` picks up
- * a snapshot Mastra already persisted, and the response is just the rest of the
- * run.
+ * There is no "Run pipeline" — no single workflow run, no suspend/resume, no
+ * run id to reconnect to. Each action here is one step's own logic
+ * (`src/mastra/steps/*.ts`), called directly and streamed back the same way
+ * a Mastra workflow step's own `writer.custom()` would:
+ * `createUIMessageStream` is the same AI SDK primitive
+ * `handleWorkflowStream` builds on, so the client (`hooks/use-pipeline.ts`,
+ * `lib/run-reducer.ts`) reads live progress, scene drafts and step status
+ * without ever going through Mastra's workflow engine — only the `data-*`
+ * chunks on the stream.
  */
 
-import { handleWorkflowStream } from "@mastra/ai-sdk"
-import { createUIMessageStreamResponse } from "ai"
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai"
 import { z } from "zod"
 
-import { mastra } from "@/src/mastra"
-import type { PipelineUIMessage } from "@/src/mastra/stream/contract"
-import { workflowStateToPipelineStream } from "@/src/mastra/stream/reconnect"
+import { readStoredProject } from "@/src/mastra/lib/project"
+import { approveCleanup, proposeCleanup } from "@/src/mastra/steps/cleanup"
+import { writeCopy } from "@/src/mastra/steps/copy"
+import { exportApprovedScenes } from "@/src/mastra/steps/export"
+import {
+  generateAndPersistScene,
+  SCENE_CONCURRENCY,
+} from "@/src/mastra/steps/generate-scene"
+import { applySceneDecisions } from "@/src/mastra/steps/review"
+import { scanProject } from "@/src/mastra/steps/scan"
+import {
+  analyzeStructure,
+  applyPlanDecisions,
+} from "@/src/mastra/steps/scenarios"
+import { writeShotlist } from "@/src/mastra/steps/shotlist"
+import { exportApprovedTitles } from "@/src/mastra/steps/titles"
+import { transcribeProject } from "@/src/mastra/steps/transcribe"
+import {
+  emitter,
+  PipelineActionSchema,
+  type PipelineUIMessage,
+  type PipelineWriter,
+} from "@/src/mastra/stream/contract"
 
 // ffmpeg, Playwright and `fs` all live behind this route (idea.md §9).
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * A full run is transcription plus a dozen model calls plus a serialized
- * export. Minutes, not seconds — and the default request timeout would cut the
- * stream long before the workflow finished.
+ * The slowest single action (transcription, a batch of scenes) is minutes,
+ * not seconds — and the default request timeout would cut the stream long
+ * before it finished.
  */
 export const maxDuration = 3600
 
-/**
- * The one body shape this route reads itself rather than handing to
- * `handleWorkflowStream`, so it's the one that needs parsing (same reason and
- * same shape as `PatchSchema` in `app/api/projects/[id]/route.ts`).
- */
-const ReconnectSchema = z.object({
-  kind: z.literal("reconnect"),
-  runId: z.string().min(1),
-})
-
 export async function POST(request: Request) {
-  const params = await request.json()
-
-  // Reconnecting to a suspended run reads the persisted snapshot rather than
-  // starting a fresh one — see `src/mastra/stream/reconnect.ts` for why that
-  // isn't `@mastra/ai-sdk`'s own `workflowSnapshotToStream`.
-  if (params?.kind === "reconnect") {
-    const parsed = ReconnectSchema.safeParse(params)
-    if (!parsed.success) {
-      return Response.json(
-        { error: z.prettifyError(parsed.error) },
-        { status: 400 }
-      )
-    }
-
-    const state = await mastra
-      .getWorkflow("brollWorkflow")
-      .getWorkflowRunById(parsed.data.runId)
-
-    if (!state) return new Response("Run not found", { status: 404 })
-
-    return createUIMessageStreamResponse({
-      stream: workflowStateToPipelineStream(state),
-    })
+  const parsed = PipelineActionSchema.safeParse(await request.json())
+  if (!parsed.success) {
+    return Response.json(
+      { error: z.prettifyError(parsed.error) },
+      { status: 400 }
+    )
   }
+  const action = parsed.data
 
-  const stream = await handleWorkflowStream<PipelineUIMessage>({
-    mastra,
-    workflowId: "brollWorkflow",
-    params,
-    // The app is typed against the AI SDK v6 line, so the handler has to emit
-    // that contract rather than the v5 default.
-    version: "v6",
-    // Nothing here produces prose for the user to read — every meaningful
-    // event is a typed `data-*` chunk.
-    includeTextStreamParts: false,
+  const stream = createUIMessageStream<PipelineUIMessage>({
+    execute: async ({ writer }) => {
+      // Mastra's own `handleWorkflowStream` wraps the same raw
+      // `UIMessageStreamWriter.write()` in exactly this shape internally —
+      // `PipelineWriter` was written against that shape (`shared.ts`), not
+      // against Mastra itself, which is what makes reusing it here possible.
+      const pipelineWriter: PipelineWriter = {
+        custom: async (chunk) => {
+          writer.write(chunk as Parameters<typeof writer.write>[0])
+        },
+      }
+
+      const runId = crypto.randomUUID()
+      // Gives the client a `Run` to roll `data-step` chunks up into
+      // (`lib/run-reducer.ts`) — the same shape a workflow run's head chunk
+      // gave it, just for this one action rather than for a run parked
+      // anywhere. Nothing persists it; a reload has nothing to reconnect to,
+      // because there's nothing left running once the stream closes.
+      await emitter(pipelineWriter)(
+        "run",
+        {
+          runId,
+          projectPath: action.projectPath,
+          status: "running",
+          startedAt: new Date().toISOString(),
+        },
+        { id: `run:${runId}` }
+      )
+
+      try {
+        switch (action.kind) {
+          case "scan":
+            await scanProject(action.projectPath, pipelineWriter)
+            break
+
+          case "transcribe":
+            await transcribeProject(action.projectPath, pipelineWriter)
+            break
+
+          case "propose-cleanup":
+            await proposeCleanup(action.projectPath, pipelineWriter)
+            break
+
+          case "approve-cleanup":
+            await approveCleanup(action.projectPath, action.spans)
+            break
+
+          case "analyze-plan":
+            await analyzeStructure(action.projectPath, pipelineWriter)
+            break
+
+          case "apply-plan":
+            await applyPlanDecisions(
+              action.projectPath,
+              action.elementDecisions,
+              action.sectionDecisions,
+              action.done,
+              pipelineWriter
+            )
+            break
+
+          case "generate-scenes": {
+            const project = await readStoredProject(action.projectPath)
+            const pending = project.scenes.filter(
+              (scene) => scene.status === "pending"
+            )
+            for (let i = 0; i < pending.length; i += SCENE_CONCURRENCY) {
+              const batch = pending.slice(i, i + SCENE_CONCURRENCY)
+              await Promise.all(
+                batch.map((scene) =>
+                  generateAndPersistScene(
+                    {
+                      projectPath: action.projectPath,
+                      scene,
+                      styleGuide: project.styleGuide,
+                    },
+                    pipelineWriter
+                  )
+                )
+              )
+            }
+            break
+          }
+
+          case "apply-scenes":
+            await applySceneDecisions(
+              action.projectPath,
+              action.decisions,
+              pipelineWriter
+            )
+            break
+
+          case "export-approved":
+            // Same reasoning as `titles.ts`: both render whatever's approved
+            // and missing its export, and always ran back to back — one
+            // action covers both.
+            await exportApprovedScenes(action.projectPath, pipelineWriter)
+            await exportApprovedTitles(action.projectPath, pipelineWriter)
+            break
+
+          case "write-copy":
+            await writeCopy(action.projectPath, pipelineWriter)
+            break
+
+          case "write-shotlist":
+            await writeShotlist(action.projectPath, pipelineWriter)
+            break
+        }
+      } catch {
+        // Every step above already reports its own `failure`/`step: failed`
+        // chunk before rethrowing — swallowed here so the stream still closes
+        // cleanly instead of surfacing as a transport-level error the client
+        // has no typed chunk for.
+      }
+    },
   })
 
   return createUIMessageStreamResponse({ stream })

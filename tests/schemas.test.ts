@@ -33,6 +33,5 @@ describe("StoredProjectSchema", () => {
       analysisAt: null,
       reviewedAt: null,
     })
-    expect(parsed.titleAnnotations).toEqual([])
   })
 })

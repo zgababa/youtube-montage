@@ -20,6 +20,11 @@ import {
  * the glance — how far along, what's happening now, is anything broken. One
  * tick per step, grouped by the stage that owns it, so clicking a group is the
  * same as opening the stage that produced it.
+ *
+ * Nothing to say when nothing is running: an idle strip is a row of grey
+ * ticks nobody asked about, so it renders nothing at all rather than filler
+ * text — the stages below are where the actual state (done, approved, needs
+ * review) already lives.
  */
 export function RunStrip({
   run,
@@ -38,40 +43,33 @@ export function RunStrip({
     (step) => step.status === "running" || step.status === "suspended"
   )
 
+  if (run === null) return null
+
   return (
     <div className="sticky top-0 z-20 -mt-2 pt-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card/85 px-4 py-2.5 backdrop-blur">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          {run?.status === "running" ? (
+          {run.status === "running" ? (
             <Spinner className="size-4 shrink-0 text-muted-foreground" />
           ) : null}
 
           <span className="min-w-0 truncate text-sm">
-            {run === null ? (
+            <span className="font-medium tabular-nums">
+              {done} of {steps.length}
+            </span>
+            {working ? (
               <span className="text-muted-foreground">
-                Not run yet — start the pipeline, or drive it from Mastra Studio
-                on port 4111.
+                {" · "}
+                {working.label}
+                {working.detail ? ` · ${working.detail}` : ""}
               </span>
-            ) : (
-              <>
-                <span className="font-medium tabular-nums">
-                  {done} of {steps.length}
-                </span>
-                {working ? (
-                  <span className="text-muted-foreground">
-                    {" · "}
-                    {working.label}
-                    {working.detail ? ` · ${working.detail}` : ""}
-                  </span>
-                ) : null}
-              </>
-            )}
+            ) : null}
           </span>
 
-          {run?.status === "failed" ? (
+          {run.status === "failed" ? (
             <Badge variant="destructive">failed</Badge>
           ) : null}
-          {run?.suspendedOn ? (
+          {run.suspendedOn ? (
             <Badge variant="secondary">needs you</Badge>
           ) : null}
         </div>
@@ -109,17 +107,14 @@ export function RunStrip({
               </Tooltip>
             ))}
 
-          {/* Nothing to cancel before the first run — and one fewer control. */}
-          {run ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onCancel}
-              disabled={run.status !== "running"}
-            >
-              Cancel run
-            </Button>
-          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCancel}
+            disabled={run.status !== "running"}
+          >
+            Cancel run
+          </Button>
         </div>
       </div>
     </div>

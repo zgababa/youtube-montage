@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import {
   anchorWords,
   assignRoles,
+  checkMediaRoles,
   compareForScript,
   isNumbered,
   type ProbedFile,
@@ -377,5 +378,50 @@ describe("anchorWords", () => {
       words[1].start - words[0].end,
       6
     )
+  })
+})
+
+function file(over: Partial<MediaFile> & { path: string }): MediaFile {
+  return {
+    durationSec: 60,
+    hasAudio: true,
+    hasVideo: true,
+    transcribe: true,
+    offsetSec: 0,
+    voices: null,
+    ...over,
+  }
+}
+
+describe("checkMediaRoles", () => {
+  test("accepts a mic voicing the camera it was recorded for", () => {
+    const media = [
+      file({ path: "raw/a-cam-01.mp4" }),
+      file({ path: "raw/audio.mp3", hasVideo: false, voices: "raw/a-cam-01.mp4" }),
+    ]
+
+    expect(checkMediaRoles(media)).toBeNull()
+  })
+
+  test("rejects a voices pointing at a file that isn't in the project", () => {
+    const media = [file({ path: "raw/audio.mp3", voices: "raw/gone.mp4" })]
+
+    expect(checkMediaRoles(media)).toMatch("isn't in this project")
+  })
+
+  test("rejects a file voicing itself", () => {
+    const media = [file({ path: "raw/audio.mp3", voices: "raw/audio.mp3" })]
+
+    expect(checkMediaRoles(media)).toMatch("can't voice itself")
+  })
+
+  test("rejects a chain of voices rather than a single anchor", () => {
+    const media = [
+      file({ path: "raw/a-cam-01.mp4" }),
+      file({ path: "raw/audio.mp3", voices: "raw/a-cam-01.mp4" }),
+      file({ path: "raw/lav.mp3", voices: "raw/audio.mp3" }),
+    ]
+
+    expect(checkMediaRoles(media)).toMatch("voices something else in turn")
   })
 })
