@@ -42,6 +42,7 @@
 import path from "node:path"
 
 import { toAbsolute } from "./paths"
+import type { ZoomWindow } from "./zooms"
 import type { TimelineRun } from "./timeline"
 import type { MediaFile, StoredProject } from "../schemas"
 
@@ -372,6 +373,54 @@ export function placeOverlays(
   return { placed, skipped }
 }
 
+export interface ZoomFragment {
+  zoomId: string
+  runIndex: number
+  /** Start in the physical source clock of the parent spine clip. */
+  runOffset: number
+  durationSec: number
+  scale: number
+  preset: ZoomWindow["preset"]
+}
+
+/** Places an approved source window without filling gaps removed by cleanup. */
+export function placeZooms(
+  runs: TimelineRun[],
+  zooms: ZoomWindow[]
+): { placed: ZoomFragment[]; skipped: string[] } {
+  const placed: ZoomFragment[] = []
+  const skipped: string[] = []
+
+  for (const zoom of zooms) {
+    const fragments = runs.flatMap((run, runIndex) => {
+      if (run.file !== zoom.sourceFile) return []
+
+      const start = Math.max(run.sourceStart, zoom.scriptStart)
+      const end = Math.min(run.sourceEnd, zoom.scriptEnd)
+      if (end <= start) return []
+
+      return [
+        {
+          zoomId: zoom.id,
+          runIndex,
+          runOffset: start,
+          durationSec: end - start,
+          scale: zoom.scale,
+          preset: zoom.preset,
+        },
+      ]
+    })
+
+    if (fragments.length === 0) {
+      skipped.push(zoom.id)
+    } else {
+      placed.push(...fragments)
+    }
+  }
+
+  return { placed, skipped }
+}
+
 /**
  * The clip scene overlays sit on — see `white-backing.ts`.
  *
@@ -401,7 +450,8 @@ export function buildFcpxml(
   runs: TimelineRun[],
   scenes: OverlayScene[] = [],
   whiteBacking: WhiteBacking | null = null,
-  titleInsertions: TimelineTitleInsertion[] = []
+  titleInsertions: TimelineTitleInsertion[] = [],
+  zooms: ZoomWindow[] = []
 ): string {
   const fps = project.fps
   const layout = buildTimelineLayout(runs, titleInsertions, fps)
@@ -413,11 +463,18 @@ export function buildFcpxml(
   )
 
   const { placed } = placeOverlays(layout.sourceRuns, scenes)
+  const { placed: placedZooms } = placeZooms(layout.sourceRuns, zooms)
   const overlaysByRun = new Map<number, OverlayFragment[]>()
   for (const fragment of placed) {
     const forRun = overlaysByRun.get(fragment.runIndex) ?? []
     forRun.push(fragment)
     overlaysByRun.set(fragment.runIndex, forRun)
+  }
+  const zoomsByRun = new Map<number, ZoomFragment[]>()
+  for (const fragment of placedZooms) {
+    const forRun = zoomsByRun.get(fragment.runIndex) ?? []
+    forRun.push(fragment)
+    zoomsByRun.set(fragment.runIndex, forRun)
   }
 
   const placedSceneIds = new Set(placed.map((fragment) => fragment.sceneId))
@@ -471,51 +528,85 @@ export function buildFcpxml(
       }
 
       const run = item.run
-      const durationFrames = toFrames(run.sourceEnd - run.sourceStart, fps)
-      const children = (overlaysByRun.get(item.sourceIndex) ?? [])
-        .flatMap((fragment) => {
-          const part = (partNumber.get(fragment.sceneId) ?? 0) + 1
-          partNumber.set(fragment.sceneId, part)
-          const name =
-            part === 1 ? fragment.sceneId : `${fragment.sceneId} (${part})`
-          const offset = secondsToRational(fragment.runOffset, fps)
-          const duration = secondsToRational(fragment.durationSec, fps)
+      const zoomFragments = zoomsByRun.get(item.sourceIndex) ?? []
+      const boundaries = [
+        run.sourceStart,
+        run.sourceEnd,
+        ...zoomFragments.flatMap((fragment) => [
+          fragment.runOffset,
+          fragment.runOffset + fragment.durationSec,
+        ]),
+      ]
+        .filter(
+          (value, boundaryIndex, values) =>
+            value >= run.sourceStart &&
+            value <= run.sourceEnd &&
+            values.indexOf(value) === boundaryIndex
+        )
+        .sort((a, b) => a - b)
 
-          const scene = connectedClipXml({
-            ref: overlayAssetIds.get(fragment.sceneId)!,
-            name,
-            lane: sceneLane,
-            offset,
-            start: secondsToRational(fragment.sourceOffset, fps),
-            duration,
+      return boundaries.slice(0, -1).map((sourceStart, partIndex) => {
+        const sourceEnd = boundaries[partIndex + 1]
+        const zoom = zoomFragments.find(
+          (fragment) =>
+            fragment.runOffset >= sourceStart && fragment.runOffset < sourceEnd
+        )
+        const children = (overlaysByRun.get(item.sourceIndex) ?? [])
+          .flatMap((fragment) => {
+            const overlapStart = Math.max(fragment.runOffset, sourceStart)
+            const overlapEnd = Math.min(
+              fragment.runOffset + fragment.durationSec,
+              sourceEnd
+            )
+            if (overlapEnd <= overlapStart) return []
+
+            const part = (partNumber.get(fragment.sceneId) ?? 0) + 1
+            partNumber.set(fragment.sceneId, part)
+            const name =
+              part === 1 ? fragment.sceneId : `${fragment.sceneId} (${part})`
+            const sourceOffset =
+              fragment.sourceOffset + (overlapStart - fragment.runOffset)
+            const offset = secondsToRational(overlapStart, fps)
+            const duration = secondsToRational(overlapEnd - overlapStart, fps)
+
+            const scene = connectedClipXml({
+              ref: overlayAssetIds.get(fragment.sceneId)!,
+              name,
+              lane: sceneLane,
+              offset,
+              start: secondsToRational(sourceOffset, fps),
+              duration,
+            })
+
+            if (!backing) return [scene]
+
+            // Same offset and duration as the scene it backs — always starts
+            // at 0s of its own clip, since any slice of a solid colour looks
+            // the same as any other.
+            const white = connectedClipXml({
+              ref: WHITE_BACKING_ASSET_ID,
+              name: `${name} backing`,
+              lane: 1,
+              offset,
+              start: "0s",
+              duration,
+            })
+            return [white, scene]
           })
-
-          if (!backing) return [scene]
-
-          // Same offset and duration as the scene it backs — always starts
-          // at 0s of its own clip, since any slice of a solid colour looks
-          // the same as any other.
-          const white = connectedClipXml({
-            ref: WHITE_BACKING_ASSET_ID,
-            name: `${name} backing`,
-            lane: 1,
-            offset,
-            start: "0s",
-            duration,
-          })
-          return [white, scene]
+          .join("\n              ")
+        const durationFrames = toFrames(sourceEnd - sourceStart, fps)
+        const clip = clipXml({
+          ref: assetIds.get(run.file)!,
+          name: path.basename(run.file),
+          offset: framesToRational(offsetFrames, fps),
+          start: secondsToRational(sourceStart, fps),
+          duration: framesToRational(durationFrames, fps),
+          children: children || undefined,
+          transformScale: zoom?.scale,
         })
-        .join("\n              ")
-      const clip = clipXml({
-        ref: assetIds.get(run.file)!,
-        name: path.basename(run.file),
-        offset: framesToRational(offsetFrames, fps),
-        start: secondsToRational(run.sourceStart, fps),
-        duration: framesToRational(durationFrames, fps),
-        children: children || undefined,
+        offsetFrames += durationFrames
+        return clip
       })
-      offsetFrames += durationFrames
-      return clip
     })
     .join("\n            ")
 
@@ -663,16 +754,26 @@ function clipXml(clip: {
   duration: string
   /** Connected clips (`lane="1"` and up), already rendered as XML. */
   children?: string
+  /** A video-only transform; the source asset continues to carry audio. */
+  transformScale?: number
 }): string {
   const attrs =
     `name="${esc(clip.name)}" ref="${clip.ref}" ` +
     `offset="${clip.offset}" start="${clip.start}" duration="${clip.duration}"`
 
-  if (!clip.children) return `<asset-clip ${attrs}/>`
+  const transform =
+    clip.transformScale === undefined
+      ? undefined
+      : `<adjust-transform position="0 0" scale="${clip.transformScale} ${clip.transformScale}"/>`
+  const contents = [transform, clip.children]
+    .filter(Boolean)
+    .join("\n              ")
+
+  if (!contents) return `<asset-clip ${attrs}/>`
 
   return (
     `<asset-clip ${attrs}>\n` +
-    `              ${clip.children}\n` +
+    `              ${contents}\n` +
     `            </asset-clip>`
   )
 }
