@@ -14,6 +14,7 @@ import type {
   Project,
   Span,
   StyleGuide,
+  TitleAnnotation,
   TranscriptionHints,
 } from "@/lib/types"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
@@ -34,6 +35,7 @@ import { ShotlistCard } from "@/components/project/shotlist-card"
 import { Stage } from "@/components/project/stage"
 import { StyleGuideEditor } from "@/components/project/style-guide-editor"
 import { TimelineReview } from "@/components/project/timeline-review"
+import { TitleAnnotationsCard } from "@/components/project/title-annotations-card"
 import { TranscriptionHintsEditor } from "@/components/project/transcription-hints"
 
 /**
@@ -378,6 +380,20 @@ export function ProjectWorkspace({
     )
   }
 
+  /**
+   * TITRE annotations (issue #7). Unlike a span toggle, this is never
+   * pipeline output the run confirms — it's the creator's own intention —
+   * so it's a direct `persist`, the same as media settings or the style
+   * guide, rather than something held for a gate to approve.
+   */
+  function saveTitleAnnotations(titleAnnotations: TitleAnnotation[]) {
+    persist(
+      { titleAnnotations },
+      "TITRE annotation saved",
+      "Approved annotations render the next time the pipeline runs."
+    )
+  }
+
   const counts = sceneCounts(project.scenes)
 
   /**
@@ -438,6 +454,11 @@ export function ProjectWorkspace({
           project={project}
           onToggleSpan={toggleSpan}
           onReopen={reopenCleanup}
+        />
+        <Separator />
+        <TitleAnnotationsCard
+          project={project}
+          onChange={saveTitleAnnotations}
         />
         <Separator />
         <EditingDocumentCard project={project} />

@@ -6,8 +6,13 @@ import {
   secondsToRational,
   type OverlayScene,
 } from "../src/mastra/lib/fcpxml"
+import { composableTitleOverlays } from "../src/mastra/lib/titles"
 import type { TimelineRun } from "../src/mastra/lib/timeline"
-import type { MediaFile, StoredProject } from "../src/mastra/schemas"
+import type {
+  MediaFile,
+  StoredProject,
+  TitleAnnotation,
+} from "../src/mastra/schemas"
 
 function media(overrides: Partial<MediaFile> = {}): MediaFile {
   return {
@@ -40,6 +45,7 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
     compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     scenes: [],
+    titleAnnotations: [],
     copy: null,
     ...overrides,
   }
@@ -201,7 +207,9 @@ describe("placeOverlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 5, sourceEnd: 10 },
     ]
 
-    const { placed, skipped } = placeOverlays(runs, [overlay({ scriptStart: 6 })])
+    const { placed, skipped } = placeOverlays(runs, [
+      overlay({ scriptStart: 6 }),
+    ])
 
     expect(skipped).toEqual([])
     expect(placed).toHaveLength(1)
@@ -213,7 +221,9 @@ describe("placeOverlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
     ]
 
-    const { placed, skipped } = placeOverlays(runs, [overlay({ scriptStart: 50 })])
+    const { placed, skipped } = placeOverlays(runs, [
+      overlay({ scriptStart: 50 }),
+    ])
 
     expect(placed).toEqual([])
     expect(skipped).toEqual(["scene_01"])
@@ -313,11 +323,9 @@ describe("buildFcpxml with scene overlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
     ]
 
-    const xml = buildFcpxml(
-      project({ path: "/projects/demo" }),
-      runs,
-      [overlay({ scriptStart: 3, exportPath: "exports/scene_01.mov" })]
-    )
+    const xml = buildFcpxml(project({ path: "/projects/demo" }), runs, [
+      overlay({ scriptStart: 3, exportPath: "exports/scene_01.mov" }),
+    ])
 
     expect(xml).toContain(
       '<media-rep kind="original-media" src="file:///projects/demo/exports/scene_01.mov"/>'
@@ -337,9 +345,9 @@ describe("buildFcpxml with scene overlays", () => {
       overlay({ scriptStart: 4, durationSec: 6 }),
     ])
 
-    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="1"[^>]*\/>/g)].map(
-      (m) => m[0]
-    )
+    const connected = [
+      ...xml.matchAll(/<asset-clip[^>]*lane="1"[^>]*\/>/g),
+    ].map((m) => m[0])
     expect(connected).toHaveLength(2)
 
     // Same asset, same scene — just two windows into it.
@@ -356,9 +364,9 @@ describe("buildFcpxml with scene overlays", () => {
     expect(connected[1]).toContain(`duration="${secondsToRational(5, 30)}"`)
 
     // One asset for the whole scene, not one per fragment.
-    expect(
-      [...xml.matchAll(/<asset id="scene-asset-scene_01"/g)]
-    ).toHaveLength(1)
+    expect([...xml.matchAll(/<asset id="scene-asset-scene_01"/g)]).toHaveLength(
+      1
+    )
   })
 
   test("a scene that can't be placed doesn't appear in the spine at all", () => {
@@ -390,13 +398,15 @@ describe("buildFcpxml with a white backing", () => {
       backing
     )
 
-    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g)].map(
-      (m) => m[0]
-    )
+    const connected = [
+      ...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g),
+    ].map((m) => m[0])
     expect(connected).toHaveLength(2)
 
     const white = connected.find((c) => c.includes(WHITE_ASSET_REF))!
-    const scene = connected.find((c) => c.includes('ref="scene-asset-scene_01"'))!
+    const scene = connected.find((c) =>
+      c.includes('ref="scene-asset-scene_01"')
+    )!
 
     expect(white).toContain('lane="1"')
     expect(scene).toContain('lane="2"')
@@ -419,7 +429,12 @@ describe("buildFcpxml with a white backing", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
     ]
 
-    const xml = buildFcpxml(project(), runs, [overlay({ scriptStart: 3 })], null)
+    const xml = buildFcpxml(
+      project(),
+      runs,
+      [overlay({ scriptStart: 3 })],
+      null
+    )
 
     const connected = [...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g)]
     expect(connected).toHaveLength(1)
@@ -439,13 +454,11 @@ describe("buildFcpxml with a white backing", () => {
       backing
     )
 
-    expect(
-      [...xml.matchAll(new RegExp(WHITE_ASSET_REF, "g"))]
-    ).toHaveLength(2)
+    expect([...xml.matchAll(new RegExp(WHITE_ASSET_REF, "g"))]).toHaveLength(2)
     // Still exactly one <asset> for the backing clip, referenced twice.
-    expect(
-      [...xml.matchAll(/<asset id="asset-white-backing"/g)]
-    ).toHaveLength(1)
+    expect([...xml.matchAll(/<asset id="asset-white-backing"/g)]).toHaveLength(
+      1
+    )
   })
 
   test("skips the backing entirely when nothing gets placed", () => {
@@ -461,5 +474,54 @@ describe("buildFcpxml with a white backing", () => {
     )
 
     expect(xml).not.toContain("white-backing")
+  })
+})
+
+describe("a manual TITRE annotation composites like a scene", () => {
+  const annotation: TitleAnnotation = {
+    id: "title_1",
+    segmentIndex: 0,
+    scriptStart: 4,
+    scriptEnd: 6,
+    sourceFile: "raw/01 - a.mp4",
+    text: "The agents",
+    status: "approved",
+    createdAt: new Date().toISOString(),
+    htmlPath: "titles/title_1.html",
+    exportPath: "exports/title_1.mov",
+  }
+
+  test("its rendered asset ends up referenced by the built FCPXML", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
+    ]
+
+    const overlays = composableTitleOverlays([annotation])
+    const { placed, skipped } = placeOverlays(runs, overlays)
+
+    expect(skipped).toHaveLength(0)
+    expect(placed[0].sceneId).toBe("title_1")
+
+    const xml = buildFcpxml(project(), runs, overlays)
+
+    expect(xml).toContain("exports/title_1.mov")
+    // The standard two-second title screen, on the export's frame grid.
+    expect(xml).toContain(`duration="${secondsToRational(2, 30)}"`)
+  })
+
+  test("an approved annotation with nothing rendered yet composites nothing", () => {
+    const overlays = composableTitleOverlays([
+      { ...annotation, htmlPath: null, exportPath: null },
+    ])
+
+    expect(overlays).toHaveLength(0)
+  })
+
+  test("a rendered annotation that was never approved composites nothing", () => {
+    const overlays = composableTitleOverlays([
+      { ...annotation, status: "pending" },
+    ])
+
+    expect(overlays).toHaveLength(0)
   })
 })

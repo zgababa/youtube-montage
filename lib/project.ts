@@ -6,6 +6,8 @@
  */
 
 import { durationLabel, timecode } from "@/lib/format"
+import { buildCompositeOverlays } from "@/src/mastra/lib/composite"
+import { placeOverlays } from "@/src/mastra/lib/fcpxml"
 import type { SceneDecision } from "@/src/mastra/stream/contract"
 import type {
   Project,
@@ -13,6 +15,8 @@ import type {
   SceneStatus,
   Span,
   SpanCategory,
+  TitleAnnotation,
+  TitleAnnotationStatus,
   Word,
 } from "@/lib/types"
 
@@ -192,15 +196,61 @@ export interface EditingDocument {
   /** `null` until the cleanup is approved — there is no approved script yet. */
   script: { text: string; keptSpanCount: number } | null
   entries: EditingDocumentEntry[]
+  titles: EditingDocumentTitleEntry[]
+}
+
+/**
+ * A manual TITRE annotation as the document shows it: the annotation itself,
+ * the title asset it produced (if rendered), and whether that asset made it
+ * into the FCPXML export — the three things ADR 0006 says the document has
+ * to link for a manual annotation to read as one flow rather than three.
+ */
+export interface EditingDocumentTitleEntry {
+  annotationId: string
+  segmentIndex: number
+  scriptStart: number
+  scriptEnd: number
+  text: string
+  status: TitleAnnotationStatus
+  htmlPath: string | null
+  exportPath: string | null
+  /** `true` only once `timeline.fcpxml` would actually place this asset. */
+  composed: boolean
+}
+
+/**
+ * Which title annotations would actually land in `timeline.fcpxml`.
+ *
+ * Built from the exact same overlays and runs the `overlay` step composites
+ * with (`buildCompositeOverlays`) — including the exported scenes competing
+ * for the same runs — rather than placing titles against a second, partial
+ * computation that could silently drift from what the step actually writes.
+ * "Composed" means what ADR 0006 says it means: referenced by a build of the
+ * FCPXML, which is precisely what `placeOverlays` decides.
+ */
+function composedTitleIds(project: Project): Set<string> {
+  if (project.titleAnnotations.length === 0) return new Set()
+
+  const { runs, overlays } = buildCompositeOverlays(project)
+  if (overlays.length === 0) return new Set()
+
+  const titleIds = new Set(project.titleAnnotations.map((a) => a.id))
+  const { placed } = placeOverlays(runs, overlays)
+  return new Set(
+    placed
+      .map((fragment) => fragment.sceneId)
+      .filter((id) => titleIds.has(id))
+  )
 }
 
 export function buildEditingDocument(project: Project): EditingDocument {
   if (project.cleanupApprovedAt === null) {
-    return { script: null, entries: [] }
+    return { script: null, entries: [], titles: [] }
   }
 
   const spans = spansWithText(project.spans, project.transcript.words)
   const kept = spans.filter((span) => span.action === "keep")
+  const composed = composedTitleIds(project)
 
   return {
     script: { text: cleanScript(spans), keptSpanCount: kept.length },
@@ -215,6 +265,23 @@ export function buildEditingDocument(project: Project): EditingDocument {
         status: scene.status,
         htmlPath: scene.htmlPath,
         exportPath: scene.exportPath,
+      })),
+    titles: project.titleAnnotations
+      .slice()
+      .sort(
+        (a: TitleAnnotation, b: TitleAnnotation) =>
+          a.scriptStart - b.scriptStart
+      )
+      .map((annotation) => ({
+        annotationId: annotation.id,
+        segmentIndex: annotation.segmentIndex,
+        scriptStart: annotation.scriptStart,
+        scriptEnd: annotation.scriptEnd,
+        text: annotation.text,
+        status: annotation.status,
+        htmlPath: annotation.htmlPath,
+        exportPath: annotation.exportPath,
+        composed: composed.has(annotation.id),
       })),
   }
 }

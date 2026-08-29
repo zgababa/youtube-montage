@@ -27,5 +27,6 @@ describe("StoredProjectSchema", () => {
 
     expect(parsed.maxSilenceSec).toBe(0.3)
     expect(parsed.timelineApprovedAt).toBeNull()
+    expect(parsed.titleAnnotations).toEqual([])
   })
 })

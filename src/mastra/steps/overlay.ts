@@ -22,19 +22,18 @@ import fs from "node:fs/promises"
 import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
-import { buildFcpxml, placeOverlays, type OverlayScene } from "../lib/fcpxml"
+import { buildCompositeOverlays } from "../lib/composite"
+import { buildFcpxml, placeOverlays } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
-import { buildSegments } from "../lib/segments"
-import { buildKeptRuns } from "../lib/timeline"
 import { ensureWhiteBacking } from "../lib/white-backing"
 import type { StoredProject } from "../schemas"
-import { MIN_SCENE_HOLD_SEC } from "./export"
 import { PipelineIO, message, reporter } from "./shared"
 
 export const overlayStep = createStep({
   id: "overlay",
-  description: "Composite exported scenes into timeline.fcpxml, then suspend for approval",
+  description:
+    "Composite exported scenes into timeline.fcpxml, then suspend for approval",
   inputSchema: PipelineIO,
   outputSchema: PipelineIO,
   resumeSchema: z.object({
@@ -82,34 +81,9 @@ export const overlayStep = createStep({
   },
 })
 
-/** Rebuilds the runs, recomposits the exported scenes, and rewrites `timeline.fcpxml`. */
+/** Rebuilds the runs, recomposits the exported scenes and titles, and rewrites `timeline.fcpxml`. */
 async function writeComposite(project: StoredProject) {
-  const exported = project.scenes.filter(
-    (scene) => scene.status === "exported" && scene.exportPath !== null
-  )
-
-  const segments = buildSegments(project.transcript.words)
-  const runs = buildKeptRuns(
-    segments,
-    project.spans,
-    project.media,
-    project.maxSilenceSec
-  )
-
-  // Matches the floor `export.ts` renders to — the composited duration has
-  // to agree with what the .mov actually contains, or the fragment plays
-  // past the end of its own asset.
-  const overlays: OverlayScene[] = exported.map((scene) => ({
-    id: scene.id,
-    sourceFile: scene.sourceFile,
-    scriptStart: scene.scriptStart,
-    durationSec: Math.max(
-      scene.measuredDurationSec ?? scene.windowSec,
-      MIN_SCENE_HOLD_SEC
-    ),
-    exportPath: scene.exportPath!,
-  }))
-
+  const { runs, overlays } = buildCompositeOverlays(project)
   const { placed, skipped } = placeOverlays(runs, overlays)
 
   // Only encoded when there's actually something to back — a project with

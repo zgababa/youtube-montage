@@ -46,16 +46,37 @@ export function scenesDir(projectPath: string) {
   return path.join(projectPath, "scenes")
 }
 
+export function titlesDir(projectPath: string) {
+  return path.join(projectPath, "titles")
+}
+
 export function exportsDir(projectPath: string) {
   return path.join(projectPath, "exports")
 }
 
+/** Where a rendered asset's HTML and export live, given its own subfolder and id. */
+function assetHtmlPath(dir: string, id: string) {
+  return path.join(dir, `${id}.html`)
+}
+
+function assetExportPath(projectPath: string, id: string) {
+  return path.join(exportsDir(projectPath), `${id}.mov`)
+}
+
 export function sceneHtmlPath(projectPath: string, sceneId: string) {
-  return path.join(scenesDir(projectPath), `${sceneId}.html`)
+  return assetHtmlPath(scenesDir(projectPath), sceneId)
 }
 
 export function sceneExportPath(projectPath: string, sceneId: string) {
-  return path.join(exportsDir(projectPath), `${sceneId}.mov`)
+  return assetExportPath(projectPath, sceneId)
+}
+
+export function titleHtmlPath(projectPath: string, annotationId: string) {
+  return assetHtmlPath(titlesDir(projectPath), annotationId)
+}
+
+export function titleExportPath(projectPath: string, annotationId: string) {
+  return assetExportPath(projectPath, annotationId)
 }
 
 /**

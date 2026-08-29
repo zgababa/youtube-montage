@@ -1,5 +1,7 @@
 "use client"
 
+import * as React from "react"
+
 import {
   plural,
   SCENE_STATUS_LABELS,
@@ -20,8 +22,14 @@ import { StageSection } from "@/components/project/stage"
  * effect shows up here until the structural analysis lands in a later issue.
  */
 export function EditingDocumentCard({ project }: { project: Project }) {
-  const editingDocument = buildEditingDocument(project)
-  const { script, entries } = editingDocument
+  // Building the document now replays the overlay placement (issue #7's
+  // `composedTitleIds`), not just a string join — worth memoizing so it
+  // doesn't rerun on every render this card takes part in, only when the
+  // project actually changes.
+  const { script, entries, titles } = React.useMemo(
+    () => buildEditingDocument(project),
+    [project]
+  )
 
   return (
     <StageSection
@@ -73,6 +81,35 @@ export function EditingDocumentCard({ project }: { project: Project }) {
               No known element yet.
             </p>
           )}
+
+          {titles.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {titles.map((title) => (
+                <li
+                  key={title.annotationId}
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3 text-xs"
+                >
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="font-medium">TITRE</span>
+                    <span className="truncate text-muted-foreground">
+                      {title.text}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-muted-foreground">
+                      {timecode(title.scriptStart)}
+                    </span>
+                    <Badge variant={title.status === "approved" ? "default" : "outline"}>
+                      {title.status}
+                    </Badge>
+                    <Badge variant={title.composed ? "default" : "outline"}>
+                      {title.composed ? "composed" : "not composed"}
+                    </Badge>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </>
       )}
     </StageSection>

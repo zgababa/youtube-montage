@@ -156,6 +156,45 @@ export const HydratedSceneSchema = SceneSchema.extend({
 })
 
 /* -------------------------------------------------------------------------- */
+/* Manual TITRE annotations (ADR 0004, ADR 0005 — issue #7)                    */
+/* -------------------------------------------------------------------------- */
+
+export const TitleAnnotationStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+])
+
+/**
+ * A manual `TITRE` annotation: an explicit editing intention, anchored to a
+ * `Segment` of the approved script (`src/mastra/lib/segments.ts`) rather than
+ * to the transcript's own text — adding one never rewrites a word.
+ *
+ * `segmentIndex` is the anchor's identity; `scriptStart`/`scriptEnd`/
+ * `sourceFile` are copied from that segment at creation time so placement
+ * (`titleToOverlayScene`) never has to recompute segments from the
+ * transcript. Deliberately not anchored to a "section" — sections are a
+ * later-issue concept (the structural analysis, ADR 0005) that doesn't exist
+ * yet; a Segment is the finest-grained unit of the approved script this
+ * issue can anchor to today.
+ */
+export const TitleAnnotationSchema = z.object({
+  id: z.string(),
+  segmentIndex: z.number(),
+  scriptStart: z.number(),
+  scriptEnd: z.number(),
+  sourceFile: z.string(),
+  /** The chosen copy — editable right up until it's rendered. */
+  text: z.string(),
+  status: TitleAnnotationStatusSchema,
+  createdAt: z.string(),
+  /** Project-relative, once the deterministic template has been written. */
+  htmlPath: z.string().nullable(),
+  /** Project-relative, once rendered to ProRes — see `steps/titles.ts`. */
+  exportPath: z.string().nullable(),
+})
+
+/* -------------------------------------------------------------------------- */
 /* Copy                                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -231,6 +270,8 @@ export const StoredProjectSchema = z.object({
   compositeApprovedAt: z.string().nullable().default(null),
   styleGuide: StyleGuideSchema,
   scenes: z.array(SceneSchema),
+  /** Manual TITRE annotations (issue #7). Defaulted: absent on older files. */
+  titleAnnotations: z.array(TitleAnnotationSchema).default([]),
   copy: ProjectCopySchema.nullable(),
 })
 
@@ -278,6 +319,8 @@ export type SceneType = z.infer<typeof SceneTypeSchema>
 export type StyleGuide = z.infer<typeof StyleGuideSchema>
 export type StoredScene = z.infer<typeof SceneSchema>
 export type Scene = z.infer<typeof HydratedSceneSchema>
+export type TitleAnnotationStatus = z.infer<typeof TitleAnnotationStatusSchema>
+export type TitleAnnotation = z.infer<typeof TitleAnnotationSchema>
 export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>
 export type TwitterCopy = z.infer<typeof TwitterCopySchema>
 export type ProjectCopy = z.infer<typeof ProjectCopySchema>

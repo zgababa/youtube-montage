@@ -105,11 +105,19 @@ export function secondsToRational(seconds: number, fps: number): string {
   return framesToRational(toFrames(seconds, fps), fps)
 }
 
-/** XML attribute values only need `&`, `<`, `"` escaped — FCPXML has no other special chars in play here. */
-function esc(value: string): string {
+/**
+ * XML escaping shared with `titles.ts`'s title-screen template.
+ *
+ * Escapes the superset an XML attribute value and an HTML element's text
+ * content both need — attributes require `"`, text content doesn't, but
+ * escaping it there is harmless, and one function used in both places is
+ * simpler than two escapers that could drift on which characters they cover.
+ */
+export function esc(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
 }
 

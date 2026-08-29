@@ -186,6 +186,7 @@ function project(scenes: Scene[]): Project {
     compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     scenes,
+    titleAnnotations: [],
     copy: null,
   }
 }

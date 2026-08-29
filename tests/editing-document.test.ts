@@ -102,6 +102,74 @@ describe("buildEditingDocument, read and written through project.json", () => {
     expect(document.entries[0]).not.toHaveProperty("html")
   })
 
+  test("links a TITRE annotation to its produced asset and its FCPXML composition", async () => {
+    const dir = await fixtureDir()
+    await createProject(dir, blankProject(dir))
+
+    await updateProject(dir, (current) => ({
+      ...current,
+      transcript: {
+        words: [
+          { w: "Hello", start: 0, end: 1, file: "01.MP4" },
+          { w: "world", start: 1, end: 2, file: "01.MP4" },
+        ],
+      },
+      spans: [{ start: 0, end: 2, action: "keep" }],
+      cleanupApprovedAt: new Date().toISOString(),
+      titleAnnotations: [
+        {
+          id: "title_1",
+          segmentIndex: 0,
+          scriptStart: 0,
+          scriptEnd: 2,
+          sourceFile: "01.MP4",
+          text: "The agents",
+          status: "approved",
+          createdAt: new Date().toISOString(),
+          htmlPath: "titles/title_1.html",
+          exportPath: "exports/title_1.mov",
+        },
+        {
+          id: "title_2",
+          segmentIndex: 0,
+          scriptStart: 0,
+          scriptEnd: 2,
+          sourceFile: "01.MP4",
+          text: "Still pending",
+          status: "pending",
+          createdAt: new Date().toISOString(),
+          htmlPath: null,
+          exportPath: null,
+        },
+      ],
+    }))
+
+    const stored = await readStoredProject(dir)
+    const project = await hydrate(dir, stored)
+
+    const document = buildEditingDocument(project)
+
+    expect(document.titles).toHaveLength(2)
+
+    const rendered = document.titles.find((t) => t.annotationId === "title_1")
+    expect(rendered).toMatchObject({
+      annotationId: "title_1",
+      text: "The agents",
+      status: "approved",
+      htmlPath: "titles/title_1.html",
+      exportPath: "exports/title_1.mov",
+      composed: true,
+    })
+
+    const pending = document.titles.find((t) => t.annotationId === "title_2")
+    expect(pending).toMatchObject({
+      annotationId: "title_2",
+      status: "pending",
+      exportPath: null,
+      composed: false,
+    })
+  })
+
   test("a project before cleanup is approved gets an empty document", async () => {
     const dir = await fixtureDir()
     const project = await createProject(dir, blankProject(dir))
@@ -109,7 +177,7 @@ describe("buildEditingDocument, read and written through project.json", () => {
 
     const document = buildEditingDocument(hydrated)
 
-    expect(document).toEqual({ script: null, entries: [] })
+    expect(document).toEqual({ script: null, entries: [], titles: [] })
   })
 
   test("a project.json written before this feature existed still parses and gets an empty document", () => {
@@ -134,6 +202,6 @@ describe("buildEditingDocument, read and written through project.json", () => {
     const parsed = StoredProjectSchema.parse(legacy)
     const document = buildEditingDocument({ ...parsed, scenes: [] })
 
-    expect(document).toEqual({ script: null, entries: [] })
+    expect(document).toEqual({ script: null, entries: [], titles: [] })
   })
 })

@@ -16,6 +16,7 @@ import { findById, removeFromIndex } from "@/src/mastra/lib/projects-index"
 import {
   MediaFileSchema,
   StyleGuideSchema,
+  TitleAnnotationSchema,
   TranscriptionHintsSchema,
 } from "@/src/mastra/schemas"
 import { getProject } from "@/lib/api"
@@ -36,6 +37,16 @@ const PatchSchema = z
     transcriptionHints: TranscriptionHintsSchema,
     fps: z.number().int().positive(),
     styleGuide: StyleGuideSchema,
+    /**
+     * A manual TITRE annotation is user input (issue #7), not pipeline
+     * output like `scenes` — its `text`, `status` and existence are the
+     * client's to set. Its `htmlPath`/`exportPath` are not: only the
+     * `titles` workflow step writes those, so the handler below re-attaches
+     * whatever is already on disk for a given id rather than trusting the
+     * client's copy — the same reasoning that keeps `scenes` off this list
+     * entirely, applied field-by-field instead of to the whole array.
+     */
+    titleAnnotations: z.array(TitleAnnotationSchema),
   })
   .partial()
 
@@ -92,7 +103,16 @@ export async function PATCH(
 
   if (problem) return Response.json({ error: problem }, { status: 400 })
 
-  await updateProject(entry.path, (project) => ({ ...project, ...parsed.data }))
+  await updateProject(entry.path, (project) => ({
+    ...project,
+    ...parsed.data,
+    titleAnnotations: parsed.data.titleAnnotations
+      ? reconcileRenderedFields(
+          parsed.data.titleAnnotations,
+          project.titleAnnotations
+        )
+      : project.titleAnnotations,
+  }))
 
   return Response.json(await getProject(id))
 }
@@ -130,6 +150,38 @@ function checkHints(
   }
 
   return null
+}
+
+/**
+ * Keeps `htmlPath`/`exportPath` server-authoritative on a client PATCH.
+ *
+ * The client has no way to render a title itself, so trusting the paths it
+ * sends back would silently erase them the instant the `titles` step writes
+ * a path the client's stale copy doesn't have yet. Re-attaching what's on
+ * disk avoids that.
+ *
+ * With one exception: a render belongs to the copy it was rendered from. If
+ * the incoming `text` differs from the stored one, the .mov on disk shows the
+ * old wording, so the paths are dropped rather than re-attached — which is
+ * exactly what makes the `titles` step pick the annotation up again on the
+ * next run (it renders only where `exportPath === null`).
+ */
+function reconcileRenderedFields(
+  incoming: z.infer<typeof TitleAnnotationSchema>[],
+  onDisk: z.infer<typeof TitleAnnotationSchema>[]
+): z.infer<typeof TitleAnnotationSchema>[] {
+  const byId = new Map(onDisk.map((annotation) => [annotation.id, annotation]))
+  return incoming.map((annotation) => {
+    const stored = byId.get(annotation.id)
+    if (!stored) return annotation
+
+    const sameCopy = stored.text === annotation.text
+    return {
+      ...annotation,
+      htmlPath: sameCopy ? stored.htmlPath : null,
+      exportPath: sameCopy ? stored.exportPath : null,
+    }
+  })
 }
 
 function checkMedia(media: z.infer<typeof MediaFileSchema>[]): string | null {

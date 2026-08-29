@@ -28,6 +28,8 @@ export type {
   StoredProject,
   StoredScene,
   StyleGuide,
+  TitleAnnotation,
+  TitleAnnotationStatus,
   TranscriptionHints,
   TwitterCopy,
   Word,
