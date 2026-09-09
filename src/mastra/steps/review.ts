@@ -145,7 +145,7 @@ async function applyDecisions(
       `Regenerating ${scene.id} with ${modelLabel(requested.model ?? SCENE_MODEL)}`
     )
     await generateAndPersistScene(
-      { projectPath, scene: requested, styleGuide: project.styleGuide },
+      { projectPath, scene: requested, styleRef: project.styleRef },
       writer
     )
   }

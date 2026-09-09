@@ -25,6 +25,7 @@ function scene(id: string, status: Scene["status"]): Scene {
     htmlPath: "scenes/x.html",
     exportPath: null,
     measuredDurationSec: 3,
+    beatSheetEntry: null,
     html: "<html></html>",
   }
 }

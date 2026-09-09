@@ -69,7 +69,7 @@ export const brollWorkflow = createWorkflow({
     return project.scenes.map((scene) => ({
       projectPath: inputData.projectPath,
       scene,
-      styleGuide: project.styleGuide,
+      styleRef: project.styleRef,
     })) satisfies z.infer<typeof SceneJobSchema>[]
   })
   .foreach(generateSceneWorkflow, { concurrency: SCENE_CONCURRENCY })

@@ -264,6 +264,7 @@ export function blankProject(
     timelineApprovedAt: null,
     compositeApprovedAt: null,
     styleGuide: DEFAULT_STYLE_GUIDE,
+    styleRef: "default",
     scenes: [],
     copy: null,
   }
