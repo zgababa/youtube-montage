@@ -56,14 +56,12 @@ function tinyCard(maxLength: number): StyleCard {
 
 /**
  * The default deck with every card of `purpose` removed — the shape every
- * "no card fits this scene" test needs, under an `id` of its own so the error
- * message names the style the scene was actually realized against.
+ * "no card fits this scene" test needs.
  */
-function styleWithout(purpose: SceneType, id = "default"): ChannelStyle {
+function styleWithout(purpose: SceneType): ChannelStyle {
   const style = resolveStyle("default")
   return {
     ...style,
-    id,
     cards: style.cards.filter((card) => card.purpose !== purpose),
   }
 }
@@ -295,7 +293,10 @@ describe("generateAndPersistScene (the seam review regenerates through)", () => 
   // registered under a styleRef of its own, and removed again afterwards.
   test("no matching card fails just that scene, with the reason on it", async () => {
     restoreStyles.push(
-      registerStyleForTest("no-data-card", styleWithout("data", "no-data-card"))
+      registerStyleForTest("no-data-card", {
+        ...styleWithout("data"),
+        id: "no-data-card",
+      })
     )
     const stored = scene({ type: "data" })
     const dir = await projectWith(stored)
