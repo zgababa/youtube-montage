@@ -16,7 +16,7 @@ import {
   createProject,
   readStoredProject,
 } from "../src/mastra/lib/project"
-import { resolveStyle } from "../src/mastra/lib/style"
+import { registerStyleForTest, resolveStyle } from "../src/mastra/lib/style"
 import { generateAndPersistScene } from "../src/mastra/steps/generate-scene"
 import type {
   ChannelStyle,
@@ -273,5 +273,37 @@ describe("generateAndPersistScene (the seam review regenerates through)", () => 
     expect(persisted.error).toMatch(/Unknown style reference "nope"/)
     expect(persisted.beatSheetEntry).toBeNull()
     expect(persisted.model).toBeUndefined()
+  })
+
+  // Issue #25: no card in the resolved style matches the scene's intent —
+  // this must fail the scene explicitly rather than force an unsuitable
+  // card. Every `SceneType` has a card in the real "default" deck (see
+  // `resolveStyle`'s own test above), so reaching this through the full
+  // `generateAndPersistScene` seam — as opposed to `chooseCard`/`realizeScene`
+  // directly, already covered above — needs a deck registered under a
+  // dedicated test styleRef that's missing the "data" purpose.
+  test("no matching card fails just that scene, with the reason on it", async () => {
+    registerStyleForTest("issue-25-no-data-card", {
+      ...resolveStyle("default"),
+      id: "issue-25-no-data-card",
+      cards: resolveStyle("default").cards.filter(
+        (card) => card.purpose !== "data"
+      ),
+    })
+    const stored = scene({ type: "data" })
+    const dir = await projectWith(stored)
+
+    const result = await generateAndPersistScene(
+      { projectPath: dir, scene: stored, styleRef: "issue-25-no-data-card" },
+      undefined
+    )
+
+    expect(result.status).toBe("failed")
+
+    const [persisted] = (await readStoredProject(dir)).scenes
+    expect(persisted.error).toMatch(
+      /No card of purpose "data" in style "issue-25-no-data-card"/
+    )
+    expect(persisted.beatSheetEntry).toBeNull()
   })
 })
