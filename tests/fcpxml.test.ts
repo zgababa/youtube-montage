@@ -202,7 +202,9 @@ describe("placeOverlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 5, sourceEnd: 10 },
     ]
 
-    const { placed, skipped } = placeOverlays(runs, [overlay({ scriptStart: 6 })])
+    const { placed, skipped } = placeOverlays(runs, [
+      overlay({ scriptStart: 6 }),
+    ])
 
     expect(skipped).toEqual([])
     expect(placed).toHaveLength(1)
@@ -214,7 +216,9 @@ describe("placeOverlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
     ]
 
-    const { placed, skipped } = placeOverlays(runs, [overlay({ scriptStart: 50 })])
+    const { placed, skipped } = placeOverlays(runs, [
+      overlay({ scriptStart: 50 }),
+    ])
 
     expect(placed).toEqual([])
     expect(skipped).toEqual(["scene_01"])
@@ -314,11 +318,9 @@ describe("buildFcpxml with scene overlays", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
     ]
 
-    const xml = buildFcpxml(
-      project({ path: "/projects/demo" }),
-      runs,
-      [overlay({ scriptStart: 3, exportPath: "exports/scene_01.mov" })]
-    )
+    const xml = buildFcpxml(project({ path: "/projects/demo" }), runs, [
+      overlay({ scriptStart: 3, exportPath: "exports/scene_01.mov" }),
+    ])
 
     expect(xml).toContain(
       '<media-rep kind="original-media" src="file:///projects/demo/exports/scene_01.mov"/>'
@@ -338,9 +340,9 @@ describe("buildFcpxml with scene overlays", () => {
       overlay({ scriptStart: 4, durationSec: 6 }),
     ])
 
-    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="1"[^>]*\/>/g)].map(
-      (m) => m[0]
-    )
+    const connected = [
+      ...xml.matchAll(/<asset-clip[^>]*lane="1"[^>]*\/>/g),
+    ].map((m) => m[0])
     expect(connected).toHaveLength(2)
 
     // Same asset, same scene — just two windows into it.
@@ -357,9 +359,9 @@ describe("buildFcpxml with scene overlays", () => {
     expect(connected[1]).toContain(`duration="${secondsToRational(5, 30)}"`)
 
     // One asset for the whole scene, not one per fragment.
-    expect(
-      [...xml.matchAll(/<asset id="scene-asset-scene_01"/g)]
-    ).toHaveLength(1)
+    expect([...xml.matchAll(/<asset id="scene-asset-scene_01"/g)]).toHaveLength(
+      1
+    )
   })
 
   test("a scene that can't be placed doesn't appear in the spine at all", () => {
@@ -391,13 +393,15 @@ describe("buildFcpxml with a white backing", () => {
       backing
     )
 
-    const connected = [...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g)].map(
-      (m) => m[0]
-    )
+    const connected = [
+      ...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g),
+    ].map((m) => m[0])
     expect(connected).toHaveLength(2)
 
     const white = connected.find((c) => c.includes(WHITE_ASSET_REF))!
-    const scene = connected.find((c) => c.includes('ref="scene-asset-scene_01"'))!
+    const scene = connected.find((c) =>
+      c.includes('ref="scene-asset-scene_01"')
+    )!
 
     expect(white).toContain('lane="1"')
     expect(scene).toContain('lane="2"')
@@ -420,7 +424,12 @@ describe("buildFcpxml with a white backing", () => {
       { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 10 },
     ]
 
-    const xml = buildFcpxml(project(), runs, [overlay({ scriptStart: 3 })], null)
+    const xml = buildFcpxml(
+      project(),
+      runs,
+      [overlay({ scriptStart: 3 })],
+      null
+    )
 
     const connected = [...xml.matchAll(/<asset-clip[^>]*lane="\d"[^>]*\/>/g)]
     expect(connected).toHaveLength(1)
@@ -440,13 +449,11 @@ describe("buildFcpxml with a white backing", () => {
       backing
     )
 
-    expect(
-      [...xml.matchAll(new RegExp(WHITE_ASSET_REF, "g"))]
-    ).toHaveLength(2)
+    expect([...xml.matchAll(new RegExp(WHITE_ASSET_REF, "g"))]).toHaveLength(2)
     // Still exactly one <asset> for the backing clip, referenced twice.
-    expect(
-      [...xml.matchAll(/<asset id="asset-white-backing"/g)]
-    ).toHaveLength(1)
+    expect([...xml.matchAll(/<asset id="asset-white-backing"/g)]).toHaveLength(
+      1
+    )
   })
 
   test("skips the backing entirely when nothing gets placed", () => {

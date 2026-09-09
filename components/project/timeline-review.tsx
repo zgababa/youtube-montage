@@ -48,8 +48,8 @@ export function TimelineReview({
     <StageSection
       description={
         <>
-          Written to <span className="font-mono">timeline.fcpxml</span>, next
-          to <span className="font-mono">project.json</span>. Import it into
+          Written to <span className="font-mono">timeline.fcpxml</span>, next to{" "}
+          <span className="font-mono">project.json</span>. Import it into
           DaVinci once approved.
         </>
       }

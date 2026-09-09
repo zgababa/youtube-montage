@@ -35,10 +35,10 @@ export function CompositeReview({
     <StageSection
       description={
         <>
-          Rewrites <span className="font-mono">timeline.fcpxml</span> with
-          every exported scene laid in as a connected clip. Re-import it into
-          DaVinci once approved — the earlier import from the timeline gate is
-          now out of date.
+          Rewrites <span className="font-mono">timeline.fcpxml</span> with every
+          exported scene laid in as a connected clip. Re-import it into DaVinci
+          once approved — the earlier import from the timeline gate is now out
+          of date.
         </>
       }
       footer={
@@ -49,7 +49,11 @@ export function CompositeReview({
               : null}
           </span>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onRegenerate} disabled={disabled}>
+            <Button
+              variant="outline"
+              onClick={onRegenerate}
+              disabled={disabled}
+            >
               Regenerate
             </Button>
             <Button onClick={onApprove} disabled={disabled || approved}>
@@ -67,9 +71,9 @@ export function CompositeReview({
             timeline
           </AlertTitle>
           <AlertDescription>
-            {composite.skipped.join(", ")} — their moment ended up cut from
-            the timeline. They still exported to `.mov`; place them manually
-            from the shot list.
+            {composite.skipped.join(", ")} — their moment ended up cut from the
+            timeline. They still exported to `.mov`; place them manually from
+            the shot list.
           </AlertDescription>
         </Alert>
       ) : null}

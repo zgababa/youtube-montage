@@ -110,7 +110,11 @@ export const timelineStep = createStep({
         ...stats,
         maxSilenceSec: project.maxSilenceSec,
       })
-      await report.emit("gate", { on: "review-timeline", runId, step: "fcpxml" })
+      await report.emit("gate", {
+        on: "review-timeline",
+        runId,
+        step: "fcpxml",
+      })
       await report.suspended()
 
       return suspend({
@@ -128,7 +132,12 @@ export const timelineStep = createStep({
 /** Rebuilds the runs and writes `timeline.fcpxml`, returning what the UI shows. */
 async function writeTimeline(project: StoredProject, maxSilenceSec: number) {
   const segments = buildSegments(project.transcript.words)
-  const runs = buildKeptRuns(segments, project.spans, project.media, maxSilenceSec)
+  const runs = buildKeptRuns(
+    segments,
+    project.spans,
+    project.media,
+    maxSilenceSec
+  )
 
   const xml = buildFcpxml(project, runs)
   const file = fcpxmlPath(project.path)

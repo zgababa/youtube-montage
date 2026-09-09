@@ -65,10 +65,12 @@ export function chooseCard(scene: StoredScene, style: ChannelStyle): StyleCard {
     throw new NoMatchingCardError(scene.type, style.id)
   }
 
-  return candidates.slice().sort((a, b) => {
-    if (a.tier !== b.tier) return a.tier === "primary" ? -1 : 1
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-  })[0]
+  // Primary tier wins; ties broken by ascending id, so the pick is
+  // deterministic without sorting the whole candidate list to read one entry.
+  return candidates.reduce((best, card) => {
+    if (card.tier !== best.tier) return card.tier === "primary" ? card : best
+    return card.id < best.id ? card : best
+  })
 }
 
 /**
@@ -116,40 +118,27 @@ export function fillSlots(scene: StoredScene, card: StyleCard): BeatSheetEntry {
 
 /**
  * Realizes one scene: choose a card, fill its slots, return the scene ready
- * to persist. `NoMatchingCardError` and `SlotConstraintError` are caught here
- * and turned into an explicit `failed` scene rather than propagating — the
- * same "explicit error, not a forced/truncated result" stance the rest of the
- * pipeline takes for ambiguous input. Any other exception is a bug and is left
- * to propagate.
+ * to persist.
+ *
+ * Throws — `NoMatchingCardError`, `SlotConstraintError`, or a resolution bug
+ * — rather than catching anything itself. `generateAndPersistScene` (the
+ * step's I/O shell) is the single place that turns a thrown error into an
+ * explicit `failed` scene; duplicating that translation here as well would
+ * split one concern across two altitudes for no observable difference, since
+ * that shell already catches everything this function could throw.
  */
 export function realizeScene(
   scene: StoredScene,
   style: ChannelStyle
 ): StoredScene {
-  try {
-    const card = chooseCard(scene, style)
-    const beatSheetEntry = fillSlots(scene, card)
+  const card = chooseCard(scene, style)
+  const beatSheetEntry = fillSlots(scene, card)
 
-    return {
-      ...scene,
-      ...CLEARED_RENDER_FIELDS,
-      status: "ready",
-      error: undefined,
-      beatSheetEntry,
-    }
-  } catch (error) {
-    if (
-      error instanceof NoMatchingCardError ||
-      error instanceof SlotConstraintError
-    ) {
-      return {
-        ...scene,
-        ...CLEARED_RENDER_FIELDS,
-        status: "failed",
-        error: error.message,
-        beatSheetEntry: null,
-      }
-    }
-    throw error
+  return {
+    ...scene,
+    ...CLEARED_RENDER_FIELDS,
+    status: "ready",
+    error: undefined,
+    beatSheetEntry,
   }
 }

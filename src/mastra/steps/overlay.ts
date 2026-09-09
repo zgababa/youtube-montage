@@ -34,7 +34,8 @@ import { PipelineIO, message, reporter } from "./shared"
 
 export const overlayStep = createStep({
   id: "overlay",
-  description: "Composite exported scenes into timeline.fcpxml, then suspend for approval",
+  description:
+    "Composite exported scenes into timeline.fcpxml, then suspend for approval",
   inputSchema: PipelineIO,
   outputSchema: PipelineIO,
   resumeSchema: z.object({

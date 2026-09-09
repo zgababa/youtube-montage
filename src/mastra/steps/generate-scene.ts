@@ -25,7 +25,7 @@ import { z } from "zod"
 import { CLEARED_RENDER_FIELDS, realizeScene } from "../lib/beat-sheet"
 import { updateProject } from "../lib/project"
 import { resolveStyle } from "../lib/style"
-import { SceneSchema, type Scene } from "../schemas"
+import { SceneSchema, type Scene, type StoredScene } from "../schemas"
 import { emitter, type PipelineWriter } from "../stream/contract"
 
 export const SceneJobSchema = z.object({
@@ -68,6 +68,14 @@ export const generateSceneStep = createStep({
  * Review reuses it: regenerating a rejected scene is the same resolve-style →
  * realize → persist path, just triggered by a human instead of by the
  * foreach.
+ *
+ * Unlike the old LLM/Playwright path, realization is synchronous — there is
+ * no interim "generating" state worth publishing, since nothing happens
+ * between starting and finishing. Everything `resolveStyle`/`realizeScene`
+ * can throw (an unresolvable `styleRef`, `NoMatchingCardError`,
+ * `SlotConstraintError`, or a genuine bug) is caught in one place below and
+ * turned into the same explicit `failed` scene — the run continues and the
+ * other scenes finish regardless of which of those it was.
  */
 export async function generateAndPersistScene(
   job: SceneJob,
@@ -77,52 +85,35 @@ export async function generateAndPersistScene(
   const emit = emitter(writer)
   const publish = (next: Scene) => emit("scene", next, { id: next.id })
 
-  await publish({ ...scene, status: "generating", html: null })
-
+  let realized: StoredScene
   try {
-    const style = resolveStyle(styleRef)
-    const realized = realizeScene(scene, style)
-
-    await updateProject(projectPath, (project) => ({
-      ...project,
-      scenes: project.scenes.map((s) => (s.id === scene.id ? realized : s)),
-    }))
-
-    await publish({ ...realized, html: null })
-
-    if (realized.status === "failed") {
-      // Not fatal: the run continues and the other scenes finish.
-      await emit("failure", {
-        step: "generate",
-        message: `${scene.id}: ${realized.error}`,
-        fatal: false,
-      })
-    }
-
-    return { id: scene.id, status: realized.status }
+    realized = realizeScene(scene, resolveStyle(styleRef))
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    const failed = {
+    realized = {
       ...scene,
       ...CLEARED_RENDER_FIELDS,
-      status: "failed" as const,
+      status: "failed",
       beatSheetEntry: null,
       error: reason,
     }
+  }
 
-    await updateProject(projectPath, (project) => ({
-      ...project,
-      scenes: project.scenes.map((s) => (s.id === scene.id ? failed : s)),
-    }))
+  await updateProject(projectPath, (project) => ({
+    ...project,
+    scenes: project.scenes.map((s) => (s.id === scene.id ? realized : s)),
+  }))
 
-    await publish({ ...failed, html: null })
+  await publish({ ...realized, html: null })
+
+  if (realized.status === "failed") {
     // Not fatal: the run continues and the other scenes finish.
     await emit("failure", {
       step: "generate",
-      message: `${scene.id}: ${reason}`,
+      message: `${scene.id}: ${realized.error}`,
       fatal: false,
     })
-
-    return { id: scene.id, status: "failed" as const }
   }
+
+  return { id: scene.id, status: realized.status }
 }

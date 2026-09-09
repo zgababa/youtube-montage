@@ -22,6 +22,7 @@ import type {
   ChannelStyle,
   SceneType,
   StoredScene,
+  StyleCard,
 } from "../src/mastra/schemas"
 
 function scene(overrides: Partial<StoredScene> = {}): StoredScene {
@@ -40,6 +41,16 @@ function scene(overrides: Partial<StoredScene> = {}): StoredScene {
     measuredDurationSec: null,
     beatSheetEntry: null,
     ...overrides,
+  }
+}
+
+/** A single-slot "concept" card whose slot only allows `maxLength` chars. */
+function tinyCard(maxLength: number): StyleCard {
+  return {
+    id: "tiny",
+    tier: "primary",
+    purpose: "concept",
+    slots: [{ id: "headline", type: "text", maxLength }],
   }
 }
 
@@ -134,15 +145,9 @@ describe("fillSlots", () => {
   })
 
   test("throws SlotConstraintError when the text overflows maxLength", () => {
-    const tinyCard = {
-      id: "tiny",
-      tier: "primary" as const,
-      purpose: "concept" as const,
-      slots: [{ id: "headline", type: "text" as const, maxLength: 5 }],
-    }
     const s = scene({ coversLine: "Way too long for this slot." })
 
-    expect(() => fillSlots(s, tinyCard)).toThrow(SlotConstraintError)
+    expect(() => fillSlots(s, tinyCard(5))).toThrow(SlotConstraintError)
   })
 })
 
@@ -164,42 +169,33 @@ describe("realizeScene", () => {
     expect(result.error).toBeUndefined()
   })
 
-  test("no matching card: failed, explicit error, no beat sheet entry", () => {
+  // Realization failures (no matching card, slot overflow) propagate rather
+  // than being caught here — `generateAndPersistScene` is the single place
+  // that turns a thrown error into a persisted `failed` scene (see the
+  // "generateAndPersistScene" describe block below), so `realizeScene` itself
+  // is only ever tested for the happy path plus the fact that it throws.
+
+  test("no matching card throws NoMatchingCardError", () => {
     const narrow: ChannelStyle = {
       ...style,
       cards: style.cards.filter((card) => card.purpose === "concept"),
     }
     const s = scene({ type: "data" })
 
-    const result = realizeScene(s, narrow)
-
-    expect(result.status).toBe("failed")
-    expect(result.error).toMatch(/No card of purpose "data"/)
-    expect(result.beatSheetEntry).toBeNull()
+    expect(() => realizeScene(s, narrow)).toThrow(NoMatchingCardError)
   })
 
-  test("slot overflow: failed, explicit error, no beat sheet entry", () => {
+  test("slot overflow throws SlotConstraintError", () => {
     const overflowStyle: ChannelStyle = {
       ...style,
-      cards: [
-        {
-          id: "tiny",
-          tier: "primary",
-          purpose: "concept",
-          slots: [{ id: "headline", type: "text", maxLength: 3 }],
-        },
-      ],
+      cards: [tinyCard(3)],
     }
     const s = scene({
       type: "concept",
       coversLine: "Way too long for this slot.",
     })
 
-    const result = realizeScene(s, overflowStyle)
-
-    expect(result.status).toBe("failed")
-    expect(result.error).toMatch(/Slot "headline" allows at most 3/)
-    expect(result.beatSheetEntry).toBeNull()
+    expect(() => realizeScene(s, overflowStyle)).toThrow(SlotConstraintError)
   })
 })
 
