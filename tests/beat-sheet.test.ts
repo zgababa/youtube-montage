@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 
 import {
   chooseCard,
@@ -8,8 +11,18 @@ import {
   realizeScene,
   SlotConstraintError,
 } from "../src/mastra/lib/beat-sheet"
+import {
+  blankProject,
+  createProject,
+  readStoredProject,
+} from "../src/mastra/lib/project"
 import { resolveStyle } from "../src/mastra/lib/style"
-import type { ChannelStyle, SceneType, StoredScene } from "../src/mastra/schemas"
+import { generateAndPersistScene } from "../src/mastra/steps/generate-scene"
+import type {
+  ChannelStyle,
+  SceneType,
+  StoredScene,
+} from "../src/mastra/schemas"
 
 function scene(overrides: Partial<StoredScene> = {}): StoredScene {
   return {
@@ -30,7 +43,13 @@ function scene(overrides: Partial<StoredScene> = {}): StoredScene {
   }
 }
 
-const SCENE_TYPES: SceneType[] = ["diagram", "code", "data", "process", "concept"]
+const SCENE_TYPES: SceneType[] = [
+  "diagram",
+  "code",
+  "data",
+  "process",
+  "concept",
+]
 
 describe("resolveStyle", () => {
   test("the default style has a card for every scene type", () => {
@@ -98,13 +117,19 @@ describe("fillSlots", () => {
   const style = resolveStyle("default")
 
   test("fills the chosen card's slots and anchors entryAt on scriptStart", () => {
-    const s = scene({ type: "concept", coversLine: "A short headline.", scriptStart: 42 })
+    const s = scene({
+      type: "concept",
+      coversLine: "A short headline.",
+      scriptStart: 42,
+    })
     const card = chooseCard(s, style)
 
     const entry = fillSlots(s, card)
 
     expect(entry.cardId).toBe(card.id)
-    expect(entry.slots).toEqual([{ slotId: "headline", text: "A short headline." }])
+    expect(entry.slots).toEqual([
+      { slotId: "headline", text: "A short headline." },
+    ])
     expect(entry.entryAt).toBe(42)
   })
 
@@ -165,12 +190,92 @@ describe("realizeScene", () => {
         },
       ],
     }
-    const s = scene({ type: "concept", coversLine: "Way too long for this slot." })
+    const s = scene({
+      type: "concept",
+      coversLine: "Way too long for this slot.",
+    })
 
     const result = realizeScene(s, overflowStyle)
 
     expect(result.status).toBe("failed")
     expect(result.error).toMatch(/Slot "headline" allows at most 3/)
     expect(result.beatSheetEntry).toBeNull()
+  })
+})
+
+/**
+ * The regenerate seam, on a real project folder.
+ *
+ * `reviewStep` regenerates a scene by calling `generateAndPersistScene`
+ * directly — the same function the `.foreach` runs — so this exercises the
+ * criterion that asking for a regeneration produces a *new* beat sheet entry
+ * through the same mechanism, and that a scene carrying leftovers from the old
+ * HTML/Playwright path comes back with none of them.
+ */
+describe("generateAndPersistScene (the seam review regenerates through)", () => {
+  const dirs: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(
+      dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))
+    )
+  })
+
+  async function projectWith(stored: StoredScene) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "beat-sheet-test-"))
+    dirs.push(dir)
+    await createProject(dir, { ...blankProject(dir), scenes: [stored] })
+    return dir
+  }
+
+  test("regenerating replaces the beat sheet entry and drops old-mechanism fields", async () => {
+    // A scene as the old path left it: rendered HTML, an export, a measured
+    // duration and the model that wrote it.
+    const stale = scene({
+      type: "concept",
+      coversLine: "A short headline.",
+      status: "rejected",
+      htmlPath: "scenes/scene_01.html",
+      exportPath: "exports/scene_01.mov",
+      measuredDurationSec: 6,
+      model: "openrouter/google/gemini-3.6-flash",
+      beatSheetEntry: { cardId: "stale-card", slots: [], entryAt: 0 },
+    })
+    const dir = await projectWith(stale)
+
+    const result = await generateAndPersistScene(
+      { projectPath: dir, scene: stale, styleRef: "default" },
+      undefined
+    )
+
+    expect(result).toEqual({ id: "scene_01", status: "ready" })
+
+    const [persisted] = (await readStoredProject(dir)).scenes
+    expect(persisted.beatSheetEntry?.cardId).toBe("concept-headline")
+    expect(persisted.beatSheetEntry?.slots).toEqual([
+      { slotId: "headline", text: "A short headline." },
+    ])
+    expect(persisted.beatSheetEntry?.entryAt).toBe(stale.scriptStart)
+    expect(persisted.htmlPath).toBeNull()
+    expect(persisted.exportPath).toBeNull()
+    expect(persisted.measuredDurationSec).toBeNull()
+    expect(persisted.model).toBeUndefined()
+  })
+
+  test("an unresolvable styleRef fails just that scene, with the reason on it", async () => {
+    const stored = scene({ model: "openrouter/google/gemini-3.6-flash" })
+    const dir = await projectWith(stored)
+
+    const result = await generateAndPersistScene(
+      { projectPath: dir, scene: stored, styleRef: "nope" },
+      undefined
+    )
+
+    expect(result.status).toBe("failed")
+
+    const [persisted] = (await readStoredProject(dir)).scenes
+    expect(persisted.error).toMatch(/Unknown style reference "nope"/)
+    expect(persisted.beatSheetEntry).toBeNull()
+    expect(persisted.model).toBeUndefined()
   })
 })

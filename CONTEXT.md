@@ -54,6 +54,36 @@ le contenu audio ou la piste principale.
 
 _Avoid_: commande de montage, écran titre
 
+**Style**:
+Le référentiel visuel d’une chaîne — palette, typographie, motion et jeu de
+cartes — désigné par une référence portée par le projet et résolu une fois pour
+toutes les scènes. Il appartient à la chaîne, pas à la vidéo : il n’est jamais
+dérivé du transcript.
+
+_Avoid_: charte par projet, style déduit du contenu
+
+**Carte de style**:
+Un gabarit nommé du `Style`, portant un tier, un but qui dit quel type
+d’élément du plan elle sait réaliser, et des slots déclarés. La réalisation
+choisit une carte; elle n’invente pas une mise en page.
+
+_Avoid_: template libre, mise en page générée
+
+**Slot**:
+Un emplacement de texte déclaré par une carte de style, avec sa contrainte de
+longueur. Un texte qui n’y entre pas est une erreur explicite, jamais une
+troncature silencieuse.
+
+_Avoid_: champ libre, placeholder
+
+**Beat sheet**:
+La suite des réalisations d’éléments visuels d’une vidéo. Chaque entrée nomme
+la carte choisie, le texte de chacun de ses slots et son minutage d’entrée,
+ancré sur le script approuvé. Pour une scène B-roll, l’entrée de beat sheet
+remplace le rendu HTML libre.
+
+_Avoid_: storyboard, timeline, script annoté
+
 ## Planification éditoriale
 
 **Document de montage**:
@@ -112,6 +142,7 @@ _Avoid_: effet, clip
 **Élément visuel**:
 La réalisation approuvée d’un élément du plan éditorial. Son rendu dépend de
 son type : template pour un titre, transformation de la vidéo pour un zoom,
-preset pour une transition ou génération créative pour une scène B-roll.
+preset pour une transition ou carte du `Style` de la chaîne pour une scène
+B-roll.
 
 _Avoid_: scène générique

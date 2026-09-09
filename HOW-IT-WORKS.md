@@ -324,10 +324,29 @@ in the script, not from the model's opinion.
 
 ### Step 6 — `generate`: twelve scenes, three at a time
 
-`.foreach(generateSceneWorkflow, { concurrency: 3 })`. Modest on purpose: three
-concurrent agents stays inside rate limits, and three Chromium instances
-validating at once is already as much as a laptop wants to do while you're
-editing in the next window.
+`.foreach(generateSceneWorkflow, { concurrency: 3 })`.
+
+> **This step no longer writes HTML.** A B-roll scene is now realized as a
+> **beat sheet entry**: the channel's `Style` is resolved from the project's
+> `styleRef`, a card whose purpose matches the scene's type is chosen, its
+> slots are filled from the scene's script line, and the entry time is anchored
+> on `scriptStart`. It is a pure, deterministic translation — no model call, no
+> Chromium. See
+> [ADR 0007](docs/adr/0007-scene-broll-realisee-par-carte-de-style.md), and
+> `lib/style.ts` plus `lib/beat-sheet.ts`.
+>
+> Sections [5](#5-scene-generation-in-detail) and
+> [7](#7-changing-the-model-for-one-scene) below, the concurrency reasoning
+> just under this note, and everything about `sceneAgent`, the validator and
+> the repair loop describe the **previous** mechanism. That code is still in
+> the repo (`agents/scene-agent.ts`, `lib/validate-scene.ts`, `lib/render.ts`)
+> but nothing on the B-roll path calls it any more. Rendering a beat sheet
+> entry back to video is not built yet, so a run currently stops producing
+> ProRes for these scenes.
+
+Modest on purpose: three concurrent agents stays inside rate limits, and three
+Chromium instances validating at once is already as much as a laptop wants to
+do while you're editing in the next window.
 
 Each scene runs **generate → validate → repair**, up to three attempts. See
 [section 5](#5-scene-generation-in-detail) — it's the hardest part of the system
@@ -352,13 +371,16 @@ better part of a minute.
 **Gate two.** Per scene: approve, reject, or regenerate with a note.
 
 Regeneration is handled inside this step rather than by looping the workflow
-back. The step reruns the same generate → validate → repair path for whichever
-scenes asked for it, then suspends again so the new versions get reviewed too. A
-scene can go round that loop as many times as you have patience for, and the run
-never leaves the gate until you say you're done.
+back. The step reruns the same realization path for whichever scenes asked for
+it — the same function the fan-out calls, so there is one mechanism and not two
+— then suspends again so the new versions get reviewed too. A scene can go round
+that loop as many times as you have patience for, and the run never leaves the
+gate until you say you're done.
 
-A regenerate can also **name a different model** — see
-[section 7](#7-changing-the-model-for-one-scene).
+The regenerate dialog still offers a model picker, but since realization no
+longer calls a model the choice is now accepted and ignored; retiring that
+control is part of the UI migration to named channel styles. Section
+[7](#7-changing-the-model-for-one-scene) describes the previous behaviour.
 
 ### Step 8 — `export`: ProRes 4444 with alpha
 

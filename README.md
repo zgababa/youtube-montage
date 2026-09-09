@@ -154,6 +154,12 @@ missing, since the clean script is just the kept spans concatenated.
 
 ### A scene can be sent back to a different model
 
+> **Superseded for B-roll scenes.** Realizing a scene no longer calls a model
+> at all — it picks a card from the channel's `Style` and fills its slots
+> ([ADR 0007](docs/adr/0007-scene-broll-realisee-par-carte-de-style.md)). The
+> picker is still in the regenerate dialog and its value is now ignored. The
+> rest of this section describes the previous mechanism.
+
 Regenerating is the one place in the pipeline where the model is worth choosing
 per call — it's the only output judged by eye and thrown back, and a scene that
 has failed twice is exactly when it's worth paying for a slower model. The other

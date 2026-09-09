@@ -28,6 +28,7 @@ import {
   type Project,
   type StoredProject,
 } from "../schemas"
+import { HOUSE_LOOK } from "./style"
 import { projectFile, sceneHtmlPath, toAbsolute } from "./paths"
 
 /* -------------------------------------------------------------------------- */
@@ -206,8 +207,7 @@ function stringify(value: unknown) {
 }
 
 /**
- * The house look — `design.md`, compressed to the four fields the scene brief
- * carries.
+ * The per-project style guide a new project starts from.
  *
  * This is the style guide, not a placeholder waiting to be overwritten. It used
  * to be generated per project from a sample of the transcript, which was wrong
@@ -217,21 +217,15 @@ function stringify(value: unknown) {
  *
  * Editable per project in the UI when a video genuinely wants its own look.
  *
- * Palette order is meaningful, and `sceneAgent` is told to read it this way:
- * dominant surface, primary text, then accents.
+ * The look itself lives once in `HOUSE_LOOK` (`lib/style.ts`), which is also
+ * what a `styleRef` resolves to. This field is the older, per-project shape,
+ * kept until the UI moves to named channel styles.
  *
  * Light, not dark. Both work over footage, but a near-white surface reads as
  * deliberate against almost any grade, while a near-black one tends to look
  * like the footage dipped rather than like something placed on top of it.
  */
-const DEFAULT_STYLE_GUIDE = {
-  palette: ["#F5F5F7", "#0B0B0F", "#FF6B5A"],
-  fontStack: 'ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif',
-  motion:
-    "Choreographed, not simultaneous: entrances stagger 40–80ms apart on a long ease-out, 400–900ms for a major move, opacity and scale and blur only, holds between beats.",
-  notes:
-    "Light and airy, Apple keynote restraint. Near-white surfaces carrying near-black type, warm coral as the only accent. One idea per scene, almost no words — the voiceover is doing the explaining. Generous negative space, large tight-tracked type, depth from blur and soft shadow rather than borders. No cards unless something genuinely needs its own plane.",
-}
+const DEFAULT_STYLE_GUIDE = HOUSE_LOOK
 
 /**
  * An empty `project.json` for a folder that has one of nothing yet.

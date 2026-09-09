@@ -13,7 +13,6 @@ import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
 import { readStoredProject, updateProject } from "../lib/project"
-import { modelLabel, SCENE_MODEL } from "../models"
 import { SceneStatusSchema, type StoredScene } from "../schemas"
 import type { PipelineWriter } from "../stream/contract"
 import { generateAndPersistScene } from "./generate-scene"
@@ -22,9 +21,13 @@ import { PipelineIO, message, reporter } from "./shared"
 const DecisionSchema = z.object({
   id: z.string(),
   action: z.enum(["approve", "reject", "regenerate"]),
-  /** Only meaningful for `regenerate` — fed back into the scene prompt. */
+  /** Only meaningful for `regenerate` — recorded on the scene as the ask. */
   note: z.string().optional(),
-  /** Only meaningful for `regenerate` — which model writes the new version. */
+  /**
+   * Accepted and ignored. The UI's regenerate dialog still offers a model
+   * picker, but B-roll realization no longer calls an LLM (issue #24);
+   * retiring that control is part of the separate UI migration.
+   */
   model: z.string().optional(),
 })
 
@@ -132,18 +135,16 @@ async function applyDecisions(
     const scene = byId.get(decision.id)
     if (!scene) continue
 
-    // The note and the model ride along on the scene: the note so it reaches
-    // the prompt, the model so the generate step writes with it — and both so
-    // project.json records what was asked for.
+    // The note rides along on the scene so project.json records what was asked
+    // for. `decision.model` is deliberately dropped: regeneration now re-runs
+    // the pure card/slot realization (issue #24), so naming a model would both
+    // record and announce something that never ran.
     const requested: StoredScene = {
       ...scene,
       note: decision.note,
-      model: decision.model ?? scene.model,
     }
 
-    await report.detail(
-      `Regenerating ${scene.id} with ${modelLabel(requested.model ?? SCENE_MODEL)}`
-    )
+    await report.detail(`Regenerating ${scene.id}`)
     await generateAndPersistScene(
       { projectPath, scene: requested, styleRef: project.styleRef },
       writer

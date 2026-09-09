@@ -12,7 +12,28 @@
  * Playwright render path.
  */
 
-import type { BeatSheetEntry, ChannelStyle, StoredScene, StyleCard } from "../schemas"
+import type {
+  BeatSheetEntry,
+  ChannelStyle,
+  StoredScene,
+  StyleCard,
+} from "../schemas"
+
+/**
+ * The old mechanism's output fields, blanked.
+ *
+ * A scene realized as a beat sheet entry has no generated HTML, no ProRes
+ * export, no measured animation duration and no authoring model — and if it
+ * carried any from a previous run on the old path, they are stale, not
+ * history. Exported so the failure branch in `steps/generate-scene.ts` clears
+ * exactly the same set: a scene must never come back half old, half new.
+ */
+export const CLEARED_RENDER_FIELDS = {
+  htmlPath: null,
+  exportPath: null,
+  measuredDurationSec: null,
+  model: undefined,
+} satisfies Partial<StoredScene>
 
 /** No card in the style matches the scene's intent/type (user story 9). */
 export class NoMatchingCardError extends Error {
@@ -44,12 +65,10 @@ export function chooseCard(scene: StoredScene, style: ChannelStyle): StyleCard {
     throw new NoMatchingCardError(scene.type, style.id)
   }
 
-  return candidates
-    .slice()
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier === "primary" ? -1 : 1
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-    })[0]
+  return candidates.slice().sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier === "primary" ? -1 : 1
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })[0]
 }
 
 /**
@@ -103,30 +122,29 @@ export function fillSlots(scene: StoredScene, card: StyleCard): BeatSheetEntry {
  * pipeline takes for ambiguous input. Any other exception is a bug and is left
  * to propagate.
  */
-export function realizeScene(scene: StoredScene, style: ChannelStyle): StoredScene {
-  const cleared = {
-    htmlPath: null,
-    exportPath: null,
-    measuredDurationSec: null,
-    model: undefined,
-  }
-
+export function realizeScene(
+  scene: StoredScene,
+  style: ChannelStyle
+): StoredScene {
   try {
     const card = chooseCard(scene, style)
     const beatSheetEntry = fillSlots(scene, card)
 
     return {
       ...scene,
-      ...cleared,
+      ...CLEARED_RENDER_FIELDS,
       status: "ready",
       error: undefined,
       beatSheetEntry,
     }
   } catch (error) {
-    if (error instanceof NoMatchingCardError || error instanceof SlotConstraintError) {
+    if (
+      error instanceof NoMatchingCardError ||
+      error instanceof SlotConstraintError
+    ) {
       return {
         ...scene,
-        ...cleared,
+        ...CLEARED_RENDER_FIELDS,
         status: "failed",
         error: error.message,
         beatSheetEntry: null,

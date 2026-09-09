@@ -12,20 +12,31 @@
  * chantier.
  */
 
-import type { ChannelStyle } from "../schemas"
+import type { ChannelStyle, StyleGuide } from "../schemas"
 
 /**
- * The house look — same palette/typography/motion as the old
- * `DEFAULT_STYLE_GUIDE` in `lib/project.ts`, now carrying a card deck.
+ * The house look, `design.md` compressed — palette, typography, motion, taste.
+ *
+ * The single source of truth for those four fields. `blankProject` derives the
+ * legacy `project.styleGuide` from it (`lib/project.ts`) rather than keeping a
+ * second copy: while both shapes exist, a channel that changes its palette here
+ * must not find the old one still stamped onto new projects.
+ *
+ * Palette order is meaningful: dominant surface, primary text, then accents.
  */
-const DEFAULT_STYLE: ChannelStyle = {
-  id: "default",
+export const HOUSE_LOOK: StyleGuide = {
   palette: ["#F5F5F7", "#0B0B0F", "#FF6B5A"],
   fontStack: 'ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif',
   motion:
     "Choreographed, not simultaneous: entrances stagger 40–80ms apart on a long ease-out, 400–900ms for a major move, opacity and scale and blur only, holds between beats.",
   notes:
-    "Light and airy, Apple keynote restraint. Near-white surfaces carrying near-black type, warm coral as the only accent. One idea per scene, almost no words — the voiceover is doing the explaining.",
+    "Light and airy, Apple keynote restraint. Near-white surfaces carrying near-black type, warm coral as the only accent. One idea per scene, almost no words — the voiceover is doing the explaining. Generous negative space, large tight-tracked type, depth from blur and soft shadow rather than borders. No cards unless something genuinely needs its own plane.",
+}
+
+/** The house look carrying a card deck — the `Style` a `styleRef` resolves to. */
+const DEFAULT_STYLE: ChannelStyle = {
+  id: "default",
+  ...HOUSE_LOOK,
   cards: [
     {
       id: "concept-headline",

@@ -22,7 +22,7 @@
 import { createStep } from "@mastra/core/workflows"
 import { z } from "zod"
 
-import { realizeScene } from "../lib/beat-sheet"
+import { CLEARED_RENDER_FIELDS, realizeScene } from "../lib/beat-sheet"
 import { updateProject } from "../lib/project"
 import { resolveStyle } from "../lib/style"
 import { SceneSchema, type Scene } from "../schemas"
@@ -104,10 +104,8 @@ export async function generateAndPersistScene(
     const reason = error instanceof Error ? error.message : String(error)
     const failed = {
       ...scene,
+      ...CLEARED_RENDER_FIELDS,
       status: "failed" as const,
-      htmlPath: null,
-      exportPath: null,
-      measuredDurationSec: null,
       beatSheetEntry: null,
       error: reason,
     }
