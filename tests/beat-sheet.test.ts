@@ -55,6 +55,16 @@ function tinyCard(maxLength: number): StyleCard {
   }
 }
 
+/** A single-slot "process" card whose slot expects list-shaped text. */
+function listCard(): StyleCard {
+  return {
+    id: "steps-list",
+    tier: "primary",
+    purpose: "process",
+    slots: [{ id: "steps", type: "list", maxLength: 200 }],
+  }
+}
+
 /**
  * The default deck with every card of `purpose` removed — the shape every
  * "no card fits this scene" test needs.
@@ -162,18 +172,12 @@ describe("fillSlots", () => {
   // free-text sentence — not the multiple delimited items a list slot
   // expects.
   test("throws SlotTypeError when a list slot is filled with plain free text", () => {
-    const listCard: StyleCard = {
-      id: "steps-list",
-      tier: "primary",
-      purpose: "process",
-      slots: [{ id: "steps", type: "list", maxLength: 200 }],
-    }
     const s = scene({
       type: "process",
       coversLine: "Just one plain sentence, no items here.",
     })
 
-    expect(() => fillSlots(s, listCard)).toThrow(SlotTypeError)
+    expect(() => fillSlots(s, listCard())).toThrow(SlotTypeError)
   })
 
   // The other direction of the same mismatch: a "text" slot expects one
@@ -181,14 +185,33 @@ describe("fillSlots", () => {
   test("throws SlotTypeError when a text slot is filled with list-shaped text", () => {
     const s = scene({
       type: "concept",
-      coversLine: "First item; second item; third item.",
+      coversLine: "- First item\n- Second item\n- Third item",
     })
 
     expect(() => fillSlots(s, tinyCard(200))).toThrow(SlotTypeError)
   })
 
+  // Only item *separators* make a list. A semicolon joins clauses inside one
+  // spoken sentence, and every shipped card declares "text" — reading it as a
+  // delimiter would fail ordinary script lines.
+  test("prose punctuation is not a list: a semicolon never trips a text slot", () => {
+    const s = scene({
+      type: "concept",
+      coversLine: "On ouvre le capot ; puis on vérifie l'huile.",
+    })
+
+    const entry = fillSlots(s, tinyCard(200))
+
+    expect(entry.slots).toEqual([
+      {
+        slotId: "headline",
+        text: "On ouvre le capot ; puis on vérifie l'huile.",
+      },
+    ])
+  })
+
   test("an empty padded slot never trips the type check, regardless of type", () => {
-    const listCard: StyleCard = {
+    const twoSlotCard: StyleCard = {
       id: "two-slots",
       tier: "primary",
       purpose: "concept",
@@ -199,7 +222,7 @@ describe("fillSlots", () => {
     }
     const s = scene({ type: "concept", coversLine: "Only one sentence." })
 
-    const entry = fillSlots(s, listCard)
+    const entry = fillSlots(s, twoSlotCard)
 
     expect(entry.slots).toEqual([
       { slotId: "first", text: "Only one sentence." },
@@ -254,17 +277,7 @@ describe("realizeScene", () => {
   })
 
   test("slot type mismatch throws SlotTypeError", () => {
-    const listStyle: ChannelStyle = {
-      ...style,
-      cards: [
-        {
-          id: "steps-list",
-          tier: "primary",
-          purpose: "process",
-          slots: [{ id: "steps", type: "list", maxLength: 200 }],
-        },
-      ],
-    }
+    const listStyle: ChannelStyle = { ...style, cards: [listCard()] }
     const s = scene({
       type: "process",
       coversLine: "Just one plain sentence, no items here.",
@@ -419,14 +432,7 @@ describe("generateAndPersistScene (the seam review regenerates through)", () => 
       registerStyleForTest("list-steps", {
         ...resolveStyle("default"),
         id: "list-steps",
-        cards: [
-          {
-            id: "steps-list",
-            tier: "primary",
-            purpose: "process",
-            slots: [{ id: "steps", type: "list", maxLength: 200 }],
-          },
-        ],
+        cards: [listCard()],
       })
     )
     const stored = scene({

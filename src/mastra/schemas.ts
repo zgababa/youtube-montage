@@ -120,9 +120,10 @@ export const StyleGuideSchema = z.object({
 /* -------------------------------------------------------------------------- */
 
 /**
- * "text": free-form prose. "list": multiple delimited items (bullets,
- * numbering, semicolon- or newline-separated) — issue #26's second
- * constraint kind, alongside `maxLength`.
+ * The shape a slot's text must have — "text" for free-form prose, "list" for
+ * several delimited items. Declared by the card, never inferred from the
+ * scene: issue #26's second constraint kind, alongside `maxLength`. What
+ * counts as list-shaped is `looksLikeList` in `lib/beat-sheet.ts`.
  */
 export const StyleSlotTypeSchema = z.enum(["text", "list"])
 

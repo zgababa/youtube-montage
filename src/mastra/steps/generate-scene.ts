@@ -73,9 +73,9 @@ export const generateSceneStep = createStep({
  * no interim "generating" state worth publishing, since nothing happens
  * between starting and finishing. Everything `resolveStyle`/`realizeScene`
  * can throw (an unresolvable `styleRef`, `NoMatchingCardError`,
- * `SlotConstraintError`, `SlotTypeError`, or a genuine bug) is caught in one place below and
- * turned into the same explicit `failed` scene — the run continues and the
- * other scenes finish regardless of which of those it was.
+ * `SlotConstraintError`, `SlotTypeError`, or a genuine bug) is caught in one
+ * place below and turned into the same explicit `failed` scene — the run
+ * continues and the other scenes finish regardless of which of those it was.
  */
 export async function generateAndPersistScene(
   job: SceneJob,

@@ -71,13 +71,16 @@ export class SlotTypeError extends Error {
 }
 
 /**
- * Whether `text` reads as multiple delimited items — bullets, numbering, or
- * two-plus items separated by newlines or semicolons — rather than one
- * free-form line.
+ * Whether `text` reads as multiple delimited items — a bullet or numbering
+ * marker, or two-plus non-empty lines — rather than one free-form line.
  *
- * `distributeText` only ever hands back plain sentence fragments, so this is
- * the line between "shaped like a list" and "shaped like prose": a "list"
- * slot's text must clear it, a "text" slot's text must not.
+ * Deliberately narrow: only markers that *separate* items count. Punctuation
+ * that merely joins clauses inside one sentence — a semicolon, a comma — is
+ * prose, and every card in the shipped deck declares "text", so treating it
+ * as a delimiter would fail legitimate scenes on ordinary script lines. A
+ * guardrail that breaks the real case to catch a hypothetical one is the
+ * trade ADR 0003 refuses; here as there, the check fires only on an
+ * unambiguous signal.
  */
 function looksLikeList(text: string): boolean {
   const lines = text
@@ -86,13 +89,7 @@ function looksLikeList(text: string): boolean {
     .filter((line) => line.length > 0)
   if (lines.length >= 2) return true
 
-  if (/^\s*([-*•]|\d+[.)])\s+/.test(text)) return true
-
-  const semicolonItems = text
-    .split(";")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-  return semicolonItems.length >= 2
+  return /^\s*([-*•]|\d+[.)])\s+/.test(text)
 }
 
 /**
@@ -177,11 +174,12 @@ export function fillSlots(scene: StoredScene, card: StyleCard): BeatSheetEntry {
  * to persist.
  *
  * Throws — `NoMatchingCardError`, `SlotConstraintError`, `SlotTypeError`, or
- * a resolution bug — rather than catching anything itself. `generateAndPersistScene` (the
- * step's I/O shell) is the single place that turns a thrown error into an
- * explicit `failed` scene; duplicating that translation here as well would
- * split one concern across two altitudes for no observable difference, since
- * that shell already catches everything this function could throw.
+ * a resolution bug — rather than catching anything itself.
+ * `generateAndPersistScene` (the step's I/O shell) is the single place that
+ * turns a thrown error into an explicit `failed` scene; duplicating that
+ * translation here as well would split one concern across two altitudes for
+ * no observable difference, since that shell already catches everything this
+ * function could throw.
  */
 export function realizeScene(
   scene: StoredScene,
