@@ -124,5 +124,6 @@ function toScene(
     htmlPath: null,
     exportPath: null,
     measuredDurationSec: null,
+    beatSheetEntry: null,
   }
 }

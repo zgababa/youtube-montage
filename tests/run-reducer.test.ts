@@ -20,6 +20,7 @@ function scene(id: string, status: SceneStatus, start: number): Scene {
     htmlPath: null,
     exportPath: null,
     measuredDurationSec: null,
+    beatSheetEntry: null,
     html: null,
   }
 }
@@ -185,6 +186,7 @@ function project(scenes: Scene[]): Project {
     timelineApprovedAt: null,
     compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
+    styleRef: "default",
     scenes,
     copy: null,
   }
@@ -216,7 +218,9 @@ describe("applyPatch", () => {
 
   test("still overlays non-scene fields wholesale", () => {
     const onDisk = project([scene("scene_01", "ready", 0)])
-    const merged = applyPatch(onDisk, { cleanupApprovedAt: "2026-08-02T00:00:00.000Z" })
+    const merged = applyPatch(onDisk, {
+      cleanupApprovedAt: "2026-08-02T00:00:00.000Z",
+    })
 
     expect(merged.cleanupApprovedAt).toBe("2026-08-02T00:00:00.000Z")
     expect(merged.scenes).toEqual(onDisk.scenes)

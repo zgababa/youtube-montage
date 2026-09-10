@@ -1,9 +1,17 @@
 # Design language — what the scenes should look like
 
 The house style for generated b-roll. `idea.md` §5 says what a scene must
-technically be; this says what it should look like. Everything here that a model
-needs to obey is already in `sceneAgent`'s system prompt — this document is the
-reasoning behind those lines, and the place to change them from.
+technically be; this says what it should look like.
+
+> **How this reaches a scene has changed.** A B-roll scene is no longer written
+> by a model against this brief; it is realized by choosing a card from the
+> channel's `Style` and filling its declared slots
+> ([ADR 0007](docs/adr/0007-scene-broll-realisee-par-carte-de-style.md)). The
+> taste below is unchanged and is what the card deck has to embody — but it is
+> now enforced by the cards themselves rather than by a prompt a model may or
+> may not obey. The four-field house look lives once, in `HOUSE_LOOK`
+> (`src/mastra/lib/style.ts`). References to `sceneAgent` and to the validator
+> below describe the previous mechanism.
 
 Adapted from the B-Roll Studio doc, which described a hand-built Vite + React +
 Motion project. The taste carries over unchanged. The format does not, and the
@@ -91,10 +99,17 @@ twelve agents given the same brief and no shared palette produce twelve
 individually-reasonable scenes that look like they came from twelve different
 videos.
 
-Its default is this document, compressed (`DEFAULT_STYLE_GUIDE` in
-`src/mastra/lib/project.ts`). It is a **house style with a per-project override**,
-not something derived per project: a channel wants consistency across videos,
-and a transcript says what a video is about, not what it should look like.
+Its default is this document, compressed — `HOUSE_LOOK` in
+`src/mastra/lib/style.ts`, which `DEFAULT_STYLE_GUIDE` (`lib/project.ts`) now
+derives from so the two shapes cannot drift apart. It is a **house style with a
+per-project override**, not something derived per project: a channel wants
+consistency across videos, and a transcript says what a video is about, not what
+it should look like.
+
+The same `HOUSE_LOOK` is what a `styleRef` resolves to, now carrying a card
+deck. `project.styleGuide` is the older, per-project shape and is no longer read
+by the B-roll path; moving the UI and the API routes onto named channel styles
+is a separate chantier.
 
 Palette order is meaningful and the scene agent reads it that way: first colour
 is the dominant surface, second is primary text, the rest are accents.

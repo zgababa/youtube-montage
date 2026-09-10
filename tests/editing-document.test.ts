@@ -50,6 +50,7 @@ function scene(id: string, scriptStart: number): StoredScene {
     htmlPath: `scenes/${id}.html`,
     exportPath: null,
     measuredDurationSec: 6,
+    beatSheetEntry: null,
   }
 }
 

@@ -195,9 +195,14 @@ export function placeOverlays(
     let remaining = scene.durationSec
     let sourceOffset = 0
 
-    for (let runIndex = startIndex; runIndex < runs.length && remaining > 0; runIndex++) {
+    for (
+      let runIndex = startIndex;
+      runIndex < runs.length && remaining > 0;
+      runIndex++
+    ) {
       const run = runs[runIndex]
-      const runOffset = runIndex === startIndex ? scene.scriptStart : run.sourceStart
+      const runOffset =
+        runIndex === startIndex ? scene.scriptStart : run.sourceStart
       const available = run.sourceEnd - runOffset
       if (available <= 0) continue
 
@@ -300,7 +305,8 @@ export function buildFcpxml(
         .flatMap((fragment) => {
           const part = (partNumber.get(fragment.sceneId) ?? 0) + 1
           partNumber.set(fragment.sceneId, part)
-          const name = part === 1 ? fragment.sceneId : `${fragment.sceneId} (${part})`
+          const name =
+            part === 1 ? fragment.sceneId : `${fragment.sceneId} (${part})`
           const offset = secondsToRational(fragment.runOffset, fps)
           const duration = secondsToRational(fragment.durationSec, fps)
 

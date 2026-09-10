@@ -265,7 +265,8 @@ export function ProjectWorkspace({
     pipeline.reviewTimeline(pipeline.run.id, true, maxSilenceSec)
     toast.add({
       title: "Timeline approved",
-      description: "Run resumed — the scenario agent reads the approved script next.",
+      description:
+        "Run resumed — the scenario agent reads the approved script next.",
     })
   }
 
@@ -329,7 +330,8 @@ export function ProjectWorkspace({
     pipeline.reviewComposite(pipeline.run.id, false)
     toast.add({
       title: "Regenerating",
-      description: "timeline.fcpxml recomposited with the scenes exported so far.",
+      description:
+        "timeline.fcpxml recomposited with the scenes exported so far.",
     })
   }
 

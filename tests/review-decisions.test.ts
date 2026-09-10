@@ -19,6 +19,7 @@ function scene(id: string, status: SceneStatus, start: number): Scene {
     htmlPath: "scenes/x.html",
     exportPath: null,
     measuredDurationSec: 3,
+    beatSheetEntry: null,
     html: "<html></html>",
   }
 }

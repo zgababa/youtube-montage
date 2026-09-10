@@ -48,7 +48,10 @@ export async function ensureWhiteBacking(
 
   const existing = await existingDuration(absolute)
   if (existing !== null && existing >= needed - 1 / fps) {
-    return { exportPath: toRelative(projectPath, absolute), durationSec: existing }
+    return {
+      exportPath: toRelative(projectPath, absolute),
+      durationSec: existing,
+    }
   }
 
   await encodeSolidColor(absolute, {

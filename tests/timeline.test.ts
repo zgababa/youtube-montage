@@ -94,7 +94,11 @@ describe("buildKeptRuns", () => {
     expect(runs).toHaveLength(2)
     expect(runs[0]).toEqual({ file: "raw/a.mp4", sourceStart: 0, sourceEnd: 1 })
     // Only the last 0.3s of the 3s gap survives, right before segment 1.
-    expect(runs[1]).toEqual({ file: "raw/a.mp4", sourceStart: 3.7, sourceEnd: 5 })
+    expect(runs[1]).toEqual({
+      file: "raw/a.mp4",
+      sourceStart: 3.7,
+      sourceEnd: 5,
+    })
   })
 
   test("a short natural pause inside one file is left untouched", () => {

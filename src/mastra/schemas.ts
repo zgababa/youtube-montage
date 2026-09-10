@@ -115,6 +115,60 @@ export const StyleGuideSchema = z.object({
   notes: z.string(),
 })
 
+/* -------------------------------------------------------------------------- */
+/* Style — a channel's card deck (issue #24)                                  */
+/* -------------------------------------------------------------------------- */
+
+export const StyleSlotTypeSchema = z.enum(["text"])
+
+/** One fillable slot on a card, with the constraint its text must respect. */
+export const StyleCardSlotSchema = z.object({
+  id: z.string(),
+  type: StyleSlotTypeSchema,
+  maxLength: z.number().int().positive(),
+})
+
+export const StyleCardTierSchema = z.enum(["primary", "secondary"])
+
+/** What a card is for — matched against a scene's `type` (idea.md/issue #24). */
+export const StyleCardSchema = z.object({
+  id: z.string(),
+  tier: StyleCardTierSchema,
+  purpose: SceneTypeSchema,
+  slots: z.array(StyleCardSlotSchema).min(1),
+})
+
+/**
+ * A channel's style, resolved once from a `styleRef` and reused across every
+ * video on that channel (issue #22's Implementation Decisions) — not rebuilt
+ * per scene the way the old `StyleGuide` was.
+ */
+export const ChannelStyleSchema = z.object({
+  id: z.string(),
+  palette: z.array(z.string()),
+  fontStack: z.string(),
+  motion: z.string(),
+  notes: z.string(),
+  cards: z.array(StyleCardSchema).min(1),
+})
+
+/** One filled slot in a beat sheet entry. */
+export const BeatSheetSlotSchema = z.object({
+  slotId: z.string(),
+  text: z.string(),
+})
+
+/**
+ * A scene's realization as a `Beat sheet` entry — the new mechanism's output,
+ * in place of the old `htmlPath`/`exportPath`/`measuredDurationSec`/`model`.
+ */
+export const BeatSheetEntrySchema = z.object({
+  cardId: z.string(),
+  slots: z.array(BeatSheetSlotSchema),
+  /** Anchored on the originating scene's `scriptStart` — never recomputed. */
+  entryAt: z.number(),
+})
+
 /** A scene as stored in `project.json` — HTML lives in its own file. */
 export const SceneSchema = z.object({
   id: z.string(),
@@ -142,6 +196,13 @@ export const SceneSchema = z.object({
    * generated before the field existed.
    */
   model: z.string().optional(),
+  /**
+   * The new mechanism's output (issue #24): a card from the channel's style,
+   * chosen for this scene, with its slots filled from `coversLine`. `null`
+   * until the scene has been realized, and for scenes still on the old
+   * mechanism.
+   */
+  beatSheetEntry: BeatSheetEntrySchema.nullable().default(null),
 })
 
 /**
@@ -230,6 +291,12 @@ export const StoredProjectSchema = z.object({
   /** Same reasoning as `timelineApprovedAt`, for the composite gate (`overlay.ts`). */
   compositeApprovedAt: z.string().nullable().default(null),
   styleGuide: StyleGuideSchema,
+  /**
+   * Reference to the channel's `Style` (issue #24) — resolved once via
+   * `resolveStyle` rather than rebuilt per scene. Additive and defaulted so a
+   * `project.json` written before this field existed still parses.
+   */
+  styleRef: z.string().default("default"),
   scenes: z.array(SceneSchema),
   copy: ProjectCopySchema.nullable(),
 })
@@ -276,6 +343,10 @@ export type TranscriptionHints = z.infer<typeof TranscriptionHintsSchema>
 export type SceneStatus = z.infer<typeof SceneStatusSchema>
 export type SceneType = z.infer<typeof SceneTypeSchema>
 export type StyleGuide = z.infer<typeof StyleGuideSchema>
+export type StyleCard = z.infer<typeof StyleCardSchema>
+export type ChannelStyle = z.infer<typeof ChannelStyleSchema>
+export type BeatSheetSlot = z.infer<typeof BeatSheetSlotSchema>
+export type BeatSheetEntry = z.infer<typeof BeatSheetEntrySchema>
 export type StoredScene = z.infer<typeof SceneSchema>
 export type Scene = z.infer<typeof HydratedSceneSchema>
 export type YouTubeCopy = z.infer<typeof YouTubeCopySchema>
