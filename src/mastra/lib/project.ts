@@ -256,6 +256,7 @@ export function blankProject(
     cleanupApprovedAt: null,
     maxSilenceSec: 0.3,
     timelineApprovedAt: null,
+    cutAt: null,
     compositeApprovedAt: null,
     styleGuide: DEFAULT_STYLE_GUIDE,
     styleRef: "default",

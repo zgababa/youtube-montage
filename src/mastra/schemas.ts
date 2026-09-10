@@ -296,6 +296,17 @@ export const StoredProjectSchema = z.object({
   timelineApprovedAt: z.string().nullable().default(null),
   /** Same reasoning as `timelineApprovedAt`, for the composite gate (`overlay.ts`). */
   compositeApprovedAt: z.string().nullable().default(null),
+  /**
+   * When the approved spans were last actually cut into `cut.mp4`
+   * (`lib/cut.ts`, issue #27). Not a gate — cutting introduces no new
+   * decision to approve, only mechanical execution of the ones already made
+   * — so unlike `timelineApprovedAt` this is set the moment the step
+   * succeeds, not on a human's resume. The path itself isn't stored, same
+   * reasoning as `fcpxmlPath` never being one: it's deterministic from
+   * `project.path` (`paths.ts`'s `cutVideoPath`), so storing it would only
+   * be one more place for it to drift.
+   */
+  cutAt: z.string().nullable().default(null),
   styleGuide: StyleGuideSchema,
   /**
    * Reference to the channel's `Style` (issue #24) — resolved once via

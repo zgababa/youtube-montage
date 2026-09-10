@@ -39,6 +39,7 @@ function project(over: Partial<Project> = {}): Project {
     cleanupApprovedAt: null,
     maxSilenceSec: 0.3,
     timelineApprovedAt: null,
+    cutAt: null,
     compositeApprovedAt: null,
     scenes: [],
     copy: null,
@@ -219,6 +220,19 @@ describe("the timeline export stage", () => {
 
     expect(notApproved.detail).toBe("0.3s silence cap · not yet approved")
     expect(approved.detail).toBe("0.5s silence cap · approved")
+  })
+
+  test("notes once the approved spans have actually been cut", () => {
+    const cut = stage(
+      "timeline",
+      project({
+        spans: [{ start: 0, end: 1, action: "keep" }] as never,
+        cutAt: "2026-08-02T10:05:00.000Z",
+      }),
+      null
+    )
+
+    expect(cut.detail).toBe("0.3s silence cap · not yet approved · cut")
   })
 })
 
