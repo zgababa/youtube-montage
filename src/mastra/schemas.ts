@@ -119,7 +119,13 @@ export const StyleGuideSchema = z.object({
 /* Style — a channel's card deck (issue #24)                                  */
 /* -------------------------------------------------------------------------- */
 
-export const StyleSlotTypeSchema = z.enum(["text"])
+/**
+ * The shape a slot's text must have — "text" for free-form prose, "list" for
+ * several delimited items. Declared by the card, never inferred from the
+ * scene: issue #26's second constraint kind, alongside `maxLength`. What
+ * counts as list-shaped is `looksLikeList` in `lib/beat-sheet.ts`.
+ */
+export const StyleSlotTypeSchema = z.enum(["text", "list"])
 
 /** One fillable slot on a card, with the constraint its text must respect. */
 export const StyleCardSlotSchema = z.object({
@@ -343,6 +349,7 @@ export type TranscriptionHints = z.infer<typeof TranscriptionHintsSchema>
 export type SceneStatus = z.infer<typeof SceneStatusSchema>
 export type SceneType = z.infer<typeof SceneTypeSchema>
 export type StyleGuide = z.infer<typeof StyleGuideSchema>
+export type StyleSlotType = z.infer<typeof StyleSlotTypeSchema>
 export type StyleCard = z.infer<typeof StyleCardSchema>
 export type ChannelStyle = z.infer<typeof ChannelStyleSchema>
 export type BeatSheetSlot = z.infer<typeof BeatSheetSlotSchema>

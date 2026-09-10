@@ -17,6 +17,7 @@ import type {
   ChannelStyle,
   StoredScene,
   StyleCard,
+  StyleSlotType,
 } from "../schemas"
 
 /**
@@ -53,6 +54,55 @@ export class SlotConstraintError extends Error {
     )
     this.name = "SlotConstraintError"
   }
+}
+
+/**
+ * A slot's filled text doesn't match the slot's declared `type` — e.g. free
+ * text where a list of items was expected, or vice versa (issue #26, user
+ * story 7's other half).
+ */
+export class SlotTypeError extends Error {
+  constructor(slotId: string, expectedType: StyleSlotType) {
+    super(
+      `Slot "${slotId}" expects "${expectedType}"-shaped text, but the filled text doesn't match — not coercing silently.`
+    )
+    this.name = "SlotTypeError"
+  }
+}
+
+/**
+ * Whether `text` reads as multiple delimited items — a bullet or numbering
+ * marker, or two-plus non-empty lines — rather than one free-form line.
+ *
+ * Deliberately narrow: only markers that *separate* items count. Punctuation
+ * that merely joins clauses inside one sentence — a semicolon, a comma — is
+ * prose, and every card in the shipped deck declares "text", so treating it
+ * as a delimiter would fail legitimate scenes on ordinary script lines. A
+ * guardrail that breaks the real case to catch a hypothetical one is the
+ * trade ADR 0003 refuses; here as there, the check fires only on an
+ * unambiguous signal.
+ */
+function looksLikeList(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  if (lines.length >= 2) return true
+
+  return /^\s*([-*•]|\d+[.)])\s+/.test(text)
+}
+
+/**
+ * Whether `text`'s shape matches what a slot declared `type` expects.
+ *
+ * An empty `text` is always valid regardless of `type`: `distributeText`
+ * pads a slot with `""` when the line has fewer sentences than the card has
+ * slots (see its docstring), and that sparseness isn't a shape problem for
+ * "list" any more than it's a length problem for `maxLength`.
+ */
+function matchesSlotType(text: string, type: StyleSlotType): boolean {
+  if (text.length === 0) return true
+  return type === "list" ? looksLikeList(text) : !looksLikeList(text)
 }
 
 /**
@@ -107,6 +157,9 @@ export function fillSlots(scene: StoredScene, card: StyleCard): BeatSheetEntry {
 
   const slots = card.slots.map((slot, index) => {
     const text = pieces[index].trim()
+    if (!matchesSlotType(text, slot.type)) {
+      throw new SlotTypeError(slot.id, slot.type)
+    }
     if (text.length > slot.maxLength) {
       throw new SlotConstraintError(slot.id, slot.maxLength, text.length)
     }
@@ -120,12 +173,13 @@ export function fillSlots(scene: StoredScene, card: StyleCard): BeatSheetEntry {
  * Realizes one scene: choose a card, fill its slots, return the scene ready
  * to persist.
  *
- * Throws — `NoMatchingCardError`, `SlotConstraintError`, or a resolution bug
- * — rather than catching anything itself. `generateAndPersistScene` (the
- * step's I/O shell) is the single place that turns a thrown error into an
- * explicit `failed` scene; duplicating that translation here as well would
- * split one concern across two altitudes for no observable difference, since
- * that shell already catches everything this function could throw.
+ * Throws — `NoMatchingCardError`, `SlotConstraintError`, `SlotTypeError`, or
+ * a resolution bug — rather than catching anything itself.
+ * `generateAndPersistScene` (the step's I/O shell) is the single place that
+ * turns a thrown error into an explicit `failed` scene; duplicating that
+ * translation here as well would split one concern across two altitudes for
+ * no observable difference, since that shell already catches everything this
+ * function could throw.
  */
 export function realizeScene(
   scene: StoredScene,

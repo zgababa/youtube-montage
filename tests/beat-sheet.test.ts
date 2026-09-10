@@ -10,6 +10,7 @@ import {
   NoMatchingCardError,
   realizeScene,
   SlotConstraintError,
+  SlotTypeError,
 } from "../src/mastra/lib/beat-sheet"
 import {
   blankProject,
@@ -51,6 +52,16 @@ function tinyCard(maxLength: number): StyleCard {
     tier: "primary",
     purpose: "concept",
     slots: [{ id: "headline", type: "text", maxLength }],
+  }
+}
+
+/** A single-slot "process" card whose slot expects list-shaped text. */
+function listCard(): StyleCard {
+  return {
+    id: "steps-list",
+    tier: "primary",
+    purpose: "process",
+    slots: [{ id: "steps", type: "list", maxLength: 200 }],
   }
 }
 
@@ -156,6 +167,68 @@ describe("fillSlots", () => {
 
     expect(() => fillSlots(s, tinyCard(5))).toThrow(SlotConstraintError)
   })
+
+  // Issue #26: a slot declares "list" but the filled text is a single
+  // free-text sentence — not the multiple delimited items a list slot
+  // expects.
+  test("throws SlotTypeError when a list slot is filled with plain free text", () => {
+    const s = scene({
+      type: "process",
+      coversLine: "Just one plain sentence, no items here.",
+    })
+
+    expect(() => fillSlots(s, listCard())).toThrow(SlotTypeError)
+  })
+
+  // The other direction of the same mismatch: a "text" slot expects one
+  // free-form line, not multiple delimited items.
+  test("throws SlotTypeError when a text slot is filled with list-shaped text", () => {
+    const s = scene({
+      type: "concept",
+      coversLine: "- First item\n- Second item\n- Third item",
+    })
+
+    expect(() => fillSlots(s, tinyCard(200))).toThrow(SlotTypeError)
+  })
+
+  // Only item *separators* make a list. A semicolon joins clauses inside one
+  // spoken sentence, and every shipped card declares "text" — reading it as a
+  // delimiter would fail ordinary script lines.
+  test("prose punctuation is not a list: a semicolon never trips a text slot", () => {
+    const s = scene({
+      type: "concept",
+      coversLine: "On ouvre le capot ; puis on vérifie l'huile.",
+    })
+
+    const entry = fillSlots(s, tinyCard(200))
+
+    expect(entry.slots).toEqual([
+      {
+        slotId: "headline",
+        text: "On ouvre le capot ; puis on vérifie l'huile.",
+      },
+    ])
+  })
+
+  test("an empty padded slot never trips the type check, regardless of type", () => {
+    const twoSlotCard: StyleCard = {
+      id: "two-slots",
+      tier: "primary",
+      purpose: "concept",
+      slots: [
+        { id: "first", type: "text", maxLength: 200 },
+        { id: "second", type: "list", maxLength: 200 },
+      ],
+    }
+    const s = scene({ type: "concept", coversLine: "Only one sentence." })
+
+    const entry = fillSlots(s, twoSlotCard)
+
+    expect(entry.slots).toEqual([
+      { slotId: "first", text: "Only one sentence." },
+      { slotId: "second", text: "" },
+    ])
+  })
 })
 
 describe("realizeScene", () => {
@@ -201,6 +274,16 @@ describe("realizeScene", () => {
     })
 
     expect(() => realizeScene(s, overflowStyle)).toThrow(SlotConstraintError)
+  })
+
+  test("slot type mismatch throws SlotTypeError", () => {
+    const listStyle: ChannelStyle = { ...style, cards: [listCard()] }
+    const s = scene({
+      type: "process",
+      coversLine: "Just one plain sentence, no items here.",
+    })
+
+    expect(() => realizeScene(s, listStyle)).toThrow(SlotTypeError)
   })
 })
 
@@ -312,6 +395,61 @@ describe("generateAndPersistScene (the seam review regenerates through)", () => 
     expect(persisted.error).toMatch(
       /No card of purpose "data" in style "no-data-card"/
     )
+    expect(persisted.beatSheetEntry).toBeNull()
+  })
+
+  // Issue #26: a slot's filled text violates the card's declared constraint
+  // (length or type) — must fail just that scene, explicitly, with no
+  // silent truncation and no beat sheet entry persisted.
+  test("slot constraint violation fails just that scene, with the reason on it", async () => {
+    restoreStyles.push(
+      registerStyleForTest("tiny-headline", {
+        ...resolveStyle("default"),
+        id: "tiny-headline",
+        cards: [tinyCard(5)],
+      })
+    )
+    const stored = scene({
+      type: "concept",
+      coversLine: "Way too long for this slot.",
+    })
+    const dir = await projectWith(stored)
+
+    const result = await generateAndPersistScene(
+      { projectPath: dir, scene: stored, styleRef: "tiny-headline" },
+      undefined
+    )
+
+    expect(result.status).toBe("failed")
+
+    const [persisted] = (await readStoredProject(dir)).scenes
+    expect(persisted.error).toMatch(/Slot "headline" allows at most 5/)
+    expect(persisted.beatSheetEntry).toBeNull()
+  })
+
+  test("slot type mismatch fails just that scene, with the reason on it", async () => {
+    restoreStyles.push(
+      registerStyleForTest("list-steps", {
+        ...resolveStyle("default"),
+        id: "list-steps",
+        cards: [listCard()],
+      })
+    )
+    const stored = scene({
+      type: "process",
+      coversLine: "Just one plain sentence, no items here.",
+    })
+    const dir = await projectWith(stored)
+
+    const result = await generateAndPersistScene(
+      { projectPath: dir, scene: stored, styleRef: "list-steps" },
+      undefined
+    )
+
+    expect(result.status).toBe("failed")
+
+    const [persisted] = (await readStoredProject(dir)).scenes
+    expect(persisted.error).toMatch(/Slot "steps" expects "list"-shaped text/)
     expect(persisted.beatSheetEntry).toBeNull()
   })
 })

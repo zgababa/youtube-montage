@@ -70,9 +70,10 @@ choisit une carte; elle n’invente pas une mise en page.
 _Avoid_: template libre, mise en page générée
 
 **Slot**:
-Un emplacement de texte déclaré par une carte de style, avec sa contrainte de
-longueur. Un texte qui n’y entre pas est une erreur explicite, jamais une
-troncature silencieuse.
+Un emplacement de texte déclaré par une carte de style, avec la forme de texte
+qu’il attend — prose libre ou liste d’items — et sa contrainte de longueur. Un
+texte qui n’y entre pas, ou qui n’a pas la forme attendue, est une erreur
+explicite : jamais une troncature ni une mise en forme silencieuse.
 
 _Avoid_: champ libre, placeholder
 
