@@ -86,7 +86,7 @@ export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
   generate: "Generate scenes",
   review: "Review scenes",
   export: "Export ProRes",
-  overlay: "Composite timeline",
+  overlay: "Compose final video",
   copy: "Write copy",
   shotlist: "Shot list",
 }
@@ -205,11 +205,15 @@ export const pipelineDataSchemas = {
     totalDurationSec: z.number(),
   }),
 
-  /** The cut timeline, rewritten with exported scenes composited in (`overlay.ts`). */
+  /**
+   * The final video HyperFrames composed from the cut video and the beat
+   * sheet (issue #29, `steps/overlay.ts`).
+   */
   composite: z.object({
+    /** The finished video's path (`lib/paths.ts`'s `finalVideoPath`). */
     path: z.string(),
     placedCount: z.number(),
-    /** Scene ids whose `scriptStart` didn't land inside any kept run. */
+    /** Scene ids whose beat sheet entry didn't land inside any kept run. */
     skipped: z.array(z.string()),
   }),
 
