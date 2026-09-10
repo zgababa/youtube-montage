@@ -123,6 +123,84 @@ export async function extractAudio(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Cutting (issue #27)                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Extracts `[start, end)` of `input`, frame-accurately, to `output`.
+ *
+ * `-ss`/`-to` before `-i` puts both in the input's own clock — the same
+ * domain `TimelineRun.sourceStart`/`sourceEnd` already use — and, combined
+ * with re-encoding rather than `-c copy`, ffmpeg decodes forward from the
+ * nearest keyframe to land exactly on `start` instead of stream-copying from
+ * whatever keyframe happens to precede it. H.264/AAC rather than the
+ * ProRes used elsewhere in this file: these pieces are concatenated right
+ * back together (`concatSegments`), never viewed on their own, so there's no
+ * reason to pay ProRes's bitrate for an intermediate.
+ */
+export async function extractSegment(
+  input: string,
+  start: number,
+  end: number,
+  output: string
+): Promise<void> {
+  await fs.mkdir(path.dirname(output), { recursive: true })
+  await run("ffmpeg", [
+    "-nostdin",
+    "-y",
+    "-ss",
+    String(start),
+    "-to",
+    String(end),
+    "-i",
+    input,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "18",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-loglevel",
+    "error",
+    output,
+  ])
+}
+
+/**
+ * Concatenates the files listed in `listFile` (ffmpeg's own concat-demuxer
+ * format — see `cut.ts`) into `output`.
+ *
+ * `-c copy`: every listed file was just produced by `extractSegment` with the
+ * same codec settings, so there's nothing left to re-encode — a straight
+ * stream copy is exact and near-instant regardless of the total duration.
+ */
+export async function concatSegments(
+  listFile: string,
+  output: string
+): Promise<void> {
+  await fs.mkdir(path.dirname(output), { recursive: true })
+  await run("ffmpeg", [
+    "-nostdin",
+    "-y",
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    listFile,
+    "-c",
+    "copy",
+    "-loglevel",
+    "error",
+    output,
+  ])
+}
+
+/* -------------------------------------------------------------------------- */
 /* ProRes encoding                                                             */
 /* -------------------------------------------------------------------------- */
 
