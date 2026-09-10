@@ -2,8 +2,18 @@ import { describe, expect, test } from "bun:test"
 
 import { buildComposeRequest, composeVideo } from "../src/mastra/lib/compose"
 import { cutVideoPath, finalVideoPath } from "../src/mastra/lib/paths"
+import {
+  HyperFramesCardError,
+  registerHyperFramesClientForTest,
+  resolveHyperFramesClient,
+} from "../src/mastra/lib/hyperframes"
 import type { HyperFramesClient } from "../src/mastra/lib/hyperframes"
-import type { MediaFile, StoredProject, StoredScene, Word } from "../src/mastra/schemas"
+import type {
+  MediaFile,
+  StoredProject,
+  StoredScene,
+  Word,
+} from "../src/mastra/schemas"
 
 function word(w: string, start: number, end: number, file = "raw/a.mp4"): Word {
   return { w, start, end, file }
@@ -163,12 +173,48 @@ describe("composeVideo", () => {
   test("propagates a HyperFrames placement failure rather than returning a partial success", async () => {
     const client: HyperFramesClient = {
       async compose() {
-        throw new Error("card unknown to this deck")
+        throw new HyperFramesCardError(
+          "scene_01",
+          "concept-headline",
+          "card unknown to this deck"
+        )
       },
     }
 
-    await expect(composeVideo(project(), client)).rejects.toThrow(
-      "card unknown to this deck"
+    // The acceptance criterion this covers: a card HyperFrames can't montage
+    // surfaces as an error naming the scene and the card, never as a quietly
+    // incomplete `final.mp4`.
+    const failure = composeVideo(project(), client)
+    await expect(failure).rejects.toThrow(HyperFramesCardError)
+    await expect(failure).rejects.toThrow(
+      'HyperFrames could not place card "concept-headline" (scene_01): card unknown to this deck'
     )
+  })
+})
+
+describe("the injected client", () => {
+  test("defaults to refusing, rather than pretending to render", async () => {
+    // Nothing wires a real engine in yet (ADR-0009), so a run that reaches
+    // this step must fail loudly instead of reporting a final video that was
+    // never produced.
+    await expect(
+      resolveHyperFramesClient().compose(buildComposeRequest(project()).request)
+    ).rejects.toThrow("No HyperFrames client configured")
+  })
+
+  test("registering one swaps it in, and the undo puts the default back", async () => {
+    const client: HyperFramesClient = {
+      async compose() {
+        return { outputPath: finalVideoPath("/projects/demo") }
+      },
+    }
+
+    const restore = registerHyperFramesClientForTest(client)
+    expect(resolveHyperFramesClient()).toBe(client)
+    restore()
+
+    await expect(
+      resolveHyperFramesClient().compose(buildComposeRequest(project()).request)
+    ).rejects.toThrow("No HyperFrames client configured")
   })
 })

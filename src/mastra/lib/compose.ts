@@ -47,7 +47,9 @@ export interface ComposeRequestResult {
  * a dozen shouldn't stop the rest from composing, mirroring `overlay.ts`'s
  * old behaviour for the same reason.
  */
-export function buildComposeRequest(project: StoredProject): ComposeRequestResult {
+export function buildComposeRequest(
+  project: StoredProject
+): ComposeRequestResult {
   const realized = realizedScenes(project)
   const runs = keptRunsForProject(project, project.maxSilenceSec)
 

@@ -7,8 +7,8 @@
  * `cut.mp4` (issue #27) and every approved scene's beat sheet entry, remapped
  * onto that cut video (issue #28), to a `HyperFramesClient`
  * (`lib/hyperframes.ts`) and gets back one finished, directly-publishable
- * video — the `Composé` of `docs/glossary.md` now names that file, not an
- * FCPXML reference.
+ * video — the `Composé` of `CONTEXT.md` now names that file, not an FCPXML
+ * reference.
  *
  * The gate itself is unchanged from the old `overlayStep`: same id, same
  * `review-composite` reason, same `{ path, placedCount, skipped }` shape the

@@ -90,8 +90,8 @@ export const brollWorkflow = createWorkflow({
   // Suspends: approve, reject, or regenerate scenes.
   .then(reviewStep)
   .then(exportStep)
-  // Rewrites timeline.fcpxml with every scene exported so far composited in
-  // as a connected clip (idea.md §4, "a later iteration" — see fcpxml.ts).
+  // Hands cut.mp4 and the remapped beat sheet to HyperFrames, which returns
+  // the finished final.mp4 (issue #29 — see steps/overlay.ts, lib/compose.ts).
   .then(overlayStep)
   .then(copyStep)
   .then(shotlistStep)

@@ -34,9 +34,9 @@ export function CompositeReview({
     <StageSection
       description={
         <>
-          Composes <span className="font-mono">cut.mp4</span> and the beat
-          sheet into <span className="font-mono">final.mp4</span> via
-          HyperFrames — a finished, publishable video, ready once approved.
+          Composes <span className="font-mono">cut.mp4</span> and the beat sheet
+          into <span className="font-mono">final.mp4</span> via HyperFrames — a
+          finished, publishable video, ready once approved.
         </>
       }
       footer={
@@ -65,13 +65,13 @@ export function CompositeReview({
         <Alert variant="destructive">
           <AlertTitle>
             {composite.skipped.length} scene
-            {composite.skipped.length === 1 ? "" : "s"} didn't land on the cut
-            video
+            {composite.skipped.length === 1 ? "" : "s"} didn&apos;t land on the
+            cut video
           </AlertTitle>
           <AlertDescription>
             {composite.skipped.join(", ")} — their moment ended up cut, or its
-            window overlaps a cut segment, so HyperFrames couldn't place that
-            card.
+            window straddles a cut, so there&apos;s no single point on the cut
+            video to place the card at. They were left out of the composition.
           </AlertDescription>
         </Alert>
       ) : null}

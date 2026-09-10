@@ -20,7 +20,7 @@ révélerait probablement faux le jour de la vraie intégration.
 
 ## Décision
 
-`lib/hyperframes.ts` définit uniquement le contrat que `composeStep`
+`lib/hyperframes.ts` définit uniquement le contrat que `overlayStep`
 (`steps/overlay.ts`) a besoin de consommer :
 
 ```ts
@@ -35,7 +35,7 @@ remplis, position en secondes sur la vidéo coupée) ; une réponse porte le
 chemin du fichier vidéo final. Rien de plus n'est supposé sur *comment*
 HyperFrames reçoit cette requête.
 
-`composeStep` ne dépend que de cette interface, résolue via
+`overlayStep` ne dépend que de cette interface, résolue via
 `resolveHyperFramesClient()`. Par défaut, `unconfiguredHyperFramesClient`
 échoue explicitement plutôt que de simuler un rendu — même posture que le
 reste du pipeline face à une configuration manquante (`resolveStyle` sur une
@@ -51,7 +51,7 @@ un fichier fini.
 - Brancher un vrai moteur HyperFrames plus tard ne touche que
   `lib/hyperframes.ts` (une implémentation concrète de `HyperFramesClient`
   plus l'appel à `registerHyperFramesClientForTest`-like wiring en
-  production) — `composeStep` et `lib/compose.ts` n'ont pas à changer.
+  production) — `overlayStep` et `lib/compose.ts` n'ont pas à changer.
 - Tant qu'aucun client réel n'est branché, tout run qui atteint l'étape
   `overlay` échoue avec un message explicite nommant le manque — pas de
   vidéo finale produite silencieusement à moitié.

@@ -6,7 +6,7 @@
  * (issue #23's chantier only covers the app's side of the seam: cut video +
  * remapped beat sheet in, one finished video out). So this module defines the
  * *contract* as an injectable interface rather than a concrete client: what
- * `composeStep` (`steps/compose.ts`) needs from HyperFrames, and nothing about
+ * `overlayStep` (`steps/overlay.ts`) needs from HyperFrames, and nothing about
  * how a real integration would reach it (CLI, HTTP, SDK — an engineering
  * decision for whoever wires the real one in).
  *
@@ -57,12 +57,14 @@ export class HyperFramesCardError extends Error {
     public readonly cardId: string,
     reason: string
   ) {
-    super(`HyperFrames could not place card "${cardId}" (${sceneId}): ${reason}`)
+    super(
+      `HyperFrames could not place card "${cardId}" (${sceneId}): ${reason}`
+    )
     this.name = "HyperFramesCardError"
   }
 }
 
-/** What `composeStep` needs from the engine — real client or a test double. */
+/** What `overlayStep` needs from the engine — real client or a test double. */
 export interface HyperFramesClient {
   compose(request: HyperFramesComposeRequest): Promise<HyperFramesComposeResult>
 }
@@ -77,14 +79,15 @@ export interface HyperFramesClient {
 export const unconfiguredHyperFramesClient: HyperFramesClient = {
   async compose() {
     throw new Error(
-      "No HyperFrames client configured — composeStep needs a HyperFramesClient " +
-        "wired in (e.g. via `videotool.config`) before it can render a final video."
+      "No HyperFrames client configured — `overlayStep` needs a HyperFramesClient " +
+        "registered before it can render a final video (see " +
+        "docs/adr/0009-hyperframes-client-injectable-non-vendored.md)."
     )
   },
 }
 
 /**
- * `composeStep`'s client, swappable the same way `style.ts`'s `STYLES` is —
+ * `overlayStep`'s client, swappable the same way `style.ts`'s `STYLES` is —
  * a real engine has nowhere else to be wired in yet (no config file or env
  * var for it exists in this repo), and tests inject a fake rather than
  * reaching into module state directly.
