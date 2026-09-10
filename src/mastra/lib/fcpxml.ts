@@ -42,6 +42,7 @@
 import path from "node:path"
 
 import { toAbsolute } from "./paths"
+import { runIndexCovering } from "./timeline"
 import type { TimelineRun } from "./timeline"
 import type { MediaFile, StoredProject } from "../schemas"
 
@@ -180,11 +181,10 @@ export function placeOverlays(
   const skipped: string[] = []
 
   for (const scene of scenes) {
-    const startIndex = runs.findIndex(
-      (run) =>
-        run.file === scene.sourceFile &&
-        scene.scriptStart >= run.sourceStart &&
-        scene.scriptStart < run.sourceEnd
+    const startIndex = runIndexCovering(
+      runs,
+      scene.sourceFile,
+      scene.scriptStart
     )
 
     if (startIndex === -1) {
