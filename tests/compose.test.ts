@@ -164,7 +164,7 @@ describe("composeVideo", () => {
 
     const result = await composeVideo(project(), client)
 
-    expect(result.outputPath).toBe(finalVideoPath("/projects/demo"))
+    expect(result.path).toBe(finalVideoPath("/projects/demo"))
     expect(result.placedCount).toBe(1)
     expect(result.skipped).toEqual([])
     expect(received).toMatchObject({ cards: [{ sceneId: "scene_01" }] })

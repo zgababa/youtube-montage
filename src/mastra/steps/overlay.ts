@@ -48,12 +48,7 @@ export const overlayStep = createStep({
       if (!resumeData) await report.start()
 
       const project = await readStoredProject(projectPath)
-      const result = await composeVideo(project, resolveHyperFramesClient())
-      const stats = {
-        path: result.outputPath,
-        placedCount: result.placedCount,
-        skipped: result.skipped,
-      }
+      const stats = await composeVideo(project, resolveHyperFramesClient())
 
       if (resumeData?.approved) {
         await updateProject(projectPath, (current) => ({

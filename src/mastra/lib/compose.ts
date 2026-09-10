@@ -92,8 +92,13 @@ export function buildComposeRequest(
   }
 }
 
+/**
+ * Same shape `overlayStep`'s `suspendSchema`/`pipelineDataSchemas.composite`
+ * already expect — `path` rather than `outputPath` so the step can report
+ * this result directly, no intermediate renaming object in between.
+ */
 export interface ComposeResult {
-  outputPath: string
+  path: string
   placedCount: number
   skipped: string[]
 }
@@ -113,5 +118,5 @@ export async function composeVideo(
   const { request, skipped } = buildComposeRequest(project)
   const { outputPath } = await client.compose(request)
 
-  return { outputPath, placedCount: request.cards.length, skipped }
+  return { path: outputPath, placedCount: request.cards.length, skipped }
 }
