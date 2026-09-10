@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 
-import { buildKeptRuns } from "../src/mastra/lib/timeline"
+import {
+  BeatSheetTimingError,
+  buildKeptRuns,
+  remapBeatSheetTiming,
+} from "../src/mastra/lib/timeline"
+import type { TimelineRun } from "../src/mastra/lib/timeline"
 import type { Segment } from "../src/mastra/lib/segments"
 import type { MediaFile, Span } from "../src/mastra/schemas"
 
@@ -150,5 +155,149 @@ describe("buildKeptRuns", () => {
     ]
 
     expect(() => buildKeptRuns(segments, spans, numberedMedia)).not.toThrow()
+  })
+})
+
+describe("remapBeatSheetTiming", () => {
+  test("an entry after one cut segment is remapped to the shortened cut timeline", () => {
+    // Kept: [0, 2), cut: [2, 5), kept: [5, 10) — the entry sits at script
+    // time 6, 1s into the second run. On the cut video the first run still
+    // takes up 2s, so the entry should land at 2 + 1 = 3.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 10 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 6, windowSec: 1 },
+    ])
+
+    expect(errors).toEqual([])
+    expect(remapped).toEqual([{ id: "scene_1", cutVideoAt: 3 }])
+  })
+
+  test("multiple cut segments before the entry all shrink the offset", () => {
+    // Three kept runs of 2s each, separated by cuts. The entry starts at the
+    // very beginning of the third run (script time 12) — the cut timeline
+    // must skip over both preceding cuts, landing at 2 + 2 = 4, not just
+    // past the last one.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 7 },
+      { file: "raw/a.mp4", sourceStart: 12, sourceEnd: 14 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 12, windowSec: 1 },
+    ])
+
+    expect(errors).toEqual([])
+    expect(remapped).toEqual([{ id: "scene_1", cutVideoAt: 4 }])
+  })
+
+  test("an entry whose window overlaps a cut segment is reported, not placed", () => {
+    // Kept: [0, 2), cut: [2, 5). The entry starts at 1 (inside the kept run)
+    // but its window (1 -> 1 + 2 = 3) runs past sourceEnd (2) into the cut —
+    // no single kept stretch covers the whole window.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 1, windowSec: 2 },
+    ])
+
+    expect(remapped).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBeInstanceOf(BeatSheetTimingError)
+    expect(errors[0].entryId).toBe("scene_1")
+    expect(errors[0].reason).toBe("overlap")
+  })
+
+  test("an entry entirely inside cut content is reported, not placed", () => {
+    // Kept: [0, 2), cut: [2, 5), kept: [5, 7). scriptStart falls at 3, which
+    // no run covers at all.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 7 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 3, windowSec: 1 },
+    ])
+
+    expect(remapped).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].entryId).toBe("scene_1")
+    // Distinguished from the overlap case above: this entry has no kept
+    // footage under it at all, which is a different fix for the user.
+    expect(errors[0].reason).toBe("removed")
+  })
+
+  test("processes every entry independently — one overlap doesn't block the rest", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 10 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "ok", sourceFile: "raw/a.mp4", scriptStart: 6, windowSec: 1 },
+      { id: "overlap", sourceFile: "raw/a.mp4", scriptStart: 1, windowSec: 5 },
+    ])
+
+    expect(remapped).toEqual([{ id: "ok", cutVideoAt: 3 }])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].entryId).toBe("overlap")
+  })
+
+  test("remaps from spans, through buildKeptRuns, with no ffmpeg in sight", () => {
+    // Issue #28 asks for a remap testable from in-memory fixtures of *spans*
+    // plus entries — so this one starts where the pipeline does, at the
+    // approved spans, instead of hand-writing the runs the cut would produce.
+    const segments = [
+      segment(0, 0, 1),
+      segment(1, 1, 2),
+      segment(2, 2, 3),
+      segment(3, 3, 4),
+    ]
+    const spans: Span[] = [
+      { start: 0, end: 1, action: "keep" },
+      { start: 1, end: 3, action: "cut", category: "filler" },
+      { start: 3, end: 4, action: "keep" },
+    ]
+
+    const runs = buildKeptRuns(segments, spans, [media()])
+
+    // 2s of the middle are gone, so the entry anchored at script time 3 plays
+    // 1s into cut.mp4 — right after the single kept second before it.
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 3, windowSec: 1 },
+    ])
+
+    expect(errors).toEqual([])
+    expect(remapped).toEqual([{ id: "scene_1", cutVideoAt: 1 }])
+  })
+
+  test("an entry is matched against its own source file, not just its timecode", () => {
+    // The numbered multi-file shoot: both takes have their own clock starting
+    // at 0, so script time 1 exists in both. Only the entry's `sourceFile`
+    // says which one it belongs to — landing it on the first take would put
+    // it 2s early on the cut video and look perfectly plausible.
+    const runs: TimelineRun[] = [
+      { file: "raw/01 - a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/02 - b.mp4", sourceStart: 0, sourceEnd: 3 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      {
+        id: "scene_1",
+        sourceFile: "raw/02 - b.mp4",
+        scriptStart: 1,
+        windowSec: 1,
+      },
+    ])
+
+    expect(errors).toEqual([])
+    expect(remapped).toEqual([{ id: "scene_1", cutVideoAt: 3 }])
   })
 })
