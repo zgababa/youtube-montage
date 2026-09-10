@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { buildCutPlan } from "../src/mastra/lib/cut"
+import { buildConcatList, buildCutPlan } from "../src/mastra/lib/cut"
 import type { MediaFile, StoredProject, Word } from "../src/mastra/schemas"
 
 function word(w: string, start: number, end: number, file = "raw/a.mp4"): Word {
@@ -55,7 +55,7 @@ describe("buildCutPlan", () => {
     expect(() => buildCutPlan(p)).toThrow()
   })
 
-  test("a kept stretch with a cut in the middle produces two ordered segments", () => {
+  test("a kept stretch with a cut in the middle produces two ordered runs", () => {
     // Four words, each its own segment: a 0.6s+ gap between every one of them
     // (`buildSegments`' PAUSE_SEC) keeps them from merging into one segment
     // that a mid-segment span couldn't cut cleanly.
@@ -78,8 +78,18 @@ describe("buildCutPlan", () => {
     const plan = buildCutPlan(p)
 
     expect(plan).toEqual([
-      { sourcePath: "/projects/demo/raw/a.mp4", file: "raw/a.mp4", sourceStart: 0, sourceEnd: 1 },
-      { sourcePath: "/projects/demo/raw/a.mp4", file: "raw/a.mp4", sourceStart: 4.9, sourceEnd: 5.9 },
+      {
+        sourcePath: "/projects/demo/raw/a.mp4",
+        file: "raw/a.mp4",
+        sourceStart: 0,
+        sourceEnd: 1,
+      },
+      {
+        sourcePath: "/projects/demo/raw/a.mp4",
+        file: "raw/a.mp4",
+        sourceStart: 4.9,
+        sourceEnd: 5.9,
+      },
     ])
   })
 
@@ -111,11 +121,11 @@ describe("buildCutPlan", () => {
 
     const plan = buildCutPlan(p)
 
-    expect(plan.map((segment) => segment.file)).toEqual([
+    expect(plan.map((run) => run.file)).toEqual([
       "raw/01 - a.mp4",
       "raw/02 - b.mp4",
     ])
-    expect(plan.map((segment) => segment.sourcePath)).toEqual([
+    expect(plan.map((run) => run.sourcePath)).toEqual([
       "/projects/demo/raw/01 - a.mp4",
       "/projects/demo/raw/02 - b.mp4",
     ])
@@ -133,5 +143,25 @@ describe("buildCutPlan", () => {
     const plan = buildCutPlan(p)
 
     expect(plan[0].sourcePath).toBe("/elsewhere/proj/raw/a.mp4")
+  })
+})
+
+describe("buildConcatList", () => {
+  test("writes one single-quoted line per piece, in order", () => {
+    expect(buildConcatList(["/tmp/cut/00000.mp4", "/tmp/cut/00001.mp4"])).toBe(
+      "file '/tmp/cut/00000.mp4'\nfile '/tmp/cut/00001.mp4'"
+    )
+  })
+
+  test("escapes a single quote the way the concat demuxer parses it", () => {
+    // `Fabien's takes` is an ordinary folder name, and the naive template
+    // closes the quote early — ffmpeg then looks for files that don't exist.
+    expect(buildConcatList(["/tmp/Fabien's takes/00000.mp4"])).toBe(
+      "file '/tmp/Fabien'\\''s takes/00000.mp4'"
+    )
+  })
+
+  test("is empty for no pieces rather than a stray blank line", () => {
+    expect(buildConcatList([])).toBe("")
   })
 })
