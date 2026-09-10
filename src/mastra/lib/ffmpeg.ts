@@ -129,18 +129,6 @@ export async function extractAudio(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Audio parameters every extracted range is normalised to.
- *
- * Not the source's own: the concat demuxer stream-copies (`concatFiles`), and
- * a stream copy cannot reconcile two files that disagree about sample rate or
- * channel layout — it either refuses or emits a stream that plays at the wrong
- * speed from the first boundary on. Pinning both here is what lets a cut span
- * several source files (a numbered multi-take shoot) at all.
- */
-const CUT_SAMPLE_RATE = 48_000
-const CUT_CHANNELS = 2
-
-/**
  * Re-encodes `[startSec, endSec)` of `input` to `output`, seek-accurate.
  *
  * `-ss`/`-to` before `-i` puts both in the input's own clock — the same domain
@@ -200,10 +188,16 @@ export async function extractRange(
     "aac",
     "-b:a",
     "192k",
+    // Pinned rather than left as the source's own: the concat demuxer
+    // stream-copies (`concatFiles`), which cannot reconcile two files that
+    // disagree about sample rate or channel layout — it either refuses or
+    // emits a stream that plays at the wrong speed from the first boundary
+    // on. Pinning both is what lets a cut span several source files (a
+    // numbered multi-take shoot) at all.
     "-ar",
-    String(CUT_SAMPLE_RATE),
+    "48000",
     "-ac",
-    String(CUT_CHANNELS),
+    "2",
     "-af",
     "aresample=async=1:first_pts=0",
     "-loglevel",

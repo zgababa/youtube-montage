@@ -122,16 +122,15 @@ export function buildKeptRuns(
  * (`lib/cut.ts`) both do. Keeping it in one place is what stops the two from
  * quietly drifting into answering "what survives the cut" differently.
  *
- * `maxSilenceSec` defaults to the project's own, which is what any consumer
- * outside the timeline gate wants; the gate itself passes the value currently
- * being tried, before it has been stored.
+ * `maxSilenceSec` is always explicit, never read off `project` internally:
+ * the timeline gate passes the value currently being tried, before it has
+ * been stored, and every other caller passes `project.maxSilenceSec` itself
+ * — one obvious way to call this, not a default that happens to shadow a
+ * field on the same argument.
  */
 export function keptRunsForProject(
-  project: Pick<
-    StoredProject,
-    "transcript" | "spans" | "media" | "maxSilenceSec"
-  >,
-  maxSilenceSec: number = project.maxSilenceSec
+  project: Pick<StoredProject, "transcript" | "spans" | "media">,
+  maxSilenceSec: number
 ): TimelineRun[] {
   return buildKeptRuns(
     buildSegments(project.transcript.words),

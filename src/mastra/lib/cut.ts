@@ -68,7 +68,7 @@ export function buildCutPlan(project: StoredProject): CutPlanItem[] {
   // not a bug — `cutMedia` is the one that turns "nothing to concatenate"
   // into an explicit error, since producing a zero-length video silently
   // would be the wrong failure to hide.
-  return keptRunsForProject(project).map((run) => ({
+  return keptRunsForProject(project, project.maxSilenceSec).map((run) => ({
     ...run,
     sourcePath: toAbsolute(project.path, run.file),
   }))

@@ -12,6 +12,10 @@
  * look at a rewritten file; this step introduces no new decision at all — it
  * mechanically executes spans a human already approved at the cleanup gate —
  * so there's nothing here for a human to review before the run continues.
+ *
+ * The "cleanup must be approved" guard lives once, in `buildCutPlan`
+ * (`lib/cut.ts`) — this step doesn't re-check it before calling `cutMedia`,
+ * it just lets that error surface through `runStep`'s own reporting.
  */
 
 import { createStep } from "@mastra/core/workflows"
@@ -31,13 +35,6 @@ export const cutStep = createStep({
 
     return runStep(report, async () => {
       const project = await readStoredProject(projectPath)
-
-      if (!project.cleanupApprovedAt) {
-        throw new Error(
-          "Cleanup hasn't been approved — the cut needs the approved span list."
-        )
-      }
-
       const result: CutResult = await cutMedia(project)
 
       await updateProject(projectPath, (current) => ({
