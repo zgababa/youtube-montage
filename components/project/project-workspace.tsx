@@ -330,8 +330,7 @@ export function ProjectWorkspace({
     pipeline.reviewComposite(pipeline.run.id, false)
     toast.add({
       title: "Regenerating",
-      description:
-        "timeline.fcpxml recomposited with the scenes exported so far.",
+      description: "final.mp4 recomposed with the scenes approved so far.",
     })
   }
 

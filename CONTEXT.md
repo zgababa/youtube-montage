@@ -103,10 +103,12 @@ des cibles valides pour une annotation manuelle.
 _Avoid_: transcript brut, script réécrit
 
 **Composé**:
-État d’un élément dont le fichier est référencé dans l’export FCPXML du projet.
-Ce terme ne prétend pas que l’élément a été importé ou conservé dans le NLE.
+État d’un élément monté dans la composition finale du projet — le fichier
+vidéo publiable, et non un projet à rouvrir dans un autre logiciel. Ce terme
+ne prétend pas que l’élément a été validé en revue, seulement qu’il figure
+dans cette composition.
 
-_Avoid_: importé, accepté dans DaVinci, rendu
+_Avoid_: importé, accepté dans DaVinci, rendu, référencé dans le FCPXML
 
 **Plan éditorial**:
 Une partie du document de montage produite après le cleanup qui décrit les

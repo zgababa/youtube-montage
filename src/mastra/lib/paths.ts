@@ -85,6 +85,17 @@ export function cutVideoPath(projectPath: string) {
   return path.join(projectPath, "cut.mp4")
 }
 
+/**
+ * The finished, directly-publishable video HyperFrames renders (issue #29) —
+ * cards composited onto the cut video, no project file to reopen elsewhere.
+ * Distinct from `fcpxmlPath`: that one still exists for the earlier,
+ * cut-only export gate (`docs/adr/0008-…`), but nothing on this path writes
+ * FCPXML any more.
+ */
+export function finalVideoPath(projectPath: string) {
+  return path.join(projectPath, "final.mp4")
+}
+
 /** Paths stored in `project.json` are relative, so projects stay portable. */
 export function toRelative(projectPath: string, absolute: string) {
   return path.relative(projectPath, absolute)

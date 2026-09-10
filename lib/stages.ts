@@ -88,9 +88,9 @@ export const STAGES: readonly StageDefinition[] = [
   },
   {
     id: "composite",
-    label: "Timeline composite",
+    label: "Final video",
     blurb:
-      "The same timeline.fcpxml, rewritten with every exported scene laid in as a connected clip on lane 1. Regenerate to pick up scenes exported since the last pass.",
+      "cut.mp4 and the beat sheet composed into final.mp4 by HyperFrames — a finished, publishable video. Regenerate to pick up scenes approved since the last pass.",
     steps: ["overlay"],
   },
   {
@@ -235,10 +235,15 @@ function summarize(id: StageId, project: Project): string | null {
     }
 
     case "composite": {
-      if (sceneCounts(project.scenes).exported === 0) return null
+      // Keyed on `approved`, not `exported`: a beat sheet scene is composable
+      // as soon as it's approved and never reaches `"exported"` (that status
+      // belongs to the old HTML-render path — `steps/export.ts` skips a scene
+      // with no `html`). Gating on `exported` here left this stage locked for
+      // every project on the HyperFrames path (issue #29).
+      if (sceneCounts(project.scenes).approved === 0) return null
       return project.compositeApprovedAt === null
-        ? "Composited · not yet approved"
-        : "Composited · approved"
+        ? "Composed · not yet approved"
+        : "Composed · approved"
     }
 
     case "deliverables":
@@ -273,8 +278,8 @@ function lockReason(id: StageId, project: Project): string | null {
         : null
 
     case "composite":
-      return sceneCounts(project.scenes).exported === 0
-        ? "Opens once at least one scene has been exported."
+      return sceneCounts(project.scenes).approved === 0
+        ? "Opens once at least one scene has been approved."
         : null
 
     case "deliverables":

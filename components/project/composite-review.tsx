@@ -7,14 +7,13 @@ import { Button } from "@/components/ui/button"
 import { StageSection } from "@/components/project/stage"
 
 /**
- * The fourth gate: the same `timeline.fcpxml` gate 2 wrote, now rewritten
- * with every exported scene composited in as a connected clip on lane 1
- * (idea.md §4.2 covers the other three).
+ * The fourth gate: the cut video and every approved scene's beat sheet
+ * entry, composed into one finished video by HyperFrames (issue #29;
+ * idea.md §4.2 covers the other three gates).
  *
- * Unlike the timeline gate, there's nothing to tune here — the compositing is
+ * Unlike the timeline gate, there's nothing to tune here — the composition is
  * deterministic from what's on disk. "Regenerate" exists anyway: it's the way
- * to pick up scenes exported since the last pass, and it's cheap (no LLM
- * call, no rendering — just a rewrite), so offering it costs nothing.
+ * to pick up scenes approved since the last pass.
  */
 export function CompositeReview({
   project,
@@ -35,10 +34,9 @@ export function CompositeReview({
     <StageSection
       description={
         <>
-          Rewrites <span className="font-mono">timeline.fcpxml</span> with every
-          exported scene laid in as a connected clip. Re-import it into DaVinci
-          once approved — the earlier import from the timeline gate is now out
-          of date.
+          Composes <span className="font-mono">cut.mp4</span> and the beat sheet
+          into <span className="font-mono">final.mp4</span> via HyperFrames — a
+          finished, publishable video, ready once approved.
         </>
       }
       footer={
@@ -67,20 +65,20 @@ export function CompositeReview({
         <Alert variant="destructive">
           <AlertTitle>
             {composite.skipped.length} scene
-            {composite.skipped.length === 1 ? "" : "s"} didn't land on the cut
-            timeline
+            {composite.skipped.length === 1 ? "" : "s"} didn&apos;t land on the
+            cut video
           </AlertTitle>
           <AlertDescription>
-            {composite.skipped.join(", ")} — their moment ended up cut from the
-            timeline. They still exported to `.mov`; place them manually from
-            the shot list.
+            {composite.skipped.join(", ")} — their moment ended up cut, or its
+            window straddles a cut, so there&apos;s no single point on the cut
+            video to place the card at. They were left out of the composition.
           </AlertDescription>
         </Alert>
       ) : null}
 
       {composite === null ? (
         <p className="text-xs text-muted-foreground">
-          Regenerate to composite the scenes exported so far.
+          Regenerate to compose the scenes approved so far.
         </p>
       ) : null}
     </StageSection>
