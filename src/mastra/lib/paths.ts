@@ -76,6 +76,15 @@ export function fcpxmlPath(projectPath: string) {
   return path.join(projectPath, "timeline.fcpxml")
 }
 
+/**
+ * The actually-cut video file (issue #27) — the source, trimmed to only the
+ * approved spans, concatenated in order. Distinct from `fcpxmlPath`: that one
+ * describes cut points for DaVinci to perform; this one is the performed cut.
+ */
+export function cutVideoPath(projectPath: string) {
+  return path.join(projectPath, "cut.mp4")
+}
+
 /** Paths stored in `project.json` are relative, so projects stay portable. */
 export function toRelative(projectPath: string, absolute: string) {
   return path.relative(projectPath, absolute)

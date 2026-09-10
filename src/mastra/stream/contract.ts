@@ -41,6 +41,7 @@ export const StepIdSchema = z.enum([
   "transcribe",
   "cleanup",
   "fcpxml",
+  "cut",
   "scenarios",
   "generate",
   "review",
@@ -80,6 +81,7 @@ export const STEP_LABELS: Record<z.infer<typeof StepIdSchema>, string> = {
   transcribe: "Transcribe",
   cleanup: "Cleanup pass",
   fcpxml: "Timeline export",
+  cut: "Cut media",
   scenarios: "Plan scenes",
   generate: "Generate scenes",
   review: "Review scenes",
@@ -195,6 +197,12 @@ export const pipelineDataSchemas = {
     runsCount: z.number(),
     totalDurationSec: z.number(),
     maxSilenceSec: z.number(),
+  }),
+
+  /** The source, actually cut into one file from the approved spans (issue #27, `lib/cut.ts`). */
+  cut: z.object({
+    runCount: z.number(),
+    totalDurationSec: z.number(),
   }),
 
   /** The cut timeline, rewritten with exported scenes composited in (`overlay.ts`). */

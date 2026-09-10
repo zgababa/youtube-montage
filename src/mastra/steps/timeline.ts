@@ -29,8 +29,7 @@ import { z } from "zod"
 import { buildFcpxml } from "../lib/fcpxml"
 import { fcpxmlPath } from "../lib/paths"
 import { readStoredProject, updateProject } from "../lib/project"
-import { buildSegments } from "../lib/segments"
-import { buildKeptRuns, type TimelineRun } from "../lib/timeline"
+import { keptRunsForProject, totalRunDuration } from "../lib/timeline"
 import type { StoredProject } from "../schemas"
 import { PipelineIO, message, reporter } from "./shared"
 
@@ -131,13 +130,7 @@ export const timelineStep = createStep({
 
 /** Rebuilds the runs and writes `timeline.fcpxml`, returning what the UI shows. */
 async function writeTimeline(project: StoredProject, maxSilenceSec: number) {
-  const segments = buildSegments(project.transcript.words)
-  const runs = buildKeptRuns(
-    segments,
-    project.spans,
-    project.media,
-    maxSilenceSec
-  )
+  const runs = keptRunsForProject(project, maxSilenceSec)
 
   const xml = buildFcpxml(project, runs)
   const file = fcpxmlPath(project.path)
@@ -146,10 +139,6 @@ async function writeTimeline(project: StoredProject, maxSilenceSec: number) {
   return {
     path: file,
     runsCount: runs.length,
-    totalDurationSec: totalDuration(runs),
+    totalDurationSec: totalRunDuration(runs),
   }
-}
-
-function totalDuration(runs: TimelineRun[]): number {
-  return runs.reduce((sum, run) => sum + (run.sourceEnd - run.sourceStart), 0)
 }

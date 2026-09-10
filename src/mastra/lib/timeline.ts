@@ -14,8 +14,8 @@
 
 import { allNumbered } from "./media"
 import type { Segment } from "./segments"
-import { keptSegments } from "./segments"
-import type { MediaFile, Span } from "../schemas"
+import { buildSegments, keptSegments } from "./segments"
+import type { MediaFile, Span, StoredProject } from "../schemas"
 
 export interface TimelineRun {
   /** Source file, as `segment.file` — a project-relative camera path. */
@@ -114,6 +114,38 @@ export function buildKeptRuns(
 }
 
 /**
+ * The kept runs of a whole project, from its stored transcript and spans.
+ *
+ * The `buildSegments` → `buildKeptRuns` pair is the same two lines wherever a
+ * consumer starts from a `StoredProject` rather than from segments it already
+ * has — the FCPXML export (`steps/timeline.ts`) and the performed cut
+ * (`lib/cut.ts`) both do. Keeping it in one place is what stops the two from
+ * quietly drifting into answering "what survives the cut" differently.
+ *
+ * `maxSilenceSec` is always explicit, never read off `project` internally:
+ * the timeline gate passes the value currently being tried, before it has
+ * been stored, and every other caller passes `project.maxSilenceSec` itself
+ * — one obvious way to call this, not a default that happens to shadow a
+ * field on the same argument.
+ */
+export function keptRunsForProject(
+  project: Pick<StoredProject, "transcript" | "spans" | "media">,
+  maxSilenceSec: number
+): TimelineRun[] {
+  return buildKeptRuns(
+    buildSegments(project.transcript.words),
+    project.spans,
+    project.media,
+    maxSilenceSec
+  )
+}
+
+/** Total source footage the runs cover, in seconds. */
+export function totalRunDuration(runs: TimelineRun[]): number {
+  return runs.reduce((sum, run) => sum + (run.sourceEnd - run.sourceStart), 0)
+}
+
+/**
  * Refuses an ambiguous multi-camera setup rather than guess at it.
  *
  * `assignRoles`/`autoPair` (`media.ts`) resolve the common case — one camera,
@@ -147,7 +179,8 @@ export function assertSingleTranscriptionSource(media: MediaFile[]) {
     "Multiple camera files are marked for transcription with no identified " +
       "mic, and they aren't a numbered sequence (" +
       ambiguous.map((file) => file.path).join(", ") +
-      "). The FCPXML export can't tell what order they belong in — fix the " +
-      "pairing in project settings, or number the files, before exporting."
+      "). Nothing can tell what order they belong in, so neither the FCPXML " +
+      "export nor the cut can chain them — fix the pairing in project " +
+      "settings, or number the files."
   )
 }

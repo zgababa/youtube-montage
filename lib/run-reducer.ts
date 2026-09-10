@@ -153,6 +153,13 @@ export function reduceParts(
     patch.timelineApprovedAt = new Date().toISOString()
   }
 
+  // `cut` has no gate to speak of — it introduces no new decision — but it
+  // does report success only once the file is actually written, so that's
+  // still the right moment to stamp `cutAt`.
+  if (steps.get("cut")?.status === "success" && patch.cutAt !== null) {
+    patch.cutAt = new Date().toISOString()
+  }
+
   // Same reasoning, for the composite gate: `overlay` reports success only on
   // the approved resume, never on the "regenerate" one, which reports
   // suspended again instead.

@@ -1,10 +1,12 @@
 /**
  * ffmpeg and ffprobe, as promises.
  *
- * Both are expected on PATH (idea.md §14). Nothing here transcodes video —
- * source footage is read-only input, and the only video this pipeline ever
- * writes is a scene's ProRes render or the solid-colour clip it backs onto
- * (`white-backing.ts`).
+ * Both are expected on PATH (idea.md §14). Source footage is always read-only
+ * input: nothing here ever writes back over a file the user shot. What this
+ * module writes is a scene's ProRes render, the solid-colour clip it backs
+ * onto (`white-backing.ts`), and — since the cut is performed rather than
+ * merely described (`docs/adr/0008-…`) — H.264 ranges re-encoded out of the
+ * source footage and concatenated into one file (`lib/cut.ts`).
  */
 
 import { spawn } from "node:child_process"
@@ -120,6 +122,126 @@ export async function extractAudio(
       onStdout: progressReader(options.durationSec, options.onProgress),
     }
   )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Performing a cut (docs/adr/0008-…)                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Re-encodes `[startSec, endSec)` of `input` to `output`, seek-accurate.
+ *
+ * `-ss`/`-to` before `-i` puts both in the input's own clock — the same domain
+ * `TimelineRun.sourceStart`/`sourceEnd` already use — and, combined with
+ * re-encoding rather than `-c copy`, ffmpeg decodes forward from the nearest
+ * keyframe to land exactly on `startSec` instead of stream-copying from
+ * whatever keyframe happens to precede it. A stream copy here would silently
+ * re-admit a sliver of footage the cleanup cut.
+ *
+ * H.264/AAC rather than the ProRes used elsewhere in this file: these ranges
+ * are concatenated straight back together and never viewed on their own, so
+ * there is no reason to pay ProRes's bitrate for an intermediate.
+ *
+ * Everything after the codec choice is there to make the pieces *identical in
+ * shape*, because the concat that follows is a stream copy:
+ *
+ *   - `-r fps` forces constant frame rate at the project's own fps, so no
+ *     piece carries a variable-frame-rate timeline into the concat.
+ *   - `-pix_fmt yuv420p` pins the pixel format a phone or a camera may differ
+ *     on.
+ *   - `-af aresample=async=1:first_pts=0` starts the audio at the same instant
+ *     as the video instead of wherever the source's first audio packet after
+ *     `startSec` happens to fall — the per-piece offset that would otherwise
+ *     accumulate into audible drift across a cut with dozens of ranges.
+ *   - `-video_track_timescale` pins the timescale, which mp4 otherwise derives
+ *     from the source and which has to match for a copy to concatenate.
+ */
+export async function extractRange(
+  input: string,
+  output: string,
+  options: { startSec: number; endSec: number; fps: number }
+): Promise<void> {
+  const { startSec, endSec, fps } = options
+  await fs.mkdir(path.dirname(output), { recursive: true })
+  await run("ffmpeg", [
+    "-nostdin",
+    "-y",
+    "-ss",
+    String(startSec),
+    "-to",
+    String(endSec),
+    "-i",
+    input,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "18",
+    "-r",
+    String(fps),
+    "-pix_fmt",
+    "yuv420p",
+    "-video_track_timescale",
+    "90000",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    // Pinned rather than left as the source's own: the concat demuxer
+    // stream-copies (`concatFiles`), which cannot reconcile two files that
+    // disagree about sample rate or channel layout — it either refuses or
+    // emits a stream that plays at the wrong speed from the first boundary
+    // on. Pinning both is what lets a cut span several source files (a
+    // numbered multi-take shoot) at all.
+    "-ar",
+    "48000",
+    "-ac",
+    "2",
+    "-af",
+    "aresample=async=1:first_pts=0",
+    "-loglevel",
+    "error",
+    output,
+  ])
+}
+
+/**
+ * Concatenates the files listed in `listFile` (ffmpeg's own concat-demuxer
+ * format — see `buildConcatList` in `cut.ts`) into `output`.
+ *
+ * `-c copy`: every listed file was just produced by `extractRange` with the
+ * same codec and container parameters, so there is nothing left to re-encode —
+ * a straight stream copy is exact and near-instant regardless of total
+ * duration. `-fflags +genpts` with `-avoid_negative_ts make_zero` rewrites
+ * each piece's timestamps onto one continuous timeline starting at zero;
+ * without them the copied packets keep per-piece timestamps and players read
+ * the seams as gaps or as audio running ahead of the picture.
+ */
+export async function concatFiles(
+  listFile: string,
+  output: string
+): Promise<void> {
+  await fs.mkdir(path.dirname(output), { recursive: true })
+  await run("ffmpeg", [
+    "-nostdin",
+    "-y",
+    "-fflags",
+    "+genpts",
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    listFile,
+    "-c",
+    "copy",
+    "-avoid_negative_ts",
+    "make_zero",
+    "-loglevel",
+    "error",
+    output,
+  ])
 }
 
 /* -------------------------------------------------------------------------- */

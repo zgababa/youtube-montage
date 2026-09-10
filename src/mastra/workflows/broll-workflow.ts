@@ -13,6 +13,7 @@ import { z } from "zod"
 import { readStoredProject } from "../lib/project"
 import { copyStep } from "../steps/copy"
 import { cleanupStep } from "../steps/cleanup"
+import { cutStep } from "../steps/cut"
 import { exportStep } from "../steps/export"
 import { extractAudioStep } from "../steps/extract-audio"
 import { SceneJobSchema } from "../steps/generate-scene"
@@ -51,6 +52,9 @@ export const brollWorkflow = createWorkflow({
   // Only needs the approved spans — writes the cut timeline before scene
   // generation (the expensive part) even starts (issue #1, ADR 0002).
   .then(timelineStep)
+  // Actually cuts the source into `cut.mp4` from the same approved spans
+  // (issue #27) — mechanical execution, no new gate (see `steps/cut.ts`).
+  .then(cutStep)
   // No style-guide step: the look is a house style with a per-project override
   // (`design.md`), not something an agent derives from the transcript.
   .then(scenariosStep)

@@ -70,7 +70,7 @@ export const STAGES: readonly StageDefinition[] = [
     label: "Timeline export",
     blurb:
       "The cut, exported as FCPXML for DaVinci. Tune the silence cap and regenerate before approving.",
-    steps: ["fcpxml"],
+    steps: ["fcpxml", "cut"],
   },
   {
     id: "look",
@@ -216,9 +216,10 @@ function summarize(id: StageId, project: Project): string | null {
     case "timeline": {
       if (project.spans.length === 0) return null
       const cap = `${project.maxSilenceSec}s silence cap`
-      return project.timelineApprovedAt === null
-        ? `${cap} · not yet approved`
-        : `${cap} · approved`
+      const approval =
+        project.timelineApprovedAt === null ? "not yet approved" : "approved"
+      const cut = project.cutAt === null ? "" : " · cut"
+      return `${cap} · ${approval}${cut}`
     }
 
     case "look":

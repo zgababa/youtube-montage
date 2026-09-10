@@ -37,6 +37,7 @@ function project(overrides: Partial<StoredProject> = {}): StoredProject {
     cleanupApprovedAt: null,
     maxSilenceSec: 0.3,
     timelineApprovedAt: null,
+    cutAt: null,
     compositeApprovedAt: null,
     styleGuide: { palette: [], fontStack: "", motion: "", notes: "" },
     styleRef: "default",

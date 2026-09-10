@@ -42,3 +42,16 @@ it matters, prefer **"timeline run"** for this glossary's `run` and
 **"pipeline run"** or **"workflow run"** for the Mastra one; this glossary
 entry is `run` unqualified only because `TimelineRun` is the type name in
 code.
+
+## Described cut / performed cut
+
+The project carries two expressions of the same edit, and "the cut" alone
+names neither. The **described cut** is `timeline.fcpxml` — points of montage
+DaVinci Resolve executes at import (`docs/adr/0001-…`). The **performed cut**
+is `cut.mp4` — a real video file containing only the kept runs, produced by
+`cutMedia` (`docs/adr/0008-…`). Both derive from the same runs, via
+`keptRunsForProject`.
+
+**Avoid confusing either with a `cut` span** — `SpanSchema`'s `action`, the
+per-range decision to drop footage. A span's `cut` is a decision; the two
+cuts above are outputs that carry out every such decision at once.
