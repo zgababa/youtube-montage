@@ -15,7 +15,7 @@
 import { allNumbered } from "./media"
 import type { Segment } from "./segments"
 import { buildSegments, keptSegments } from "./segments"
-import type { MediaFile, Span, StoredProject } from "../schemas"
+import type { MediaFile, Span, StoredProject, StoredScene } from "../schemas"
 
 export interface TimelineRun {
   /** Source file, as `segment.file` — a project-relative camera path. */
@@ -183,4 +183,106 @@ export function assertSingleTranscriptionSource(media: MediaFile[]) {
       "export nor the cut can chain them — fix the pairing in project " +
       "settings, or number the files."
   )
+}
+
+/**
+ * Between a beat sheet entry's original script timing and the cut video
+ * (issue #28).
+ *
+ * A `Beat sheet` entry (`beat-sheet.ts`) is anchored on `scene.scriptStart` —
+ * the *original*, uncut script clock, same domain as `TimelineRun`'s own
+ * `sourceStart`/`sourceEnd` (`segments.ts`: segments "keep their original
+ * indices and timings"). `cutMedia` (`cut.ts`) concatenates `keptRunsForProject`'s
+ * runs, in order, into one physical file — so an entry's position on *that*
+ * file is the sum of every run's duration before the one it falls in, plus
+ * how far into that run it sits. This is exactly `placeOverlays`'s own first
+ * step (`fcpxml.ts`), reused for a target that plays the runs back to back
+ * instead of nesting them as FCPXML spine clips.
+ */
+export type BeatSheetTimingInput = Pick<
+  StoredScene,
+  "id" | "sourceFile" | "scriptStart" | "windowSec"
+>
+
+export interface RemappedBeatSheetEntry {
+  id: string
+  /** Seconds into the cut video the entry plays at. */
+  cutAt: number
+}
+
+/**
+ * An entry that can't be placed on the cut video without guessing (issue
+ * #28's explicit-signal requirement — same posture as `NoMatchingCardError`
+ * and `SlotTypeError` in `beat-sheet.ts`).
+ */
+export class BeatSheetTimingError extends Error {
+  constructor(
+    public readonly entryId: string,
+    reason: "cut" | "overlap"
+  ) {
+    super(
+      reason === "cut"
+        ? `Beat sheet entry "${entryId}" starts inside content the cut removed — there's no kept footage to place it on.`
+        : `Beat sheet entry "${entryId}"'s window runs past the end of the kept stretch it starts in — it overlaps a cut segment, so no single point on the cut video covers it.`
+    )
+    this.name = "BeatSheetTimingError"
+  }
+}
+
+/**
+ * Remaps every entry's `scriptStart` to its position on the cut video that
+ * `runs` (in play order, e.g. `keptRunsForProject`) describes.
+ *
+ * Unlike `placeOverlays`, an entry never fragments across a run boundary —
+ * HyperFrames cards are placed at one timestamp, not chained as a clip that
+ * can span a cut. So a window (`scriptStart` → `scriptStart + windowSec`)
+ * that would need to fragment is reported instead of split or truncated: the
+ * entry's whole window must fit inside the one kept run it starts in.
+ *
+ * Every entry is attempted independently — one entry failing to place
+ * doesn't stop the rest from being remapped, mirroring `placeOverlays`'s own
+ * `skipped` list rather than throwing on the first bad entry.
+ */
+export function remapBeatSheetTiming(
+  runs: TimelineRun[],
+  entries: BeatSheetTimingInput[]
+): { remapped: RemappedBeatSheetEntry[]; errors: BeatSheetTimingError[] } {
+  // Each run's own start position on the cut video: the sum of every prior
+  // run's kept duration, so several cuts before an entry all shrink its
+  // offset, not just the last one.
+  let cutOffset = 0
+  const placed = runs.map((run) => {
+    const offset = cutOffset
+    cutOffset += run.sourceEnd - run.sourceStart
+    return { run, offset }
+  })
+
+  const remapped: RemappedBeatSheetEntry[] = []
+  const errors: BeatSheetTimingError[] = []
+
+  for (const entry of entries) {
+    const hit = placed.find(
+      ({ run }) =>
+        run.file === entry.sourceFile &&
+        entry.scriptStart >= run.sourceStart &&
+        entry.scriptStart < run.sourceEnd
+    )
+
+    if (!hit) {
+      errors.push(new BeatSheetTimingError(entry.id, "cut"))
+      continue
+    }
+
+    if (entry.scriptStart + entry.windowSec > hit.run.sourceEnd) {
+      errors.push(new BeatSheetTimingError(entry.id, "overlap"))
+      continue
+    }
+
+    remapped.push({
+      id: entry.id,
+      cutAt: hit.offset + (entry.scriptStart - hit.run.sourceStart),
+    })
+  }
+
+  return { remapped, errors }
 }

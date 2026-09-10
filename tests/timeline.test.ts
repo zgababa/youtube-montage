@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 
-import { buildKeptRuns } from "../src/mastra/lib/timeline"
+import {
+  BeatSheetTimingError,
+  buildKeptRuns,
+  remapBeatSheetTiming,
+} from "../src/mastra/lib/timeline"
+import type { TimelineRun } from "../src/mastra/lib/timeline"
 import type { Segment } from "../src/mastra/lib/segments"
 import type { MediaFile, Span } from "../src/mastra/schemas"
 
@@ -150,5 +155,92 @@ describe("buildKeptRuns", () => {
     ]
 
     expect(() => buildKeptRuns(segments, spans, numberedMedia)).not.toThrow()
+  })
+})
+
+describe("remapBeatSheetTiming", () => {
+  test("an entry after one cut segment is remapped to the shortened cut timeline", () => {
+    // Kept: [0, 2), cut: [2, 5), kept: [5, 10) — the entry sits at script
+    // time 6, 1s into the second run. On the cut video the first run still
+    // takes up 2s, so the entry should land at 2 + 1 = 3.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 10 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 6, windowSec: 1 },
+    ])
+
+    expect(errors).toEqual([])
+    expect(remapped).toEqual([{ id: "scene_1", cutAt: 3 }])
+  })
+
+  test("multiple cut segments before the entry all shrink the offset", () => {
+    // Three kept runs of 2s each, separated by cuts. The entry starts at the
+    // very beginning of the third run (script time 12) — the cut timeline
+    // must skip over both preceding cuts, landing at 2 + 2 = 4, not just
+    // past the last one.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 7 },
+      { file: "raw/a.mp4", sourceStart: 12, sourceEnd: 14 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 12, windowSec: 1 },
+    ])
+
+    expect(errors).toEqual([])
+    expect(remapped).toEqual([{ id: "scene_1", cutAt: 4 }])
+  })
+
+  test("an entry whose window overlaps a cut segment is reported, not placed", () => {
+    // Kept: [0, 2), cut: [2, 5). The entry starts at 1 (inside the kept run)
+    // but its window (1 -> 1 + 2 = 3) runs past sourceEnd (2) into the cut —
+    // no single kept stretch covers the whole window.
+    const runs: TimelineRun[] = [{ file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 }]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 1, windowSec: 2 },
+    ])
+
+    expect(remapped).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBeInstanceOf(BeatSheetTimingError)
+    expect(errors[0].entryId).toBe("scene_1")
+  })
+
+  test("an entry entirely inside cut content is reported, not placed", () => {
+    // Kept: [0, 2), cut: [2, 5), kept: [5, 7). scriptStart falls at 3, which
+    // no run covers at all.
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 7 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "scene_1", sourceFile: "raw/a.mp4", scriptStart: 3, windowSec: 1 },
+    ])
+
+    expect(remapped).toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].entryId).toBe("scene_1")
+  })
+
+  test("processes every entry independently — one overlap doesn't block the rest", () => {
+    const runs: TimelineRun[] = [
+      { file: "raw/a.mp4", sourceStart: 0, sourceEnd: 2 },
+      { file: "raw/a.mp4", sourceStart: 5, sourceEnd: 10 },
+    ]
+
+    const { remapped, errors } = remapBeatSheetTiming(runs, [
+      { id: "ok", sourceFile: "raw/a.mp4", scriptStart: 6, windowSec: 1 },
+      { id: "overlap", sourceFile: "raw/a.mp4", scriptStart: 1, windowSec: 5 },
+    ])
+
+    expect(remapped).toEqual([{ id: "ok", cutAt: 3 }])
+    expect(errors).toHaveLength(1)
+    expect(errors[0].entryId).toBe("overlap")
   })
 })
