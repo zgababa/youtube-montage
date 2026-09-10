@@ -16,7 +16,7 @@ import {
   createProject,
   readStoredProject,
 } from "../src/mastra/lib/project"
-import { resolveStyle } from "../src/mastra/lib/style"
+import { registerStyleForTest, resolveStyle } from "../src/mastra/lib/style"
 import { generateAndPersistScene } from "../src/mastra/steps/generate-scene"
 import type {
   ChannelStyle,
@@ -54,6 +54,18 @@ function tinyCard(maxLength: number): StyleCard {
   }
 }
 
+/**
+ * The default deck with every card of `purpose` removed — the shape every
+ * "no card fits this scene" test needs.
+ */
+function styleWithout(purpose: SceneType): ChannelStyle {
+  const style = resolveStyle("default")
+  return {
+    ...style,
+    cards: style.cards.filter((card) => card.purpose !== purpose),
+  }
+}
+
 const SCENE_TYPES: SceneType[] = [
   "diagram",
   "code",
@@ -85,14 +97,9 @@ describe("chooseCard", () => {
   })
 
   test("throws NoMatchingCardError when no card fits the purpose", () => {
-    const narrow: ChannelStyle = {
-      ...style,
-      cards: style.cards.filter((card) => card.purpose === "concept"),
-    }
-
-    expect(() => chooseCard(scene({ type: "data" }), narrow)).toThrow(
-      NoMatchingCardError
-    )
+    expect(() =>
+      chooseCard(scene({ type: "data" }), styleWithout("data"))
+    ).toThrow(NoMatchingCardError)
   })
 })
 
@@ -176,13 +183,11 @@ describe("realizeScene", () => {
   // is only ever tested for the happy path plus the fact that it throws.
 
   test("no matching card throws NoMatchingCardError", () => {
-    const narrow: ChannelStyle = {
-      ...style,
-      cards: style.cards.filter((card) => card.purpose === "concept"),
-    }
     const s = scene({ type: "data" })
 
-    expect(() => realizeScene(s, narrow)).toThrow(NoMatchingCardError)
+    expect(() => realizeScene(s, styleWithout("data"))).toThrow(
+      NoMatchingCardError
+    )
   })
 
   test("slot overflow throws SlotConstraintError", () => {
@@ -210,8 +215,12 @@ describe("realizeScene", () => {
  */
 describe("generateAndPersistScene (the seam review regenerates through)", () => {
   const dirs: string[] = []
+  const restoreStyles: Array<() => void> = []
 
   afterEach(async () => {
+    // Styles first: `STYLES` is shared by every test file in the run, so a
+    // style registered here must not stay resolvable once this block is done.
+    for (const restore of restoreStyles.splice(0)) restore()
     await Promise.all(
       dirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true }))
     )
@@ -273,5 +282,36 @@ describe("generateAndPersistScene (the seam review regenerates through)", () => 
     expect(persisted.error).toMatch(/Unknown style reference "nope"/)
     expect(persisted.beatSheetEntry).toBeNull()
     expect(persisted.model).toBeUndefined()
+  })
+
+  // Issue #25: no card in the resolved style matches the scene's intent —
+  // this must fail the scene explicitly rather than force an unsuitable
+  // card. Every `SceneType` has a card in the real "default" deck (see
+  // `resolveStyle`'s own test above), so reaching this through the full
+  // `generateAndPersistScene` seam — as opposed to `chooseCard`/`realizeScene`
+  // directly, already covered above — needs a deck missing the "data" purpose
+  // registered under a styleRef of its own, and removed again afterwards.
+  test("no matching card fails just that scene, with the reason on it", async () => {
+    restoreStyles.push(
+      registerStyleForTest("no-data-card", {
+        ...styleWithout("data"),
+        id: "no-data-card",
+      })
+    )
+    const stored = scene({ type: "data" })
+    const dir = await projectWith(stored)
+
+    const result = await generateAndPersistScene(
+      { projectPath: dir, scene: stored, styleRef: "no-data-card" },
+      undefined
+    )
+
+    expect(result.status).toBe("failed")
+
+    const [persisted] = (await readStoredProject(dir)).scenes
+    expect(persisted.error).toMatch(
+      /No card of purpose "data" in style "no-data-card"/
+    )
+    expect(persisted.beatSheetEntry).toBeNull()
   })
 })

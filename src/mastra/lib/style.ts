@@ -98,3 +98,28 @@ export function resolveStyle(styleRef: string): ChannelStyle {
   }
   return style
 }
+
+/**
+ * Test-only seam: registers a `ChannelStyle` under `styleRef` so tests can
+ * exercise `resolveStyle`-dependent code (e.g. `generateAndPersistScene`)
+ * against a deck that's missing a purpose, without reaching into `STYLES`
+ * directly or forcing every `SceneType` to lack a card in the real default
+ * deck (issue #25 — every `SceneType` currently has one). Not called by
+ * production code.
+ *
+ * Returns the undo. `STYLES` is module-level and every test file in a Bun run
+ * shares it, so a registration that outlives its test would leave a `styleRef`
+ * resolvable for the rest of the process — the caller must restore in a
+ * teardown rather than leak a style the channel never declared.
+ */
+export function registerStyleForTest(
+  styleRef: string,
+  style: ChannelStyle
+): () => void {
+  const previous = STYLES[styleRef]
+  STYLES[styleRef] = style
+  return () => {
+    if (previous) STYLES[styleRef] = previous
+    else delete STYLES[styleRef]
+  }
+}
